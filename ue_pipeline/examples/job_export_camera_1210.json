@@ -1,0 +1,21 @@
+{
+  "job_type": "export",
+  "job_id": "job-export-001",
+  "ue_config": {
+    "editor_path": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe",
+    "project_path": "D:/UE_Projects/WorldProject/WorldProject.uproject"
+  },
+  "sequence": "/Game/CameraController/2025-12-10/Scene_1_39",
+  "_comment": "sequence should point to the main recorded Level Sequence, not the subscene. Worker will automatically find subscene at: {sequence}_Subscenes/{binding_transform}_{sequence_name}",
+  "camera_export": {
+    "enabled": true,
+    "output_path": "D:/WorldDataPipeline/output/WorldProject/ModularScifiStationExample/camera_data",
+    "binding_transform": "BP_Walker0",
+    "binding_camera": "Camera",
+    "export_format": "csv"
+  },
+  "metadata": {
+    "description": "Export job - Exports camera extrinsic and transform data from Level Sequence",
+    "created_date": "2025-12-10"
+  }
+}

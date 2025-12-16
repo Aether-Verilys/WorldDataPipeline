@@ -1,0 +1,52 @@
+{
+  "job_type": "create_sequence",
+  "job_id": "job-create-sequence-test-001",
+  "ue_config": {
+    "editor_path": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe",
+    "project_path": "D:/UE_Projects/WorldProject/WorldProject.uproject"
+  },
+  "map": "/Game/Maps/Lvl_FirstPerson",
+  "sequence_config": {
+    "output_dir": "/Game/CameraController/Generated",
+    "sequence_number": 20,
+    "fps": 30,
+    "duration_seconds": 120.0,
+    "add_camera": true,
+    "spawn_at_startpoint": true,
+    "nav_roam": {
+      "enabled": true,
+      "startpoint_mode": "player_start",
+      "seed": 12345,
+      "nav_build_wait_seconds": 10.0,
+      "random_point_radius_cm": 8000.0,
+      "num_legs": 6,
+      "max_random_point_tries": 40,
+      "min_segment_step_cm": 75.0,
+      "key_interval_seconds": 0.25,
+      "interpolation": "linear",
+      "project_to_nav": true,
+      "z_offset_cm": 0.0
+    },
+    "force_zero_pitch_roll": true,
+    "max_yaw_rate_deg_per_sec": 60.0,
+    "write_transform_keys": true,
+    "transform_key_interp": "auto",
+    "transform_keys": [
+      { "time_seconds": 0.0, "location": { "x": 0, "y": 0, "z": 0 }, "rotation": { "pitch": 0, "yaw": 0, "roll": 0 } },
+      { "time_seconds": 2.0, "location": { "x": 200, "y": 0, "z": 0 }, "rotation": { "pitch": 0, "yaw": 45, "roll": 0 } },
+      { "time_seconds": 4.0, "location": { "x": 200, "y": 200, "z": 0 }, "rotation": { "pitch": 0, "yaw": 90, "roll": 0 } }
+    ],
+    "actor_name": "BP_NPC_NavMesh",
+    "camera_component_name": "Camera",
+    "actor_blueprint_class_path": "/Game/FirstPerson/Blueprints/BP_NPC_NavMesh.BP_NPC_NavMesh",
+    "spawn_actor_if_missing": true,
+    "actor_binding_mode": "sequence_spawnable",
+    "save_level_if_spawned": false,
+    "spawn_location": { "x": 0, "y": 0, "z": 0 },
+    "spawn_rotation": { "pitch": 0, "yaw": 0, "roll": 0 }
+  },
+  "metadata": {
+    "description": "Test job: Create empty LevelSequence in headless mode",
+    "created_date": "2025-12-16"
+  }
+}

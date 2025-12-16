@@ -1,0 +1,19 @@
+{
+  "job_id": "job-camera-test-001",
+  "status": "SUCCESS",
+  "message": "Job completed successfully",
+  "timestamp": 1765166086.905316,
+  "timestamp_readable": "2025-12-08 11:54:46",
+  "details": {
+    "results": {
+      "map_loaded": "/Game/Maps/Lvl_FirstPerson",
+      "camera_export": {
+        "status": "success",
+        "sequence": "/Game/CameraController/2025-12-08/Scene_1_10",
+        "output_dir": "D:\\WorldDataPipeline\\ue_pipeline\\python\\..\\output\\job-camera-test-001\\camera",
+        "extrinsic_csv": "D:\\WorldDataPipeline\\ue_pipeline\\python\\..\\output\\job-camera-test-001\\camera\\unknown_extrinsic.csv",
+        "transform_csv": "D:\\WorldDataPipeline\\ue_pipeline\\python\\..\\output\\job-camera-test-001\\camera\\unknown_transform.csv"
+      }
+    }
+  }
+}

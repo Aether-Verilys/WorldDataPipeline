@@ -1,0 +1,7 @@
+{
+  "job_id": "test-map-load-001",
+  "map": "/Game/Maps/Lvl_FirstPerson",
+  "metadata": {
+    "description": "Minimal test - load map only"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "job_type": "record",
+  "job_id": "job-record-001",
+  "ue_config": {
+    "editor_path": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe",
+    "project_path": "D:/UE_Projects/WorldProject/WorldProject.uproject"
+  },
+  "map": "/Game/Maps/ModularScifiStationExample",
+  "recording": {
+    "enabled": true,
+    "pre_recording_wait": 2.0,
+    "recording_duration": 300.0,
+    "post_recording_wait": 0,
+    "output_path": "D:/UE_Projects/WorldProject/Saved/Sequences",
+    "sequence_name_prefix": "Rec",
+    "_comment": "pre_recording_wait: Wait after PIE starts before recording (for shader compilation, scene initialization, default 2s)"
+  },
+  "camera_export": {
+    "enabled": false,
+    "export_format": "json",
+    "output_path": "D:/UE_Projects/WorldProject/Saved/CameraData"
+  },
+  "keep_playing_after_recording": false,
+  "metadata": {
+    "description": "Recording job - Opens map, records gameplay with Take Recorder",
+    "created_date": "2025-12-10"
+  }
+}
