@@ -12,16 +12,24 @@ import rendering
 
 print("[WorkerRender] Starting render job execution...")
 
-# Parse command line arguments
+# Parse command line arguments or environment variable
 manifest_path = None
-for i, arg in enumerate(sys.argv):
-    if arg.startswith("--manifest="):
-        manifest_path = arg.split("=", 1)[1]
-    elif arg == "--manifest" and i + 1 < len(sys.argv):
-        manifest_path = sys.argv[i + 1]
+
+# Try environment variable first (preferred for -ExecutePythonScript)
+manifest_path = os.environ.get("UE_RENDER_MANIFEST")
+
+# Fall back to command line arguments
+if not manifest_path:
+    for i, arg in enumerate(sys.argv):
+        if arg.startswith("--manifest="):
+            manifest_path = arg.split("=", 1)[1]
+        elif arg == "--manifest" and i + 1 < len(sys.argv):
+            manifest_path = sys.argv[i + 1]
 
 if not manifest_path:
     print("[WorkerRender] ERROR: No manifest path provided")
+    print(f"[WorkerRender] sys.argv: {sys.argv}")
+    print(f"[WorkerRender] Environment vars: UE_RENDER_MANIFEST={os.environ.get('UE_RENDER_MANIFEST')}")
     sys.exit(1)
 
 print(f"[WorkerRender] Manifest: {manifest_path}")
