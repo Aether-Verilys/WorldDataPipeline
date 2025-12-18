@@ -73,6 +73,34 @@ def optimize_render_config_for_memory(config: unreal.MoviePipelinePrimaryConfig)
     unreal.log("[Rendering] 渲染配置已优化以减少内存使用")
 
 
+def log_output_settings(config: unreal.MoviePipelinePrimaryConfig, context: str) -> None:
+    """Log output settings to help diagnose file naming issues."""
+    try:
+        settings = config.get_all_settings()
+        unreal.log(f"[Rendering] {context} settings total: {len(settings)}")
+        for idx, setting in enumerate(settings):
+            try:
+                class_name = setting.get_class().get_name()
+            except Exception:
+                class_name = type(setting).__name__
+            if isinstance(setting, unreal.MoviePipelineOutputSetting):
+                directory = getattr(setting, "output_directory", None)
+                directory_path = getattr(directory, "path", "") if directory else ""
+                file_format = getattr(setting, "file_name_format", "")
+                extension = getattr(setting, "output_file_extension", "")
+                ensure_unique = getattr(setting, "ensure_unique_filenames", None)
+                overrides = getattr(setting, "file_name_format_overrides", None)
+                unreal.log(
+                    f"[Rendering] {context} OutputSetting[{idx}] class={class_name} dir='{directory_path}' fmt='{file_format}' ext='{extension}' unique={ensure_unique}"
+                )
+                if overrides:
+                    unreal.log(f"[Rendering] {context} OutputSetting overrides: {overrides}")
+            else:
+                unreal.log(f"[Rendering] {context} Setting[{idx}] class={class_name}")
+    except Exception as exc:
+        unreal.log_warning(f"[Rendering] {context} Failed to inspect settings: {exc}")
+
+
 def create_render_job(
     sequence_path: str,
     config_path: str = "/Game/CameraController/Pending_MoviePipelinePrimaryConfig",
@@ -113,6 +141,7 @@ def create_render_job(
     if not config:
         unreal.log_error(f"[Rendering] 无法加载配置: {config_path}")
         return None
+    log_output_settings(config, "Preset before job")
     
     # Determine map path
     if map_path:
@@ -148,12 +177,22 @@ def create_render_job(
     
     # Set config
     job.set_configuration(config)
+    log_output_settings(job.get_configuration(), "Job initial config")
     
     # 优化配置以防止内存泄漏
     optimize_render_config_for_memory(job.get_configuration())
     
     # Always check and set file name format in output settings
     settings = job.get_configuration().get_all_settings()
+    
+    # First, check if we have MP4 encoder
+    has_mp4_encoder = False
+    for setting in settings:
+        if type(setting).__name__ == "MoviePipelineMP4EncoderOutput":
+            has_mp4_encoder = True
+            unreal.log("[Rendering] Detected MP4 encoder in pipeline")
+            break
+    
     for setting in settings:
         if isinstance(setting, unreal.MoviePipelineOutputSetting):
             # Set output directory if specified
@@ -170,9 +209,35 @@ def create_render_job(
                 unreal.log("[Rendering] ✓ File name format set to: {sequence_name}")
             else:
                 unreal.log(f"[Rendering] File name format preserved: {current_format}")
+            
+            # Check file_name_format_overrides - this is where MP4 naming issues occur
+            format_overrides = getattr(setting, "file_name_format_overrides", None)
+            
+            # CRITICAL FIX: Clear file_name_format_overrides if it exists
+            # In UE5, empty overrides for MP4 cause the output file to have no name
+            # The file_name_format itself should handle the naming, not the overrides
+            if format_overrides:
+                unreal.log_warning(f"[Rendering] Found file_name_format_overrides: {format_overrides}")
+                unreal.log_warning("[Rendering] Clearing overrides to prevent MP4 naming issues")
+                try:
+                    # Try to clear the overrides map
+                    if hasattr(setting, "set_editor_property"):
+                        setting.set_editor_property("file_name_format_overrides", {})
+                        unreal.log("[Rendering] ✓✓ FIXED: Cleared file_name_format_overrides")
+                    else:
+                        setting.file_name_format_overrides = {}
+                        unreal.log("[Rendering] ✓✓ FIXED: Set file_name_format_overrides to empty dict")
+                except Exception as e:
+                    unreal.log_error(f"[Rendering] Failed to clear overrides: {e}")
+            else:
+                unreal.log("[Rendering] No file_name_format_overrides found (good)")
+            
+            ensure_unique = getattr(setting, "ensure_unique_filenames", None)
+            unreal.log(f"[Rendering] Ensure unique filenames: {ensure_unique}")
             break
     
     unreal.log(f"[Rendering] 创建渲染任务: {job.job_name} -> {target_map}")
+    log_output_settings(job.get_configuration(), "Job after adjustments")
     return job
 
 
@@ -239,6 +304,7 @@ def render_sequences_remote(
             new_job.map = job.map
             new_job.job_name = job.job_name
             new_job.set_configuration(job.get_configuration())
+            log_output_settings(new_job.get_configuration(), "Queue job config")
             unreal.log(f"[Rendering] ✓ 添加到队列: {job.job_name}")
         
         # 强制垃圾回收，释放临时对象
@@ -435,6 +501,7 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
     new_job.map = job.map
     new_job.job_name = job.job_name
     new_job.set_configuration(job.get_configuration())
+    log_output_settings(new_job.get_configuration(), "Queue job config (manifest)")
     
     unreal.log(f"[Rendering] Job added to queue: {job.job_name}")
     

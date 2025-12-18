@@ -1,0 +1,8 @@
+{
+  "EngineDir": "D:/Program Files/Epic Games/UE_5.7",
+  "ProjectDir": "F:/UE_Projects/FPS",
+  "TargetPlatform": "Linux",
+  "CookAll": true,
+  "Unversioned": true,
+  "OutputLog": "Cook_Linux.log"
+}
