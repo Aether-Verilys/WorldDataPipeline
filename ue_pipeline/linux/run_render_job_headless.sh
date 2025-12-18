@@ -91,6 +91,21 @@ if [ ! -f "$PROJECT" ]; then
     exit 1
 fi
 
+# Get project directory and ensure necessary directories exist
+PROJECT_DIR=$(dirname "$PROJECT")
+echo "Project directory: $PROJECT_DIR"
+
+# Create Intermediate, Saved, and other necessary directories
+mkdir -p "$PROJECT_DIR/Intermediate"
+mkdir -p "$PROJECT_DIR/Saved"
+mkdir -p "$PROJECT_DIR/Saved/Logs"
+
+# Check write permissions
+if [ ! -w "$PROJECT_DIR" ]; then
+    echo "ERROR: No write permission for project directory: $PROJECT_DIR"
+    exit 1
+fi
+
 # Ensure output directory exists
 if [ -n "$OUTPUT_PATH" ]; then
     mkdir -p "$OUTPUT_PATH"
@@ -123,12 +138,6 @@ UE_ARGS=(
     
     # Rendering optimization flags for headless mode
     "-RenderOffscreen"
-    
-    # Use OpenGL instead of Vulkan (for servers without Vulkan SM6 support)
-    "-opengl4"
-    
-    # Use NullRHI to bypass GPU requirements (uncomment if GPU not available)
-    # "-nullrhi"
     
     # Resolution settings
     "-ResX=1920"
