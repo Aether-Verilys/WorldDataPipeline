@@ -97,7 +97,8 @@ fi
 
 # Get Python worker script path
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PYTHON_WORKER="$SCRIPT_DIR/python/worker_render.py"
+# Go up one level to find python directory (since script is in linux/ subdirectory)
+PYTHON_WORKER="$SCRIPT_DIR/../python/worker_render.py"
 
 if [ ! -f "$PYTHON_WORKER" ]; then
     echo "ERROR: Python worker script not found: $PYTHON_WORKER"
