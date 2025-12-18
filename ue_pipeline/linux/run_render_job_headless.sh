@@ -53,8 +53,10 @@ if [ -z "$UE_EDITOR" ]; then
     UE_EDITOR="$DEFAULT_UE_EDITOR"
     echo "WARNING: No editor_path in manifest, using default: $UE_EDITOR"
 else
-    # Replace UnrealEditor.exe with UnrealEditor-Cmd for headless mode
-    UE_EDITOR="${UE_EDITOR/UnrealEditor/UnrealEditor-Cmd}"
+    # Replace UnrealEditor.exe with UnrealEditor-Cmd for headless mode (only if not already -Cmd)
+    if [[ "$UE_EDITOR" == *"UnrealEditor.exe"* ]]; then
+        UE_EDITOR="${UE_EDITOR/UnrealEditor.exe/UnrealEditor-Cmd}"
+    fi
 fi
 
 PROJECT=$(jq -r '.ue_config.project_path // empty' "$MANIFEST_PATH")
@@ -121,6 +123,12 @@ UE_ARGS=(
     
     # Rendering optimization flags for headless mode
     "-RenderOffscreen"
+    
+    # Use OpenGL instead of Vulkan (for servers without Vulkan SM6 support)
+    "-opengl4"
+    
+    # Use NullRHI to bypass GPU requirements (uncomment if GPU not available)
+    # "-nullrhi"
     
     # Resolution settings
     "-ResX=1920"
