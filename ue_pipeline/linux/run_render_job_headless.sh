@@ -26,6 +26,9 @@ fi
 
 MANIFEST_PATH="$1"
 
+# Convert to absolute path
+MANIFEST_PATH="$(realpath "$MANIFEST_PATH")"
+
 # Check manifest file
 if [ ! -f "$MANIFEST_PATH" ]; then
     echo "ERROR: Manifest file not found: $MANIFEST_PATH"
