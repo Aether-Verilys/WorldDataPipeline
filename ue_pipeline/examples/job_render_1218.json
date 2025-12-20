@@ -11,6 +11,7 @@
     "enabled": true,
     "preset": "/Game/CameraController/Pending_MoviePipelinePrimaryConfig",
     "output_path": "D:/WorldDataPipeline/output",
+    "framerate": 30,
     "frame_range": {
       "start_frame": 0,
       "end_frame": -1
