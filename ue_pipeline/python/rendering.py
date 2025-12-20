@@ -41,21 +41,17 @@ def optimize_render_config_for_memory(config: unreal.MoviePipelinePrimaryConfig)
                 setting.temporal_sample_count = min(original, 2)  # 限制最大为2
                 unreal.log(f"[Rendering] 优化时间采样: {original} -> {setting.temporal_sample_count}")
         
-        # 优化延迟渲染设置
         if isinstance(setting, unreal.MoviePipelineDeferredPassBase):
             # 禁用不必要的渲染通道
             if hasattr(setting, 'disable_multisample_effects'):
                 setting.disable_multisample_effects = True
                 unreal.log("[Rendering] 禁用多重采样效果以节省内存")
         
-        # 优化输出设置
         if isinstance(setting, unreal.MoviePipelineOutputSetting):
             # 确保每帧后刷新磁盘缓存
             if hasattr(setting, 'flush_disk_writes_per_shot'):
                 setting.flush_disk_writes_per_shot = True
                 unreal.log("[Rendering] 启用每镜头刷新磁盘写入")
-    
-    unreal.log("[Rendering] 渲染配置已优化以减少内存使用")
 
 
 def log_output_settings(config: unreal.MoviePipelinePrimaryConfig, context: str) -> None:
@@ -119,13 +115,10 @@ def create_render_job(
         return None
     log_output_settings(config, "Preset before job")
     
-    # Determine map path
     if map_path:
-        # Use specified map
         target_map = map_path
         unreal.log(f"[Rendering] 使用指定地图: {target_map}")
     else:
-        # Try to get map from sequence's outer
         try:
             outer_path = sequence.get_outer().get_path_name()
             # Check if it's a valid world/map
@@ -135,7 +128,6 @@ def create_render_job(
             else:
                 raise Exception("Not a valid map path")
         except:
-            # Fall back to first map in /Game/Maps
             import level_launcher
             maps = level_launcher.discover_map_assets()
             if maps:
@@ -151,17 +143,15 @@ def create_render_job(
     job.map = unreal.SoftObjectPath(target_map)
     job.job_name = sequence_name  # Use extracted sequence name
     
-    # Set config
     job.set_configuration(config)
     log_output_settings(job.get_configuration(), "Job initial config")
     
-    # 优化配置以防止内存泄漏
-    optimize_render_config_for_memory(job.get_configuration())
+    # 优化配置以防止内存泄漏 todo 暂时关闭
+    # optimize_render_config_for_memory(job.get_configuration())
     
-    # Always check and set file name format in output settings
     settings = job.get_configuration().get_all_settings()
     
-    # First, check if we have MP4 encoder
+    # check if have MP4 encoder
     has_mp4_encoder = False
     for setting in settings:
         if type(setting).__name__ == "MoviePipelineMP4EncoderOutput":
@@ -171,7 +161,6 @@ def create_render_job(
     
     for setting in settings:
         if isinstance(setting, unreal.MoviePipelineOutputSetting):
-            # Set output directory if specified
             if output_directory:
                 # Add sequence name subfolder to output path
                 import os
@@ -183,26 +172,18 @@ def create_render_job(
             current_format = getattr(setting, "file_name_format", "")
             unreal.log(f"[Rendering] Current file_name_format: '{current_format}'")
             
-            # Set file name format to include sequence name and frame number
             # Format: {sequence_name}.{frame_number} -> e.g., Scene_1_02.0001.png
             setting.file_name_format = f"{sequence_name}.{{frame_number}}"
-            unreal.log(f"[Rendering] ✓ File name format set to: {sequence_name}.{{frame_number}}")
+            unreal.log(f"[Rendering] File name format set to: {sequence_name}.{{frame_number}}")
             
-            # Also try to set format version metadata if available
-            # This helps UE understand the naming pattern
             try:
                 if hasattr(setting, "set_editor_property"):
                     setting.set_editor_property("file_name_format", f"{sequence_name}.{{frame_number}}")
-                    unreal.log(f"[Rendering] ✓ Set file_name_format via editor property")
+                    unreal.log(f"[Rendering] Set file_name_format via editor property")
             except Exception as e:
                 unreal.log_warning(f"[Rendering] Could not set via editor property: {e}")
             
-            # Check file_name_format_overrides - this is where MP4 naming issues occur
             format_overrides = getattr(setting, "file_name_format_overrides", None)
-            
-            # CRITICAL FIX: Clear file_name_format_overrides if it exists
-            # In UE5, empty overrides for MP4 cause the output file to have no name
-            # The file_name_format itself should handle the naming, not the overrides
             if format_overrides:
                 unreal.log_warning(f"[Rendering] Found file_name_format_overrides: {format_overrides}")
                 unreal.log_warning("[Rendering] Clearing overrides to prevent MP4 naming issues")
@@ -210,10 +191,8 @@ def create_render_job(
                     # Try to clear the overrides map
                     if hasattr(setting, "set_editor_property"):
                         setting.set_editor_property("file_name_format_overrides", {})
-                        unreal.log("[Rendering] ✓✓ FIXED: Cleared file_name_format_overrides")
                     else:
                         setting.file_name_format_overrides = {}
-                        unreal.log("[Rendering] ✓✓ FIXED: Set file_name_format_overrides to empty dict")
                 except Exception as e:
                     unreal.log_error(f"[Rendering] Failed to clear overrides: {e}")
             else:
@@ -280,7 +259,7 @@ def render_sequences_remote(
             new_job.job_name = job.job_name
             new_job.set_configuration(job.get_configuration())
             log_output_settings(new_job.get_configuration(), "Queue job config")
-            unreal.log(f"[Rendering] ✓ 添加到队列: {job.job_name}")
+            unreal.log(f"[Rendering] 添加到队列: {job.job_name}")
         
         # 强制垃圾回收，释放临时对象
         gc.collect()
@@ -306,7 +285,7 @@ def render_sequences_remote(
         unreal.log_error("[Rendering] 无法启动渲染执行器")
         return False
     
-    unreal.log("[Rendering] ▶ 开始远程渲染...")
+    unreal.log("[Rendering] 开始渲染...")
     return True
 
 
@@ -316,9 +295,6 @@ def render_directory_remote(
     output_directory: Optional[str] = None,
     map_path: Optional[str] = None
 ) -> bool:
-    unreal.log(f"[Rendering] 扫描目录: {directory}")
-    
-    # Discover sequences
     sequences = discover_level_sequences(directory)
     if not sequences:
         unreal.log_warning(f"[Rendering] 在 {directory} 中未找到任何序列")
@@ -326,13 +302,10 @@ def render_directory_remote(
     
     unreal.log(f"[Rendering] 找到 {len(sequences)} 个序列")
     
-    # Render them
     return render_sequences_remote(sequences, config_path, output_directory, map_path)
 
-# ==============================================================================
-# Manifest-driven API
-# ==============================================================================
 
+# Manifest-driven API
 def render_sequence_from_manifest(manifest: dict) -> dict:
     import unreal
     
@@ -359,7 +332,6 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
     if base_output_path:
         import os
         
-        # Extract project name from project_path
         ue_config = manifest.get("ue_config", {})
         project_path = ue_config.get("project_path", "")
         if project_path:
@@ -368,7 +340,6 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
         else:
             project_name = "UnknownProject"
         
-        # Extract map name from map path
         if map_path:
             # Extract map name (e.g., "Lvl_FirstPerson" from "/Game/FirstPerson/Lvl_FirstPerson")
             map_name = map_path.split("/")[-1]
@@ -444,12 +415,9 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
         unreal.log_error("[Rendering] Make sure Movie Render Queue plugin is enabled")
         raise RuntimeError("Cannot get MoviePipelineQueueSubsystem - check if Movie Render Queue plugin is enabled")
     
-    # Get queue and add job
     queue = subsystem.get_queue()
-    # Clear existing jobs and add ours
     queue.delete_all_jobs()
     
-    # 强制垃圾回收
     gc.collect()
     
     new_job = queue.allocate_new_job(type(job))
@@ -461,10 +429,8 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
     
     unreal.log(f"[Rendering] Job added to queue: {job.job_name}")
     
-    # 最终垃圾回收
     gc.collect()
     
-    # Start render with remote executor
     unreal.log(f"[Rendering] Job added to queue: {job.job_name}")
     
     # Start render with remote executor
@@ -472,7 +438,7 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
     if not executor:
         raise RuntimeError("Failed to start render executor")
     
-    unreal.log("[Rendering] ▶ Render started")
+    unreal.log("[Rendering] Render started")
     
     return {
         "status": "started",

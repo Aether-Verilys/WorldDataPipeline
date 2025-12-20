@@ -3,9 +3,7 @@ import csv
 import math
 import os
 
-# ============================================================
 # 配置区域 - 在此处修改所有路径和参数
-# ============================================================
 SEQUENCE_PATH = "/Game/CameraController/2025-11-25/Scene_1_10_Subscenes/BP_FirstPersonCharacter0_Scene_1_10"
 BINDING_NAME_TRANSFORM = "BP_FirstPersonCharacter0"
 BINDING_NAME_CAMERA = "FirstPersonCamera"
@@ -17,12 +15,9 @@ DEFAULT_CAMERA_ROT = [0.0, 0.0, 0.0]  # [Roll, Pitch, Yaw] 单位：度
 
 # 单位转换常量
 UE_TO_METERS = 0.01  # UE默认单位是cm，转换为m需要乘以0.01
-# ============================================================
 
 
-# ------------------------------------------------------------
 # 读取 Sequencer 中某个绑定（Binding）对应的通道
-# ------------------------------------------------------------
 def get_channels_from_binding(sequence, binding_name):
     bindings = sequence.get_bindings()
 
@@ -61,9 +56,7 @@ def get_channels_from_binding(sequence, binding_name):
     return None
 
 
-# ------------------------------------------------------------
 # 最近邻取值 - 使用预缓存的keys避免重复调用get_keys()
-# ------------------------------------------------------------
 def sample_channel_cached(cached_keys, frame_number, default_value=0.0):
     """
     从预缓存的keys中采样
@@ -95,9 +88,7 @@ def cache_channel_keys(channel):
     return cached
 
 
-# ------------------------------------------------------------
 # 矩阵乘法 (3x3)
-# ------------------------------------------------------------
 def multiply_matrix3(A, B):
     result = [[0]*3 for _ in range(3)]
     for i in range(3):
@@ -106,16 +97,12 @@ def multiply_matrix3(A, B):
     return result
 
 
-# ------------------------------------------------------------
 # 矩阵转置 (3x3)
-# ------------------------------------------------------------
 def transpose_matrix3(M):
     return [[M[j][i] for j in range(3)] for i in range(3)]
 
 
-# ------------------------------------------------------------
 # UE Rotator → RotationMatrix（Yaw→Pitch→Roll）
-# ------------------------------------------------------------
 def rot_to_matrix(roll_deg, pitch_deg, yaw_deg):
     roll  = math.radians(roll_deg)
     pitch = math.radians(pitch_deg)
@@ -134,9 +121,7 @@ def rot_to_matrix(roll_deg, pitch_deg, yaw_deg):
     return R
 
 
-# ------------------------------------------------------------
 # 计算相机世界坐标和外参矩阵
-# ------------------------------------------------------------
 def compute_camera_extrinsic(transform_loc, transform_rot, camera_loc, camera_rot):
     """
     计算相机的世界坐标和外参矩阵
@@ -188,9 +173,7 @@ def compute_camera_extrinsic(transform_loc, transform_rot, camera_loc, camera_ro
     return extrinsic, cam_world_pos
 
 
-# ------------------------------------------------------------
 # 主执行
-# ------------------------------------------------------------
 def export_camera_data(sequence_path, binding_name_transform, binding_name_camera, output_dir,
                       default_camera_loc=None, default_camera_rot=None):
     """
@@ -204,13 +187,12 @@ def export_camera_data(sequence_path, binding_name_transform, binding_name_camer
         default_camera_loc: 相机默认位置 [x, y, z]，当没有关键帧时使用
         default_camera_rot: 相机默认旋转 [roll, pitch, yaw]，当没有关键帧时使用
     """
-    # 使用默认值
+
     if default_camera_loc is None:
         default_camera_loc = DEFAULT_CAMERA_LOC
     if default_camera_rot is None:
         default_camera_rot = DEFAULT_CAMERA_ROT
 
-    # 加载 sequence
     sequence = unreal.load_asset(sequence_path)
     if sequence is None:
         unreal.log_error("找不到 Level Sequence！")
@@ -224,11 +206,10 @@ def export_camera_data(sequence_path, binding_name_transform, binding_name_camer
         unreal.log_error("Channel 获取失败")
         return
 
-    # 帧范围
     start_frame = sequence.get_playback_start()
     end_frame = sequence.get_playback_end()
 
-    # ===== 关键优化：预先缓存所有channel的keys，避免循环中重复调用get_keys() =====
+    # 预先缓存所有channel的keys，避免循环中重复调用get_keys()
     unreal.log("[ExportCamera] Caching channel keys to prevent UObject leak...")
     transform_cache = {
         "loc_x": cache_channel_keys(transform_channels.get("loc_x")),
@@ -329,22 +310,8 @@ def export_camera_data(sequence_path, binding_name_transform, binding_name_camer
     unreal.log(f"原始Transform数据导出完成 → {output_transform_csv}")
 
 
-# ------------------------------------------------------------
 # Manifest-driven API
-# ------------------------------------------------------------
 def export_camera_from_manifest(manifest: dict) -> dict:
-    """
-    Export camera data based on job manifest
-    
-    Args:
-        manifest: job manifest dict containing:
-            - sequence: sequence asset path
-            - camera: camera config with export_path, export_format, etc.
-            - frame_range: start_frame, end_frame, step (optional)
-    
-    Returns:
-        dict with export results (paths to exported files)
-    """
     import unreal
     
     sequence_path = manifest.get("sequence")
@@ -405,9 +372,6 @@ def export_camera_from_manifest(manifest: dict) -> dict:
     }
 
 
-# ------------------------------------------------------------
-# 执行
-# ------------------------------------------------------------
 if __name__ == "__main__":
     export_camera_data(
         SEQUENCE_PATH,

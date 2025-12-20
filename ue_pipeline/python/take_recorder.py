@@ -2,10 +2,6 @@ import unreal
 import time
 
 def setup_take_recorder(preset_path: str = "/Game/CameraController/RecorderPreset"):
-    """
-    Setup Take Recorder with preset
-    Returns: panel if successful, None otherwise
-    """
     # 检查 Take Recorder 是否启用
     if not unreal.TakeRecorderBlueprintLibrary.is_take_recorder_enabled():
         unreal.log_error("Take Recorder 未启用")
@@ -24,14 +20,13 @@ def setup_take_recorder(preset_path: str = "/Game/CameraController/RecorderPrese
     preset = unreal.load_asset(preset_path)
     if preset:
         panel.setup_for_recording_take_preset(preset)
-        unreal.log(f"✓ Take Recorder Preset 已应用: {preset_path}")
+        unreal.log(f"Take Recorder Preset 已应用: {preset_path}")
     else:
         unreal.log_warning(f"Preset 未找到: {preset_path}")
     
     return panel
 
 def start_recording(panel=None):
-    """Start recording with Take Recorder"""
     if not panel:
         panel = unreal.TakeRecorderBlueprintLibrary.get_take_recorder_panel()
     
@@ -44,23 +39,20 @@ def start_recording(panel=None):
         return False
     
     panel.start_recording()
-    unreal.log("▶ 开始录制...")
+    unreal.log("开始录制...")
     return True
 
 def stop_recording():
-    """Stop recording"""
     if unreal.TakeRecorderBlueprintLibrary.is_recording():
         unreal.TakeRecorderBlueprintLibrary.stop_recording()
-        unreal.log("■ 停止录制")
+        unreal.log("停止录制")
         return True
     return False
 
 def is_recording():
-    """Check if currently recording"""
     return unreal.TakeRecorderBlueprintLibrary.is_recording()
 
 def get_last_recorded_sequence(panel=None):
-    """Get the last recorded sequence"""
     if not panel:
         panel = unreal.TakeRecorderBlueprintLibrary.get_take_recorder_panel()
     
@@ -74,16 +66,6 @@ def get_last_recorded_sequence(panel=None):
 # ==============================================================================
 
 def record_take_from_manifest(manifest: dict) -> dict:
-    """
-    Record a take based on job manifest
-    
-    Args:
-        manifest: job manifest dict containing:
-            - take_recorder: config with preset_path, duration, etc. (optional)
-    
-    Returns:
-        dict with recording results
-    """
     take_config = manifest.get("take_recorder", {})
     
     if not take_config.get("enabled", False):
@@ -114,7 +96,7 @@ def record_take_from_manifest(manifest: dict) -> dict:
     sequence = get_last_recorded_sequence(panel)
     sequence_path = sequence.get_path_name() if sequence else None
     
-    unreal.log(f"[TakeRecorder] ✓ Recording completed: {sequence_path}")
+    unreal.log(f"[TakeRecorder] Recording completed: {sequence_path}")
     
     return {
         "status": "success",

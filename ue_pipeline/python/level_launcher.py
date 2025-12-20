@@ -45,7 +45,6 @@ def discover_map_assets(root: str = MAPS_ROOT) -> Iterable[str]:
 # ==============================================================================
 
 def is_pie_playing() -> bool:
-    """Check if PIE is currently playing - robust check across UE versions"""
     level_editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
     editor_subsystem = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
     
@@ -68,7 +67,6 @@ def is_pie_playing() -> bool:
         return False
 
 def get_pie_world() -> Optional[unreal.World]:
-    """Get the PIE world if it exists"""
     try:
         editor_subsystem = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
         return editor_subsystem.get_game_world()
@@ -137,11 +135,9 @@ class LevelLauncher:
             self.next_map()
 
     def is_playing(self) -> bool:
-        """使用全局工具函数"""
         return is_pie_playing()
 
     def get_pie_world(self) -> Optional[unreal.World]:
-        """使用全局工具函数"""
         return get_pie_world()
 
     def on_tick(self, delta_seconds):
@@ -215,16 +211,6 @@ class LevelLauncher:
 # ==============================================================================
 
 def load_level_from_manifest(manifest: dict) -> bool:
-    """
-    Load level/map based on job manifest
-    
-    Args:
-        manifest: job manifest dict containing:
-            - map: UE map asset path
-    
-    Returns:
-        True if level loaded successfully
-    """
     import unreal
     
     map_path = manifest.get("map")
@@ -244,7 +230,6 @@ def load_level_from_manifest(manifest: dict) -> bool:
     return success
 
 
-# 全局实例引用，防止被垃圾回收
 _runner_instance = None
 
 def main():
