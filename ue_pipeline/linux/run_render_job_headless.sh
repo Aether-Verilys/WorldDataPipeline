@@ -181,3 +181,16 @@ else
     echo "Render job failed with exit code: $EXIT_CODE"
     exit $EXIT_CODE
 fi
+"
+EXIT_CODE=$?
+
+echo ""
+echo "----------------------------------------"
+
+if [ $EXIT_CODE -eq 0 ]; then
+    echo "Render job completed successfully"
+    exit 0
+else
+    echo "Render job failed with exit code: $EXIT_CODE"
+    exit $EXIT_CODE
+fi

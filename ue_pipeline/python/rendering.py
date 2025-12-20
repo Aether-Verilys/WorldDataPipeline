@@ -2,16 +2,7 @@ import unreal
 from typing import List, Optional
 import gc
 
-def discover_level_sequences(directory: str = "/Game/CameraController/2025-12-04") -> List[str]:
-    """
-    Discover all Level Sequence assets in a directory (non-recursive)
-    
-    Args:
-        directory: The directory path to search for level sequences
-        
-    Returns:
-        List of level sequence asset paths
-    """
+def discover_level_sequences(directory: str) -> List[str]:
     if not unreal.EditorAssetLibrary.does_directory_exist(directory):
         unreal.log_warning(f"[Rendering] 目录不存在: {directory}")
         return []
@@ -33,12 +24,6 @@ def discover_level_sequences(directory: str = "/Game/CameraController/2025-12-04
 
 
 def optimize_render_config_for_memory(config: unreal.MoviePipelinePrimaryConfig) -> None:
-    """
-    优化渲染配置以减少内存使用，防止长序列渲染时内存耗尽
-    
-    Args:
-        config: Movie Pipeline config to optimize
-    """
     settings = config.get_all_settings()
     
     for setting in settings:
@@ -74,7 +59,6 @@ def optimize_render_config_for_memory(config: unreal.MoviePipelinePrimaryConfig)
 
 
 def log_output_settings(config: unreal.MoviePipelinePrimaryConfig, context: str) -> None:
-    """Log output settings to help diagnose file naming issues."""
     try:
         settings = config.get_all_settings()
         unreal.log(f"[Rendering] {context} settings total: {len(settings)}")
@@ -103,22 +87,10 @@ def log_output_settings(config: unreal.MoviePipelinePrimaryConfig, context: str)
 
 def create_render_job(
     sequence_path: str,
-    config_path: str = "/Game/CameraController/Pending_MoviePipelinePrimaryConfig",
+    config_path: str,
     output_directory: Optional[str] = None,
     map_path: Optional[str] = None
 ) -> Optional[unreal.MoviePipelineExecutorJob]:
-    """
-    Create a Movie Pipeline render job for a level sequence
-    
-    Args:
-        sequence_path: Path to the level sequence asset
-        config_path: Path to the Movie Pipeline config preset
-        output_directory: Custom output directory (None = use default)
-        map_path: Path to the map to use (None = auto-detect or use first map in /Game/Maps)
-        
-    Returns:
-        MoviePipelineExecutorJob or None if failed
-    """
     unreal.log(f"[Rendering] 尝试加载序列: {sequence_path}")
     sequence = unreal.load_asset(sequence_path)
     if not sequence:
@@ -135,6 +107,10 @@ def create_render_job(
         except Exception as e:
             unreal.log_error(f"[Rendering] 列目录失败: {e}")
         return None
+    
+    # Extract sequence name from path (last part after /)
+    sequence_name = sequence_path.split("/")[-1]
+    unreal.log(f"[Rendering] 提取序列名称: {sequence_name}")
     
     unreal.log(f"[Rendering] 尝试加载配置: {config_path}")
     config = unreal.load_asset(config_path)
@@ -173,7 +149,7 @@ def create_render_job(
     job = unreal.MoviePipelineExecutorJob()
     job.sequence = unreal.SoftObjectPath(sequence_path)
     job.map = unreal.SoftObjectPath(target_map)
-    job.job_name = sequence.get_name()
+    job.job_name = sequence_name  # Use extracted sequence name
     
     # Set config
     job.set_configuration(config)
@@ -197,18 +173,29 @@ def create_render_job(
         if isinstance(setting, unreal.MoviePipelineOutputSetting):
             # Set output directory if specified
             if output_directory:
-                setting.output_directory = unreal.DirectoryPath(output_directory)
-                unreal.log(f"[Rendering] Output directory set: {output_directory}")
+                # Add sequence name subfolder to output path
+                import os
+                output_with_sequence = os.path.join(output_directory, sequence_name)
+                setting.output_directory = unreal.DirectoryPath(output_with_sequence)
+                unreal.log(f"[Rendering] Output directory set: {output_with_sequence}")
             
-            # Always ensure file name format is set
+            # Always ensure file name format includes sequence name and frame number
             current_format = getattr(setting, "file_name_format", "")
             unreal.log(f"[Rendering] Current file_name_format: '{current_format}'")
             
-            if not current_format or current_format.strip() == "":
-                setting.file_name_format = "{sequence_name}"
-                unreal.log("[Rendering] ✓ File name format set to: {sequence_name}")
-            else:
-                unreal.log(f"[Rendering] File name format preserved: {current_format}")
+            # Set file name format to include sequence name and frame number
+            # Format: {sequence_name}.{frame_number} -> e.g., Scene_1_02.0001.png
+            setting.file_name_format = f"{sequence_name}.{{frame_number}}"
+            unreal.log(f"[Rendering] ✓ File name format set to: {sequence_name}.{{frame_number}}")
+            
+            # Also try to set format version metadata if available
+            # This helps UE understand the naming pattern
+            try:
+                if hasattr(setting, "set_editor_property"):
+                    setting.set_editor_property("file_name_format", f"{sequence_name}.{{frame_number}}")
+                    unreal.log(f"[Rendering] ✓ Set file_name_format via editor property")
+            except Exception as e:
+                unreal.log_warning(f"[Rendering] Could not set via editor property: {e}")
             
             # Check file_name_format_overrides - this is where MP4 naming issues occur
             format_overrides = getattr(setting, "file_name_format_overrides", None)
@@ -243,22 +230,10 @@ def create_render_job(
 
 def render_sequences_remote(
     sequence_paths: List[str],
-    config_path: str = "/Game/CameraController/Pending_MoviePipelinePrimaryConfig",
+    config_path: str,
     output_directory: Optional[str] = None,
     map_path: Optional[str] = None
 ) -> bool:
-    """
-    Render multiple level sequences using Movie Render Queue (Remote)
-    
-    Args:
-        sequence_paths: List of level sequence asset paths to render
-        config_path: Path to the Movie Pipeline config preset
-        output_directory: Custom output directory (None = use project's default)
-        map_path: Path to the map to use for all sequences (None = auto-detect)
-        
-    Returns:
-        True if render queue started successfully
-    """
     if not sequence_paths:
         unreal.log_warning("[Rendering] 没有序列需要渲染")
         return False
@@ -336,23 +311,11 @@ def render_sequences_remote(
 
 
 def render_directory_remote(
-    directory: str = "/Game/CameraController/2025-12-04",
-    config_path: str = "/Game/CameraController/Pending_MoviePipelinePrimaryConfig",
+    directory: str,
+    config_path: str,
     output_directory: Optional[str] = None,
     map_path: Optional[str] = None
 ) -> bool:
-    """
-    Discover and render all level sequences in a directory
-    
-    Args:
-        directory: Directory containing level sequences
-        config_path: Path to the Movie Pipeline config preset
-        output_directory: Custom output directory (None = use default)
-        map_path: Path to the map to use (None = use first map in /Game/Maps)
-        
-    Returns:
-        True if render started successfully
-    """
     unreal.log(f"[Rendering] 扫描目录: {directory}")
     
     # Discover sequences
@@ -366,45 +329,11 @@ def render_directory_remote(
     # Render them
     return render_sequences_remote(sequences, config_path, output_directory, map_path)
 
-
-# Convenience function for quick testing
-def render_today_sequences(
-    config_path: str = "/Game/CameraController/Pending_MoviePipelinePrimaryConfig",
-    map_path: Optional[str] = None
-) -> bool:
-    """
-    Render all sequences from today's date directory
-    Uses format: /Game/CameraController/YYYY-MM-DD
-    
-    Args:
-        config_path: Path to the Movie Pipeline config preset
-        map_path: Path to the map to use (None = use first map in /Game/Maps)
-    """
-    from datetime import datetime
-    today = datetime.now().strftime("%Y-%m-%d")
-    directory = f"/Game/CameraController/{today}"
-    
-    return render_directory_remote(directory, config_path, map_path=map_path)
-
-
 # ==============================================================================
 # Manifest-driven API
 # ==============================================================================
 
 def render_sequence_from_manifest(manifest: dict) -> dict:
-    """
-    Render sequence based on job manifest
-    
-    Args:
-        manifest: job manifest dict containing:
-            - sequence: sequence asset path
-            - map: map asset path
-            - render: render config with enabled, output_format, resolution, preset, output_path
-            - frame_range: start_frame, end_frame (optional, uses sequence defaults if not specified)
-    
-    Returns:
-        dict with render results
-    """
     import unreal
     
     sequence_path = manifest.get("sequence")
@@ -420,8 +349,35 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
         return {"status": "skipped", "reason": "render disabled"}
     
     # Get render config
-    config_path = render_config.get("preset", "/Game/CameraController/Pending_MoviePipelinePrimaryConfig")
-    output_directory = render_config.get("output_path")
+    config_path = render_config.get("preset")
+    if not config_path:
+        raise ValueError("Manifest missing 'preset' in rendering config")
+    base_output_path = render_config.get("output_path")
+    
+    # Build output path: base_path/project_name/map_name/movierenders
+    output_directory = base_output_path
+    if base_output_path:
+        import os
+        
+        # Extract project name from project_path
+        ue_config = manifest.get("ue_config", {})
+        project_path = ue_config.get("project_path", "")
+        if project_path:
+            # Extract project name (e.g., "FPS" from "F:/UE_Projects/FPS/FPS.uproject")
+            project_name = os.path.splitext(os.path.basename(project_path))[0]
+        else:
+            project_name = "UnknownProject"
+        
+        # Extract map name from map path
+        if map_path:
+            # Extract map name (e.g., "Lvl_FirstPerson" from "/Game/FirstPerson/Lvl_FirstPerson")
+            map_name = map_path.split("/")[-1]
+        else:
+            map_name = "UnknownMap"
+        
+        # Construct full output path: base/project/map/movierenders
+        output_directory = os.path.join(base_output_path, project_name, map_name, "movierenders")
+        unreal.log(f"[Rendering] Constructed output path: {output_directory}")
     
     if not output_directory:
         # Use job_utils to compute default path
@@ -527,11 +483,5 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
 
 
 if __name__ == "__main__":
-    # Example usage - render sequences from specific directory
-    # Will use first map in /Game/Maps if map_path not specified
-    render_directory_remote(
-        directory="/Game/CameraController/2025-12-04",
-        config_path="/Game/CameraController/Pending_MoviePipelinePrimaryConfig",
-        map_path=None  # Set to specific map path if needed, e.g., "/Game/Maps/YourMap"
-    )
+    pass
 
