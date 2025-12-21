@@ -103,8 +103,10 @@ class SceneAssetCopier:
                 return True
         return False
     
-    def get_directory_info(self, path: Path) -> int:
+    def get_directory_info(self, path: Path) -> tuple:
+        """返回 (文件数量, 总大小)"""
         total_files = 0
+        total_size = 0
         
         for root, dirs, files in os.walk(path):
             # 过滤排除的目录
@@ -114,8 +116,12 @@ class SceneAssetCopier:
                 file_path = Path(root) / file
                 if not self.should_exclude(file_path):
                     total_files += 1
+                    try:
+                        total_size += file_path.stat().st_size
+                    except:
+                        pass
         
-        return total_files
+        return total_files, total_size
     
     def format_size(self, size_bytes: int) -> str:
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
@@ -136,12 +142,14 @@ class SceneAssetCopier:
             return False
     
     def copytree_with_progress(self, src: Path, dst: Path, prefix: str = "  "):
-        total_files = self.get_directory_info(src)
-        print(f"{prefix}Total {total_files} files")
+        total_files, total_size = self.get_directory_info(src)
+        size_str = self.format_size(total_size)
+        print(f"{prefix}Folder size: {size_str}, {total_files} files")
         
         copied_files = 0
         skipped_files = 0
         failed_count = 0
+        copied_size = 0
         
         dst.mkdir(parents=True, exist_ok=True)
         
@@ -166,25 +174,22 @@ class SceneAssetCopier:
                 # 跳过已存在的重复文件
                 if dst_file.exists():
                     skipped_files += 1
-                    print(f"{prefix}  [Skipped] {src_file.name} (already exists)")
                     continue
                 
                 copied_files += 1
                 
                 try:
                     file_size = src_file.stat().st_size
-                    size_str = self.format_size(file_size)
-                    
-                    print(f"{prefix}  [{copied_files}/{total_files}] {src_file.name} ({size_str})")
-                    
+                    copied_size += file_size
                     shutil.copy2(src_file, dst_file)
                 except Exception as e:
                     print(f"{prefix}  [Error] {src_file.name}: {e}")
                     failed_count += 1
         
-        print(f"{prefix}Completed: {copied_files}/{total_files} files copied")
+        copied_size_str = self.format_size(copied_size)
+        print(f"{prefix}Completed: {copied_files}/{total_files} files copied ({copied_size_str})")
         if skipped_files > 0:
-            print(f"{prefix}Skipped: {skipped_files} files (already existed)")
+            print(f"{prefix}Skipped: {skipped_files} files")
         if failed_count > 0:
             print(f"{prefix}Failed: {failed_count} files")
         
@@ -233,7 +238,7 @@ class SceneAssetCopier:
     def generate_scene_id(self, index: int) -> str:
         return f"{self.prefix}{index:04d}"
     
-    def process_all(self, dry_run: bool = False):
+    def process_all(self, dry_run: bool = False, batch_size: int = 10):
         content_folders = self.find_content_folders()
         
         if not content_folders:
@@ -242,37 +247,72 @@ class SceneAssetCopier:
         
         print(f"\nFound {len(content_folders)} assets")
         print(f"Target folder: {self.target_content_folder}")
-        
-        if dry_run:
-            print("\n=== Preview Mode (No actual copy) ===")
+        print(f"Batch size: {batch_size} assets per batch")
         
         # 按名称排序以保证一致性
         content_folders.sort(key=lambda x: x['name'])
         
+        # 计算批次数量
+        total_batches = (len(content_folders) + batch_size - 1) // batch_size
+        print(f"Total batches: {total_batches}")
+        
+        if dry_run:
+            print("\n=== Preview Mode (No actual copy) ===")
+        else:
+            print("\nExecuting scene asset copy...")
+        
         success_count = 0
-        for idx, folder_info in enumerate(content_folders):
-            scene_id = self.generate_scene_id(self.start_index + idx)
-            source_path = folder_info['content_path']
-            target_path = self.target_content_folder / scene_id
+        
+        # 分批处理
+        for batch_idx in range(total_batches):
+            batch_start = batch_idx * batch_size
+            batch_end = min(batch_start + batch_size, len(content_folders))
+            batch_folders = content_folders[batch_start:batch_end]
             
-            print(f"\n[{idx + 1}/{len(content_folders)}] Processing asset: {folder_info['name']}")
-            print(f"  Scene ID: {scene_id}")
-            print(f"  Source path: {source_path}")
-            print(f"  Target path: {target_path}")
+            print(f"\n{'='*70}")
+            print(f"BATCH {batch_idx + 1}/{total_batches}: Processing assets {batch_start + 1} to {batch_end}")
+            print(f"{'='*70}")
             
-            if dry_run:
-                print(f"  [Preview] Will copy to: {target_path}")
-                success_count += 1
-            else:
-                if self.copy_content(source_path, target_path):
-                    print(f"Copy succeeded")
-                    self.update_scene_status(scene_id, folder_info['name'])
+            batch_success = 0
+            for idx, folder_info in enumerate(batch_folders):
+                global_idx = batch_start + idx
+                scene_id = self.generate_scene_id(self.start_index + global_idx)
+                source_path = folder_info['content_path']
+                target_path = self.target_content_folder / scene_id
+                
+                print(f"\n[{global_idx + 1}/{len(content_folders)}] Processing asset: {folder_info['name']}")
+                print(f"  Scene ID: {scene_id}")
+                print(f"  Source path: {source_path}")
+                print(f"  Target path: {target_path}")
+                
+                if dry_run:
+                    print(f"  [Preview] Will copy to: {target_path}")
+                    batch_success += 1
                     success_count += 1
                 else:
-                    print(f"Copy failed")
+                    if self.copy_content(source_path, target_path):
+                        print(f"  [OK] Copy succeeded")
+                        self.update_scene_status(scene_id, folder_info['name'])
+                        batch_success += 1
+                        success_count += 1
+                    else:
+                        print(f"  [FAILED] Copy failed")
+            
+            print(f"\n{'='*70}")
+            print(f"BATCH {batch_idx + 1}/{total_batches} COMPLETED")
+            print(f"Batch success: {batch_success}/{len(batch_folders)}")
+            print(f"Overall progress: {success_count}/{len(content_folders)}")
+            print(f"{'='*70}")
+            
+            # 批次之间的提示
+            if batch_idx < total_batches - 1:
+                print(f"\nBatch {batch_idx + 1} finished. Proceeding to next batch...\n")
         
-        print(f"\n=== Completed ===")
-        print(f"Success: {success_count}/{len(content_folders)}")
+        print(f"\n{'='*70}")
+        print(f"ALL BATCHES COMPLETED")
+        print(f"{'='*70}")
+        print(f"Total success: {success_count}/{len(content_folders)}")
+        print(f"Total failed: {len(content_folders) - success_count}/{len(content_folders)}")
     
     def list_assets(self):
         content_folders = self.find_content_folders()
@@ -301,6 +341,10 @@ def main():
     parser.add_argument('--list', '-l', 
                        action='store_true',
                        help='List found assets only')
+    parser.add_argument('--batch-size', '-b',
+                       type=int,
+                       default=10,
+                       help='Number of assets to process per batch (default: 10)')
     
     args = parser.parse_args()
     
@@ -314,7 +358,7 @@ def main():
     if args.list:
         copier.list_assets()
     else:
-        copier.process_all(dry_run=args.dry_run)
+        copier.process_all(dry_run=args.dry_run, batch_size=args.batch_size)
 
 
 if __name__ == '__main__':

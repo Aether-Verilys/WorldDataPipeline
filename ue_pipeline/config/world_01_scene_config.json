@@ -1,8 +1,8 @@
 {
-  "project_name": "World1",
+  "project_name": "WorldTest",
   "raw_folder": "G:/Raw",
-  "target_content_folder": "G:/UnrealProjects/World1/Content",
-  "start_index": 101,
+  "target_content_folder": "G:/UnrealProjects/WorldTest/Content",
+  "start_index": 1,
   "scene_prefix": "S",
   "exclude_patterns": [
     ".git",

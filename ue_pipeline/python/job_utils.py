@@ -33,12 +33,6 @@ OPTIONAL_FIELDS = {
 
 
 def validate_manifest(manifest: Dict[str, Any]) -> tuple[bool, Optional[str]]:
-    """
-    Validate job manifest structure
-    
-    Returns:
-        (is_valid, error_message)
-    """
     # Check required fields
     for field, expected_type in REQUIRED_FIELDS.items():
         if field not in manifest:
@@ -79,14 +73,6 @@ def validate_manifest(manifest: Dict[str, Any]) -> tuple[bool, Optional[str]]:
 # ==============================================================================
 
 def read_manifest(manifest_path: str) -> Dict[str, Any]:
-    """
-    Read and parse job manifest from JSON file
-    
-    Raises:
-        FileNotFoundError: if manifest file doesn't exist
-        json.JSONDecodeError: if manifest is not valid JSON
-        ValueError: if manifest fails validation
-    """
     if not os.path.exists(manifest_path):
         raise FileNotFoundError(f"Manifest not found: {manifest_path}")
     
@@ -101,17 +87,6 @@ def read_manifest(manifest_path: str) -> Dict[str, Any]:
 
 
 def write_manifest(manifest: Dict[str, Any], output_path: str, atomic: bool = True) -> str:
-    """
-    Write manifest to JSON file
-    
-    Args:
-        manifest: manifest dict
-        output_path: output file path
-        atomic: if True, write to temp file then rename (atomic)
-    
-    Returns:
-        final file path
-    """
     is_valid, error = validate_manifest(manifest)
     if not is_valid:
         raise ValueError(f"Invalid manifest: {error}")
@@ -169,19 +144,6 @@ def write_status(
     details: Dict[str, Any] = None,
     base_dir: str = None
 ) -> str:
-    """
-    Write job status file
-    
-    Args:
-        job_id: job identifier
-        status: one of JobStatus constants
-        message: human-readable message
-        details: additional details dict
-        base_dir: base directory for status files
-    
-    Returns:
-        status file path
-    """
     status_path = get_status_path(job_id, base_dir)
     
     status_data = {
@@ -231,12 +193,6 @@ def update_status_progress(
 # ==============================================================================
 
 def get_output_paths(manifest: Dict[str, Any]) -> Dict[str, str]:
-    """
-    Compute output paths for camera export and render based on manifest
-    
-    Returns:
-        dict with keys: camera_export_dir, render_output_dir
-    """
     job_id = manifest["job_id"]
     
     # Default base output directory
@@ -276,12 +232,6 @@ def ensure_output_dirs(manifest: Dict[str, Any]) -> Dict[str, str]:
 # ==============================================================================
 
 def discover_pending_jobs(watch_dir: str) -> list[str]:
-    """
-    Discover pending job manifests in watch directory
-    
-    Returns:
-        list of manifest file paths (sorted by modification time, oldest first)
-    """
     if not os.path.exists(watch_dir):
         return []
     
@@ -298,12 +248,6 @@ def discover_pending_jobs(watch_dir: str) -> list[str]:
 
 
 def mark_job_processing(manifest_path: str) -> str:
-    """
-    Move manifest from inbox to processing directory
-    
-    Returns:
-        new path in processing directory
-    """
     inbox_dir = os.path.dirname(manifest_path)
     processing_dir = os.path.join(os.path.dirname(inbox_dir), "processing")
     os.makedirs(processing_dir, exist_ok=True)
@@ -316,12 +260,6 @@ def mark_job_processing(manifest_path: str) -> str:
 
 
 def mark_job_completed(manifest_path: str, success: bool = True) -> str:
-    """
-    Move manifest from processing to completed/failed directory
-    
-    Returns:
-        new path in completed/failed directory
-    """
     processing_dir = os.path.dirname(manifest_path)
     target_dir = os.path.join(os.path.dirname(processing_dir), "completed" if success else "failed")
     os.makedirs(target_dir, exist_ok=True)

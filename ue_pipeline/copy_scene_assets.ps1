@@ -1,7 +1,8 @@
 param(
     [string]$Config,
     [switch]$DryRun,
-    [switch]$List
+    [switch]$List,
+    [int]$BatchSize = 10
 )
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -41,7 +42,7 @@ if (-not (Test-Path $configPath)) {
     exit 1
 }
 
-$pythonArgs = @($pythonScript, "--config", $configPath)
+$pythonArgs = @($pythonScript, "--config", $configPath, "--batch-size", $BatchSize)
 
 if ($DryRun) {
     $pythonArgs += "--dry-run"
@@ -58,8 +59,8 @@ if (-not (Test-Path $logDir)) {
 }
 $logFile = Join-Path $logDir "world_01_scene_assets_$timestamp.log"
 
-Write-Host "Executing scene asset copy..." -ForegroundColor Cyan
 Write-Host "Config file: $configPath" -ForegroundColor Gray
+Write-Host "Batch size: $BatchSize assets per batch" -ForegroundColor Gray
 Write-Host "Log file: $logFile" -ForegroundColor Gray
 
 python @pythonArgs 2>&1 | Tee-Object -FilePath $logFile
