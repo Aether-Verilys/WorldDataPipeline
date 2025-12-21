@@ -1,0 +1,15 @@
+{
+  "project_name": "World1",
+  "raw_folder": "G:/Raw",
+  "target_content_folder": "G:/UnrealProjects/World1/Content",
+  "start_index": 101,
+  "scene_prefix": "S",
+  "exclude_patterns": [
+    ".git",
+    ".svn",
+    "Intermediate",
+    "Saved",
+    "DerivedDataCache",
+    ".DS_Store"
+  ]
+}
