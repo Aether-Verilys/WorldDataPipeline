@@ -8,7 +8,7 @@ from datetime import datetime
 
 
 class SceneAssetCopier:
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: str, overwrite: bool = False):
         self.config = self.load_config(config_path)
         self.raw_folder = Path(self.config['raw_folder'])
         self.target_content_folder = Path(self.config['target_content_folder'])
@@ -16,9 +16,10 @@ class SceneAssetCopier:
         self.prefix = self.config.get('scene_prefix', 'S')
         self.exclude_patterns = self.config.get('exclude_patterns', [])
         self.project_name = self.config.get('project_name', 'Unknown')
+        self.overwrite = overwrite
         
         # 场景状态文件路径
-        script_dir = Path(__file__).parent.parent
+        script_dir = Path(__file__).parent
         status_filename = f'{self.project_name}_scenes_status.json'
         self.scene_status_file = script_dir / 'scenes' / status_filename
         self.scene_status_file.parent.mkdir(parents=True, exist_ok=True)
@@ -31,6 +32,7 @@ class SceneAssetCopier:
         if not self.scene_status_file.exists():
             return {
                 "project_name": self.project_name,
+                "project_path": str(self.target_content_folder.parent),
                 "last_updated": "",
                 "scenes": []
             }
@@ -38,13 +40,54 @@ class SceneAssetCopier:
         with open(self.scene_status_file, 'r', encoding='utf-8') as f:
             return json.load(f)
     
+    def find_umap_files(self, scene_folder: Path, scene_id: str) -> List[str]:
+        """查找场景文件夹下的所有.umap文件，并转换为UE路径格式
+        
+        Args:
+            scene_folder: 场景文件夹路径，如 Content/S0001
+            scene_id: 场景ID，如 S0001
+        
+        Returns:
+            UE路径格式的地图列表，如 ['/Game/S0001/Maps/MainMap']
+        """
+        umap_paths = []
+        
+        if not scene_folder.exists():
+            return umap_paths
+        
+        for root, dirs, files in os.walk(scene_folder):
+            # 过滤排除的目录
+            dirs[:] = [d for d in dirs if not self.should_exclude(Path(root) / d)]
+            
+            for file in files:
+                if file.endswith('.umap'):
+                    file_path = Path(root) / file
+                    if not self.should_exclude(file_path):
+                        # 转换为UE路径格式: /Game/S0001/FolderPath/MapName
+                        # scene_folder 是 Content/S0001，file_path 相对于它的路径
+                        rel_path = file_path.relative_to(scene_folder)
+                        # 构建UE路径，移除.umap扩展名
+                        if rel_path.parent == Path('.'):
+                            # 文件直接在S0001根目录
+                            ue_path = f"/Game/{scene_id}/{rel_path.stem}"
+                        else:
+                            # 文件在子文件夹中
+                            folder_path = str(rel_path.parent).replace('\\', '/')
+                            ue_path = f"/Game/{scene_id}/{folder_path}/{rel_path.stem}"
+                        
+                        umap_paths.append(ue_path)
+        
+        return sorted(umap_paths)
+    
     def save_scene_status(self, status_data: dict):
         status_data['project_name'] = self.project_name
+        status_data['project_path'] = str(self.target_content_folder.parent)
         status_data['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         with open(self.scene_status_file, 'w', encoding='utf-8') as f:
             json.dump(status_data, f, indent=2, ensure_ascii=False)
     
-    def update_scene_status(self, scene_id: str, name: str):
+    def update_scene_status(self, scene_id: str, name: str, map_paths: List[str]):
+        """更新场景状态，包括地图路径列表"""
         status_data = self.load_scene_status()
         
         # 查找是否已存在该场景
@@ -55,14 +98,46 @@ class SceneAssetCopier:
                 break
         
         if existing_scene:
+            # 更新场景名称
             existing_scene['name'] = name
+            
+            # 更新地图列表（保留已有的actor_added和baked状态）
+            existing_maps = {m['path']: m for m in existing_scene.get('maps', [])}
+            new_maps = []
+            map_index = 1
+            
+            for map_path in map_paths:
+                if map_path in existing_maps:
+                    # 保留现有状态
+                    new_maps.append(existing_maps[map_path])
+                else:
+                    # 新地图，初始化状态
+                    map_id = f"{scene_id}M{map_index:03d}"
+                    new_maps.append({
+                        "id": map_id,
+                        "path": map_path,
+                        "actor_added": False,
+                        "baked": False
+                    })
+                map_index += 1
+            
+            existing_scene['maps'] = new_maps
         else:
-            status_data['scenes'].append({
+            # 新场景
+            new_scene = {
                 "id": scene_id,
                 "name": name,
-                "actor_added": False,
-                "baked": False
-            })
+                "maps": [
+                    {
+                        "id": f"{scene_id}M{idx+1:03d}",
+                        "path": map_path,
+                        "actor_added": False,
+                        "baked": False
+                    }
+                    for idx, map_path in enumerate(map_paths)
+                ]
+            }
+            status_data['scenes'].append(new_scene)
         
         # 按场景ID排序
         status_data['scenes'].sort(key=lambda x: x['id'])
@@ -171,10 +246,12 @@ class SceneAssetCopier:
                 
                 dst_file = target_dir / file
                 
-                # 跳过已存在的重复文件
+                # 检查文件是否存在
                 if dst_file.exists():
-                    skipped_files += 1
-                    continue
+                    if not self.overwrite:
+                        skipped_files += 1
+                        continue
+                    # 覆盖模式：继续复制
                 
                 copied_files += 1
                 
@@ -182,16 +259,21 @@ class SceneAssetCopier:
                     file_size = src_file.stat().st_size
                     copied_size += file_size
                     shutil.copy2(src_file, dst_file)
+                except PermissionError as e:
+                    print(f"{prefix}  [Permission Denied] {src_file.name} - File may be open in UE Editor or locked")
+                    failed_count += 1
+                    copied_files -= 1  # 不计入已复制数
                 except Exception as e:
                     print(f"{prefix}  [Error] {src_file.name}: {e}")
                     failed_count += 1
+                    copied_files -= 1
         
         copied_size_str = self.format_size(copied_size)
         print(f"{prefix}Completed: {copied_files}/{total_files} files copied ({copied_size_str})")
         if skipped_files > 0:
-            print(f"{prefix}Skipped: {skipped_files} files")
+            print(f"{prefix}Skipped: {skipped_files} files (already exist)")
         if failed_count > 0:
-            print(f"{prefix}Failed: {failed_count} files")
+            print(f"{prefix}Failed: {failed_count} files (check permissions or close UE Editor)")
         
         return failed_count == 0
     
@@ -212,23 +294,32 @@ class SceneAssetCopier:
                 target_path = target_scene_folder / item.name
                 
                 if item.is_dir():
-                    if target_path.exists():
+                    if target_path.exists() and not self.overwrite:
                         print(f"  [{idx}/{len(items_to_copy)}] Skipping folder: {item.name} (already exists)")
                         continue
                     
-                    print(f"  [{idx}/{len(items_to_copy)}] Copying folder: {item.name}")
+                    action = "Overwriting" if target_path.exists() else "Copying"
+                    print(f"  [{idx}/{len(items_to_copy)}] {action} folder: {item.name}")
                     success = self.copytree_with_progress(item, target_path, prefix="    ")
                     if not success:
                         all_success = False
                 else:
-                    if target_path.exists():
+                    if target_path.exists() and not self.overwrite:
                         print(f"  [{idx}/{len(items_to_copy)}] Skipping file: {item.name} (already exists)")
                         continue
                     
                     file_size = item.stat().st_size
                     size_str = self.format_size(file_size)
-                    print(f"  [{idx}/{len(items_to_copy)}] Copying file: {item.name} ({size_str})")
-                    shutil.copy2(item, target_path)
+                    action = "Overwriting" if target_path.exists() else "Copying"
+                    print(f"  [{idx}/{len(items_to_copy)}] {action} file: {item.name} ({size_str})")
+                    try:
+                        shutil.copy2(item, target_path)
+                    except PermissionError:
+                        print(f"    [Permission Denied] File may be open in UE Editor or locked")
+                        all_success = False
+                    except Exception as e:
+                        print(f"    [Error] {e}")
+                        all_success = False
             
             return all_success
         except Exception as e:
@@ -292,7 +383,19 @@ class SceneAssetCopier:
                 else:
                     if self.copy_content(source_path, target_path):
                         print(f"  [OK] Copy succeeded")
-                        self.update_scene_status(scene_id, folder_info['name'])
+                        
+                        # 扫描并记录.umap文件
+                        print(f"  Scanning for .umap files...")
+                        umap_paths = self.find_umap_files(target_path, scene_id)
+                        if umap_paths:
+                            print(f"  Found {len(umap_paths)} map(s):")
+                            for umap_path in umap_paths:
+                                print(f"    - {umap_path}")
+                        else:
+                            print(f"  No .umap files found")
+                        
+                        self.update_scene_status(scene_id, folder_info['name'], umap_paths)
+                        print(f"  [OK] Scene status saved to {self.scene_status_file.name}")
                         batch_success += 1
                         success_count += 1
                     else:
@@ -345,15 +448,29 @@ def main():
                        type=int,
                        default=10,
                        help='Number of assets to process per batch (default: 10)')
+    parser.add_argument('--overwrite', '-o',
+                       action='store_true',
+                       help='Overwrite existing files instead of skipping them')
     
     args = parser.parse_args()
     
-    if not os.path.exists(args.config):
-        print(f"Error: Config file does not exist: {args.config}")
+    # Process config path
+    config_path = Path(args.config)
+    
+    # If not absolute path, resolve relative to script directory (ue_pipeline)
+    if not config_path.is_absolute():
+        script_dir = Path(__file__).parent
+        config_path = script_dir / config_path
+    
+    # Normalize path
+    config_path = config_path.resolve()
+    
+    if not config_path.exists():
+        print(f"Error: Config file does not exist: {config_path}")
         print("Please create config file or specify config file path with --config")
         return
     
-    copier = SceneAssetCopier(args.config)
+    copier = SceneAssetCopier(str(config_path), overwrite=args.overwrite)
     
     if args.list:
         copier.list_assets()
