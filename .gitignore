@@ -2,3 +2,6 @@
 output
 ue_pipeline/python/__pycache__
 ue_pipeline/logs
+ue_template/WorldData00/DerivedDataCache
+ue_template/WorldData00/Intermediate
+ue_template/WorldData00/Saved
