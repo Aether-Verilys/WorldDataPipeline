@@ -5,12 +5,13 @@
     "editor_path": "/opt/UE5.7/UnrealEngine-5.7.1/Engine/Binaries/Linux/UnrealEditor-Cmd",
     "project_path": "/opt/UE_Projects/FPS/FPS.uproject"
   },
-  "map": "/Game/Maps/Lvl_FirstPerson",
-  "sequence": "/Game/CameraController/2025-12-15/Scene_1_01",
+  "map": "/Game/FirstPerson/Lvl_FirstPerson",
+  "sequence": "/Game/CameraController/2025-12-15/Scene_1_02",
   "rendering": {
     "enabled": true,
     "preset": "/Game/CameraController/Pending_MoviePipelinePrimaryConfig",
     "output_path": "/opt/output/renders",
+    "framerate": 30,
     "frame_range": {
       "start_frame": 0,
       "end_frame": -1
