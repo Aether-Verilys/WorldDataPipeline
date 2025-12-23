@@ -1,0 +1,67 @@
+{
+  "editor_path": "F:/Epic/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
+  "project_path": "E:/WorldProject/WorldProject.uproject",
+  "output_base_dir": "E:/WorldDataPipeline/output",
+  "scenes": [
+    {
+      "id": "S0001",
+      "name": "S0001",
+      "maps": [
+        {
+          "name": "Lvl_FirstPerson",
+          "path": "/Game/S0001/LevelPrototyping/Lvl_FirstPerson",
+          "actor_added": false,
+          "baked": false
+        }
+      ]
+    },
+    {
+      "id": "S0002",
+      "name": "S0002",
+      "maps": [
+        {
+          "name": "Demonstration",
+          "path": "/Game/S0002/Seaside_Town/Maps/Demonstration",
+          "actor_added": false,
+          "baked": false
+        },
+        {
+          "name": "Overview",
+          "path": "/Game/S0002/Seaside_Town/Maps/Overview",
+          "actor_added": false,
+          "baked": false
+        }
+      ]
+    },
+    {
+      "id": "S0003",
+      "name": "S0003",
+      "maps": [
+        {
+          "name": "ModularScifiStationExample",
+          "path": "/Game/S0003/ModularScifiStation/Maps/ModularScifiStationExample",
+          "actor_added": false,
+          "baked": false
+        },
+        {
+          "name": "Overview",
+          "path": "/Game/S0003/ModularScifiStation/Maps/Overview",
+          "actor_added": false,
+          "baked": false
+        }
+      ]
+    },
+    {
+      "id": "S0004",
+      "name": "S0004",
+      "maps": [
+        {
+          "name": "Canyon_DemoScene",
+          "path": "/Game/S0004/CanyonScans/Maps/Canyon_DemoScene",
+          "actor_added": false,
+          "baked": false
+        }
+      ]
+    }
+  ]
+}

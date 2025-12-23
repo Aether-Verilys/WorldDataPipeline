@@ -104,22 +104,24 @@ class SceneAssetCopier:
             # 更新地图列表（保留已有的actor_added和baked状态）
             existing_maps = {m['path']: m for m in existing_scene.get('maps', [])}
             new_maps = []
-            map_index = 1
             
             for map_path in map_paths:
+                # 从路径提取地图名 (例如: /Game/S0001/Maps/MainMap -> MainMap)
+                map_name = map_path.split('/')[-1]
+                
                 if map_path in existing_maps:
-                    # 保留现有状态
-                    new_maps.append(existing_maps[map_path])
+                    # 保留现有状态，但更新name为地图名
+                    existing_map = existing_maps[map_path].copy()
+                    existing_map['name'] = map_name
+                    new_maps.append(existing_map)
                 else:
                     # 新地图，初始化状态
-                    map_id = f"{scene_id}M{map_index:03d}"
                     new_maps.append({
-                        "id": map_id,
+                        "name": map_name,
                         "path": map_path,
                         "actor_added": False,
                         "baked": False
                     })
-                map_index += 1
             
             existing_scene['maps'] = new_maps
         else:
@@ -129,12 +131,12 @@ class SceneAssetCopier:
                 "name": name,
                 "maps": [
                     {
-                        "id": f"{scene_id}M{idx+1:03d}",
+                        "name": map_path.split('/')[-1],  # 使用地图名作为name
                         "path": map_path,
                         "actor_added": False,
                         "baked": False
                     }
-                    for idx, map_path in enumerate(map_paths)
+                    for map_path in map_paths
                 ]
             }
             status_data['scenes'].append(new_scene)

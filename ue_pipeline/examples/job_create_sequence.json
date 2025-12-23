@@ -1,14 +1,10 @@
 {
   "job_type": "create_sequence",
   "job_id": "job-create-sequence-test-001",
-  "ue_config": {
-    "editor_path": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe",
-    "project_path": "D:/UE_Projects/WorldProject/WorldProject.uproject"
-  },
   "map": "/Game/Maps/Lvl_FirstPerson",
   "sequence_config": {
     "output_dir": "/Game/CameraController/Generated",
-    "sequence_number": 20,
+    "sequence_number": 1,
     "fps": 30,
     "duration_seconds": 120.0,
     "add_camera": true,

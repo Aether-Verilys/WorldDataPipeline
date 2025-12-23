@@ -1,6 +1,8 @@
 import unreal
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import gc
+import os
+import json
 
 def discover_level_sequences(directory: str) -> List[str]:
     if not unreal.EditorAssetLibrary.does_directory_exist(directory):
@@ -81,11 +83,86 @@ def log_output_settings(config: unreal.MoviePipelinePrimaryConfig, context: str)
         unreal.log_warning(f"[Rendering] {context} Failed to inspect settings: {exc}")
 
 
+def find_map_path_from_sequence_name(sequence_name: str, ue_config: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """
+    根据序列名称从ue_config中查找匹配的地图路径
+    
+    Args:
+        sequence_name: 序列名称，如 "Lvl_FirstPerson_001"
+        ue_config: UE配置字典，如果为None则尝试从默认路径加载
+    
+    Returns:
+        匹配的地图路径，如 "/Game/S0001/LevelPrototyping/Lvl_FirstPerson"
+    """
+    if not sequence_name:
+        return None
+    
+    # 从序列名称中提取前缀（去掉数字后缀）
+    # 例如: "Lvl_FirstPerson_001" -> "Lvl_FirstPerson"
+    import re
+    # 移除末尾的数字后缀 (如 _001, _01, 或纯数字)
+    map_name_pattern = re.sub(r'[_-]?\d+$', '', sequence_name)
+    
+    unreal.log(f"[Rendering] 从序列名称 '{sequence_name}' 提取地图前缀: '{map_name_pattern}'")
+    
+    # 如果没有提供ue_config，尝试加载默认配置
+    if ue_config is None:
+        # 尝试从常见位置加载ue_config.json
+        # 获取当前脚本所在目录的父目录（ue_pipeline）
+        current_file = os.path.abspath(__file__)
+        python_dir = os.path.dirname(current_file)
+        ue_pipeline_dir = os.path.dirname(python_dir)
+        
+        config_paths = [
+            os.path.join(ue_pipeline_dir, "config", "ue_config.json"),
+            os.path.join(os.getcwd(), "ue_pipeline", "config", "ue_config.json"),
+            os.path.join(os.getcwd(), "config", "ue_config.json"),
+        ]
+        
+        for config_path in config_paths:
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        ue_config = json.load(f)
+                    unreal.log(f"[Rendering] 加载配置文件: {config_path}")
+                    break
+                except Exception as e:
+                    unreal.log_warning(f"[Rendering] 无法加载配置 {config_path}: {e}")
+        
+        if ue_config:
+            unreal.log(f"[Rendering] 成功加载ue_config，包含 {len(ue_config.get('scenes', []))} 个场景")
+        else:
+            unreal.log_warning("[Rendering] 所有配置路径均未找到ue_config.json")
+            for path in config_paths:
+                unreal.log_warning(f"[Rendering]   尝试: {path} - 存在: {os.path.exists(path)}")
+    
+    if not ue_config:
+        unreal.log_warning("[Rendering] 无法加载ue_config，无法自动检测地图")
+        return None
+    
+    # 在所有scene的maps中查找匹配的地图
+    scenes = ue_config.get("scenes", [])
+    for scene in scenes:
+        maps = scene.get("maps", [])
+        for map_info in maps:
+            map_name = map_info.get("name", "")
+            map_path = map_info.get("path", "")
+            
+            # 检查地图名称是否匹配序列前缀
+            if map_name == map_name_pattern or map_name_pattern.startswith(map_name):
+                unreal.log(f"[Rendering] 找到匹配地图: {map_name} -> {map_path}")
+                return map_path
+    
+    unreal.log_warning(f"[Rendering] 在ue_config中未找到匹配 '{map_name_pattern}' 的地图")
+    return None
+
+
 def create_render_job(
     sequence_path: str,
     config_path: str,
     output_directory: Optional[str] = None,
-    map_path: Optional[str] = None
+    map_path: Optional[str] = None,
+    ue_config: Optional[Dict[str, Any]] = None
 ) -> Optional[unreal.MoviePipelineExecutorJob]:
     unreal.log(f"[Rendering] 尝试加载序列: {sequence_path}")
     sequence = unreal.load_asset(sequence_path)
@@ -119,22 +196,26 @@ def create_render_job(
         target_map = map_path
         unreal.log(f"[Rendering] 使用指定地图: {target_map}")
     else:
+        # 先尝试从序列的outer获取地图
         try:
             outer_path = sequence.get_outer().get_path_name()
             # Check if it's a valid world/map
-            if "/Game/Maps" in outer_path or outer_path.startswith("/Game/") and "World" in str(type(sequence.get_outer())):
+            if outer_path.startswith("/Game/") and "World" in str(type(sequence.get_outer())):
                 target_map = outer_path
                 unreal.log(f"[Rendering] 从序列检测到地图: {target_map}")
             else:
                 raise Exception("Not a valid map path")
-        except:
-            import level_launcher
-            maps = level_launcher.discover_map_assets()
-            if maps:
-                target_map = maps[0]
-                unreal.log(f"[Rendering] 使用默认地图: {target_map}")
+        except Exception as e:
+            unreal.log(f"[Rendering] 无法从序列outer获取地图: {e}")
+            
+            # 尝试根据序列名称从ue_config中查找地图
+            detected_map = find_map_path_from_sequence_name(sequence_name, ue_config)
+            if detected_map:
+                target_map = detected_map
+                unreal.log(f"[Rendering] 从ue_config检测到地图: {target_map}")
             else:
-                unreal.log_error("[Rendering] 无法找到任何地图")
+                unreal.log_error("[Rendering] 无法确定地图路径")
+                unreal.log_error("[Rendering] 请在job配置中明确指定map_path参数，或确保ue_config.json中包含对应的地图配置")
                 return None
     
     # Create job
@@ -151,22 +232,27 @@ def create_render_job(
     
     settings = job.get_configuration().get_all_settings()
     
-    # check if have MP4 encoder
-    has_mp4_encoder = False
-    for setting in settings:
-        if type(setting).__name__ == "MoviePipelineMP4EncoderOutput":
-            has_mp4_encoder = True
-            unreal.log("[Rendering] Detected MP4 encoder in pipeline")
-            break
-    
     for setting in settings:
         if isinstance(setting, unreal.MoviePipelineOutputSetting):
             if output_directory:
-                # Add sequence name subfolder to output path
+                # Output directory already includes the sequence name from caller
+                # No need to add sequence_name subfolder again
+                # Ensure absolute path and normalize separators
                 import os
-                output_with_sequence = os.path.join(output_directory, sequence_name)
-                setting.output_directory = unreal.DirectoryPath(output_with_sequence)
-                unreal.log(f"[Rendering] Output directory set: {output_with_sequence}")
+                abs_output = os.path.abspath(output_directory)
+                # Convert to forward slashes for UE compatibility
+                abs_output_normalized = abs_output.replace('\\', '/')
+                setting.output_directory = unreal.DirectoryPath(abs_output_normalized)
+                unreal.log(f"[Rendering] Output directory set (absolute): {abs_output_normalized}")
+                
+                # Verify the path was set correctly
+                try:
+                    set_path = setting.output_directory.path
+                    unreal.log(f"[Rendering] Verified output_directory.path = '{set_path}'")
+                    if not set_path or set_path.strip() == "":
+                        unreal.log_error("[Rendering] WARNING: output_directory.path is empty!")
+                except Exception as e:
+                    unreal.log_warning(f"[Rendering] Could not verify output path: {e}")
             
             # Always ensure file name format includes sequence name and frame number
             current_format = getattr(setting, "file_name_format", "")
@@ -183,23 +269,17 @@ def create_render_job(
             except Exception as e:
                 unreal.log_warning(f"[Rendering] Could not set via editor property: {e}")
             
-            format_overrides = getattr(setting, "file_name_format_overrides", None)
-            if format_overrides:
-                unreal.log_warning(f"[Rendering] Found file_name_format_overrides: {format_overrides}")
-                unreal.log_warning("[Rendering] Clearing overrides to prevent MP4 naming issues")
-                try:
-                    # Try to clear the overrides map
-                    if hasattr(setting, "set_editor_property"):
-                        setting.set_editor_property("file_name_format_overrides", {})
-                    else:
-                        setting.file_name_format_overrides = {}
-                except Exception as e:
-                    unreal.log_error(f"[Rendering] Failed to clear overrides: {e}")
-            else:
-                unreal.log("[Rendering] No file_name_format_overrides found (good)")
+            # Final verification of all output settings
+            unreal.log("[Rendering] ========== Final Output Settings ==========")
+            try:
+                final_dir = setting.output_directory.path if hasattr(setting.output_directory, 'path') else str(setting.output_directory)
+                unreal.log(f"[Rendering] Final output_directory: '{final_dir}'")
+                unreal.log(f"[Rendering] Final file_name_format: '{setting.file_name_format}'")
+                unreal.log(f"[Rendering] Final output_file_extension: '{getattr(setting, 'output_file_extension', 'N/A')}'")
+            except Exception as e:
+                unreal.log_error(f"[Rendering] Error verifying final settings: {e}")
+            unreal.log("[Rendering] ===========================================")
             
-            ensure_unique = getattr(setting, "ensure_unique_filenames", None)
-            unreal.log(f"[Rendering] Ensure unique filenames: {ensure_unique}")
             break
     
     unreal.log(f"[Rendering] 创建渲染任务: {job.job_name} -> {target_map}")
@@ -327,28 +407,58 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
         raise ValueError("Manifest missing 'preset' in rendering config")
     base_output_path = render_config.get("output_path")
     
-    # Build output path: base_path/project_name/map_name/movierenders
+    # Build output path: base_path/scene_id/map_name/sequence_name
     output_directory = base_output_path
+    
+    # 获取ue_config用于地图检测和场景查找
+    ue_config = manifest.get("ue_config", {})
+    
     if base_output_path:
-        import os
-        
-        ue_config = manifest.get("ue_config", {})
-        project_path = ue_config.get("project_path", "")
-        if project_path:
-            # Extract project name (e.g., "FPS" from "F:/UE_Projects/FPS/FPS.uproject")
-            project_name = os.path.splitext(os.path.basename(project_path))[0]
-        else:
-            project_name = "UnknownProject"
+        # Extract scene ID and map name from map_path
+        # Map path format: /Game/S0001/LevelPrototyping/Lvl_FirstPerson
+        scene_id = "UnknownScene"
+        map_name = "UnknownMap"
         
         if map_path:
-            # Extract map name (e.g., "Lvl_FirstPerson" from "/Game/FirstPerson/Lvl_FirstPerson")
+            # Extract map name (last part)
             map_name = map_path.split("/")[-1]
-        else:
-            map_name = "UnknownMap"
+            
+            # Extract scene ID from map path (e.g., S0001 from /Game/S0001/...)
+            path_parts = map_path.split("/")
+            if len(path_parts) > 2:
+                # Try to find scene ID in path (format: S####)
+                import re
+                for part in path_parts:
+                    if re.match(r'^S\d{4}$', part):
+                        scene_id = part
+                        break
+            
+            # If no scene ID found in path, try to lookup from ue_config
+            if scene_id == "UnknownScene":
+                scenes = ue_config.get("scenes", [])
+                for scene in scenes:
+                    maps = scene.get("maps", [])
+                    for map_info in maps:
+                        if map_info.get("path") == map_path:
+                            scene_id = scene.get("id", "UnknownScene")
+                            break
+                    if scene_id != "UnknownScene":
+                        break
         
-        # Construct full output path: base/project/map/movierenders
-        output_directory = os.path.join(base_output_path, project_name, map_name, "movierenders")
-        unreal.log(f"[Rendering] Constructed output path: {output_directory}")
+        # Extract sequence name from sequence_path
+        # Sequence path format: /Game/CameraController/Generated/Lvl_FirstPerson_001
+        sequence_name = sequence_path.split("/")[-1] if sequence_path else "UnknownSequence"
+        
+        # Construct full output path: base/scene_id/map_name/sequence_name
+        output_directory = os.path.join(base_output_path, scene_id, map_name, sequence_name)
+        # Convert to absolute path immediately
+        output_directory = os.path.abspath(output_directory)
+        # Normalize path separators for UE (use forward slashes)
+        output_directory = output_directory.replace('\\', '/')
+        unreal.log(f"[Rendering] Scene ID: {scene_id}")
+        unreal.log(f"[Rendering] Map name: {map_name}")
+        unreal.log(f"[Rendering] Sequence name: {sequence_name}")
+        unreal.log(f"[Rendering] Constructed absolute output path: {output_directory}")
     
     if not output_directory:
         # Use job_utils to compute default path
@@ -364,29 +474,31 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
     unreal.log(f"[Rendering] Config: {config_path}")
     unreal.log(f"[Rendering] Output: {output_directory}")
     
-    # Ensure output directory exists and convert to absolute path
+    # Ensure output directory exists and is absolute path
     if output_directory:
         import os
-        # If relative path, make it relative to current working directory
-        if not os.path.isabs(output_directory):
-            abs_output = os.path.abspath(output_directory)
-            unreal.log(f"[Rendering] Converting relative path to absolute: {abs_output}")
-            output_directory = abs_output
-        else:
-            abs_output = output_directory
+        # Always ensure absolute path (even if already absolute, normalize it)
+        abs_output = os.path.abspath(output_directory)
+        # Normalize to forward slashes for UE
+        abs_output = abs_output.replace('\\', '/')
+        output_directory = abs_output
+        unreal.log(f"[Rendering] Final absolute output path: {abs_output}")
         
+        # Create directory structure (use original format for os.makedirs)
+        abs_output_for_mkdir = abs_output.replace('/', os.sep)
         try:
-            os.makedirs(abs_output, exist_ok=True)
-            unreal.log(f"[Rendering] Output directory ready: {abs_output}")
+            os.makedirs(abs_output_for_mkdir, exist_ok=True)
+            unreal.log(f"[Rendering] Output directory created/verified: {abs_output}")
         except Exception as e:
-            unreal.log_warning(f"[Rendering] Failed to create output directory: {e}")
+            unreal.log_error(f"[Rendering] Failed to create output directory: {e}")
     
     # Create render job
     job = create_render_job(
         sequence_path=sequence_path,
         config_path=config_path,
         output_directory=output_directory,
-        map_path=map_path
+        map_path=map_path,
+        ue_config=ue_config
     )
     
     if not job:

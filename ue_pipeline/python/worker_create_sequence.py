@@ -8,13 +8,16 @@ import unreal
 
 print("[WorkerCreateSequence] Starting job execution...")
 
-# Parse manifest path
-manifest_path = None
-for i, arg in enumerate(sys.argv):
-    if arg.startswith("--manifest="):
-        manifest_path = arg.split("=", 1)[1]
-    elif arg == "--manifest" and i + 1 < len(sys.argv):
-        manifest_path = sys.argv[i + 1]
+# Parse manifest path from environment variable or command line arguments
+manifest_path = os.environ.get('UE_MANIFEST_PATH')
+
+if not manifest_path:
+    # Fallback to command line arguments
+    for i, arg in enumerate(sys.argv):
+        if arg.startswith("--manifest="):
+            manifest_path = arg.split("=", 1)[1]
+        elif arg == "--manifest" and i + 1 < len(sys.argv):
+            manifest_path = sys.argv[i + 1]
 
 if not manifest_path:
     print("[WorkerCreateSequence] ERROR: No manifest path provided")

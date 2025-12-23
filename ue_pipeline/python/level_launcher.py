@@ -7,7 +7,6 @@ import unreal
 DEFAULT_WAIT_INTERVAL = 0.25
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_RUN_SECONDS = 20
-MAPS_ROOT = "/Game/Maps"
 
 
 @dataclass
@@ -15,12 +14,15 @@ class RunnerConfig:
     wait_interval: float = DEFAULT_WAIT_INTERVAL
     begin_play_timeout: float = DEFAULT_TIMEOUT
     run_seconds: float = DEFAULT_RUN_SECONDS
-    maps_root: str = MAPS_ROOT
+    maps_root: Optional[str] = None
 
 
-def discover_map_assets(root: str = MAPS_ROOT) -> Iterable[str]:
+def discover_map_assets(root: str) -> Iterable[str]:
+    if not root:
+        unreal.log_error("[AutoPipeline] discover_map_assets需要明确指定root参数")
+        return []
     if not unreal.EditorAssetLibrary.does_directory_exist(root):
-        unreal.log_warning(f"[AutoPipeline] 目录不存在: {root}")
+        unreal.log_error(f"[AutoPipeline] 目录不存在: {root}")
         return []
 
     assets = unreal.EditorAssetLibrary.list_assets(root, recursive=True, include_folder=False)
@@ -114,7 +116,7 @@ class LevelLauncher:
         self.current_map_index += 1
         if self.current_map_index >= len(self.maps):
             unreal.log(f"[LevelLauncher] =================================================")
-            unreal.log(f"[LevelLauncher] ✓ 所有关卡运行完成! 共处理 {len(self.maps)} 个关卡")
+            unreal.log(f"[LevelLauncher] 所有关卡运行完成! 共处理 {len(self.maps)} 个关卡")
             unreal.log(f"[LevelLauncher] =================================================")
             self.stop()
             return
@@ -125,7 +127,7 @@ class LevelLauncher:
         
         try:
             if self.level_editor.load_level(map_asset):
-                unreal.log(f"[LevelLauncher] ✓ 关卡加载成功: {map_asset}")
+                unreal.log(f"[LevelLauncher] 关卡加载成功: {map_asset}")
                 self.set_state("STARTING_PIE")
             else:
                 unreal.log_error(f"[LevelLauncher] 加载关卡失败 {map_asset}")
@@ -199,7 +201,7 @@ class LevelLauncher:
             if not self.is_playing():
                 unreal.log("[LevelLauncher] PIE已停止")
                 map_asset = self.maps[self.current_map_index]
-                unreal.log(f"[LevelLauncher] ✓ 关卡运行成功: {map_asset}")
+                unreal.log(f"[LevelLauncher] 关卡运行成功: {map_asset}")
                 self.next_map()
             elif elapsed > self.config.begin_play_timeout:
                 unreal.log_error("[LevelLauncher] 等待PIE停止超时，强制继续")
@@ -223,9 +225,9 @@ def load_level_from_manifest(manifest: dict) -> bool:
     success = level_editor.load_level(map_path)
     
     if success:
-        unreal.log(f"[LevelLauncher] ✓ Map loaded: {map_path}")
+        unreal.log(f"[LevelLauncher] Map loaded: {map_path}")
     else:
-        unreal.log_error(f"[LevelLauncher] ✗ Failed to load map: {map_path}")
+        unreal.log_error(f"[LevelLauncher] Failed to load map: {map_path}")
     
     return success
 

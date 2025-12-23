@@ -75,8 +75,33 @@ try {
     Write-ErrorAndExit "Failed to read config fields: $_"
 }
 
-# Extract project name
-$projectName = [System.IO.Path]::GetFileNameWithoutExtension($projectPath)
+# Extract scene ID from map path
+# Map path format: /Game/S0001/LevelPrototyping/Lvl_FirstPerson
+$sceneId = "UnknownScene"
+$pathParts = $mapPath -split '/'
+
+# Try to find scene ID in path (format: S####)
+foreach ($part in $pathParts) {
+    if ($part -match '^S\d{4}$') {
+        $sceneId = $part
+        break
+    }
+}
+
+# If no scene ID found in path, try to lookup from config scenes
+if ($sceneId -eq "UnknownScene" -and $config.PSObject.Properties.Name -contains 'scenes') {
+    foreach ($scene in $config.scenes) {
+        foreach ($map in $scene.maps) {
+            if ($map.path -eq $mapPath) {
+                $sceneId = $scene.id
+                break
+            }
+        }
+        if ($sceneId -ne "UnknownScene") {
+            break
+        }
+    }
+}
 
 # Extract map name
 $mapName = $mapPath.Split('/')[-1]
@@ -84,13 +109,12 @@ $mapName = $mapPath.Split('/')[-1]
 # Extract sequence name
 $sequenceName = $sequencePath.Split('/')[-1]
 
-# Construct output directory path
-$outputDir = Join-Path $baseOutputPath $projectName
+# Construct output directory path: base/scene_id/map_name/sequence_name
+$outputDir = Join-Path $baseOutputPath $sceneId
 $outputDir = Join-Path $outputDir $mapName
-$outputDir = Join-Path $outputDir "movierenders"
 $outputDir = Join-Path $outputDir $sequenceName
 
-Write-Host "Project: $projectName" -ForegroundColor Cyan
+Write-Host "Scene: $sceneId" -ForegroundColor Cyan
 Write-Host "Map: $mapName" -ForegroundColor Cyan
 Write-Host "Sequence: $sequenceName" -ForegroundColor Cyan
 Write-Host "Output directory: $outputDir" -ForegroundColor Cyan

@@ -1,16 +1,11 @@
 {
   "job_type": "render",
   "job_id": "job-render-001",
-  "ue_config": {
-    "editor_path": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe",
-    "project_path": "D:/UE_Projects/WorldProject/WorldProject.uproject"
-  },
-  "map": "/Game/Maps/ModularScifiStationExample",
-  "sequence": "/Game/CameraController/2025-12-10/Scene_1_39",
+  "sequence": "/Game/CameraController/Generated/Lvl_FirstPerson_001",
+  "map": "/Game/S0001/LevelPrototyping/Lvl_FirstPerson",
   "rendering": {
-    "enabled": true,
     "preset": "/Game/CameraController/Pending_MoviePipelinePrimaryConfig",
-    "output_path": "D:/WorldDataPipeline/output/WorldProject/ModularScifiStationExample/movierenders",
+    "framerate": 30,
     "frame_range": {
       "start_frame": 0,
       "end_frame": -1
