@@ -1,0 +1,4 @@
+# UE Pipeline Dependencies
+psutil>=5.9.0  # For process monitoring
+ffmpeg-python>=0.2.0  # For video conversion from frames
+bce-python-sdk>=0.8.74  # For Baidu BOS upload (uncomment if needed)

@@ -18,8 +18,13 @@ def print_error_and_exit(message: str):
     """Print error message and exit"""
     print()
     print(f"\033[91mERROR: {message}\033[0m")
-    print("\033[93mPress Enter to exit...\033[0m")
-    input()
+    # In non-interactive mode we avoid waiting for input
+    if not globals().get('NO_PAUSE', False):
+        print("\033[93mPress Enter to exit...\033[0m")
+        try:
+            input()
+        except Exception:
+            pass
     sys.exit(1)
 
 
@@ -68,8 +73,11 @@ def load_config(config_path: str) -> dict:
 def extract_config_data(config: dict, framerate: int):
     """Extract required data from config"""
     try:
-        base_output_path = config['rendering']['output_path']
-        project_path = config['ue_config']['project_path']
+        rendering_cfg = config.get('rendering', {})
+        ue_cfg = config.get('ue_config', {})
+
+        base_output_path = rendering_cfg.get('output_path') or ue_cfg.get('output_base_dir')
+        project_path = ue_cfg.get('project_path')
         map_path = config['map']
         sequence_path = config['sequence']
         
@@ -83,7 +91,7 @@ def extract_config_data(config: dict, framerate: int):
                 print(f"\033[93mNo framerate in config, using default: {framerate} fps\033[0m")
         
         if not all([base_output_path, project_path, map_path, sequence_path]):
-            print_error_and_exit("Config missing required fields (output_path, project_path, map, or sequence)")
+            print_error_and_exit("Config missing required fields (output_path (or ue_config.output_base_dir), project_path, map, or sequence)")
         
         return base_output_path, project_path, map_path, sequence_path, framerate
         
@@ -164,11 +172,17 @@ def convert_to_video(output_dir: Path, sequence_name: str, framerate: int,
     # Check if video already exists
     if output_video.exists():
         print(f"\033[93mWarning: Video already exists: {output_video}\033[0m")
-        response = input("Overwrite? (y/n): ")
-        if response.lower() != 'y':
-            print("\033[93mCancelled.\033[0m")
-            sys.exit(0)
-        output_video.unlink()
+        if globals().get('FORCE_YES', False):
+            output_video.unlink()
+        else:
+            try:
+                response = input("Overwrite? (y/n): ")
+            except Exception:
+                response = 'n'
+            if response.lower() != 'y':
+                print("\033[93mCancelled.\033[0m")
+                sys.exit(0)
+            output_video.unlink()
     
     # FFmpeg command to convert frames to video
     print()
@@ -273,8 +287,21 @@ def main():
         action='store_true',
         help='Keep frame sequences after conversion'
     )
+    parser.add_argument(
+        '--no-pause',
+        action='store_true',
+        help='Do not wait for user input at the end (non-interactive)'
+    )
+    parser.add_argument(
+        '--yes',
+        action='store_true',
+        help='Automatic yes to prompts (overwrite existing video)'
+    )
     
     args = parser.parse_args()
+    # Set global flags for non-interactive behavior
+    globals()['NO_PAUSE'] = args.no_pause
+    globals()['FORCE_YES'] = args.yes
     
     # Print header
     print_header()
@@ -329,8 +356,12 @@ def main():
     print(f"\033[96mVideo: {output_video}\033[0m")
     print("\033[96m" + "=" * 50 + "\033[0m")
     print()
-    print("\033[93mPress Enter to exit...\033[0m")
-    input()
+    if not globals().get('NO_PAUSE', False):
+        print("\033[93mPress Enter to exit...\033[0m")
+        try:
+            input()
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':

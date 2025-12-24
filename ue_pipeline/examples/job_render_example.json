@@ -10,6 +10,17 @@
       "start_frame": 0,
       "end_frame": -1
     }
+    ,
+    "postprocess": {
+      "combine_to_video": true,
+      "delete_frames_after_encode": false,
+      "upload_bos": {
+        "enabled": false,
+        "endpoint": "bj.bcebos.com",
+        "bucket": "your-bucket",
+        "dest_path": "renders/job-render-001"
+      }
+    }
   },
   "metadata": {
     "description": "Render job - Renders a Level Sequence using Movie Render Queue with UnrealEditor-Cmd.exe",

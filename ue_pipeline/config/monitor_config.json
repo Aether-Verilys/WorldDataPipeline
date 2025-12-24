@@ -1,0 +1,28 @@
+{
+  "monitor": {
+    "enabled": true,
+    "check_interval_seconds": 10,
+    "log_file": "logs/render_monitor.log",
+    "notification": {
+      "enabled": false,
+      "webhook_url": "",
+      "notify_on_complete": true,
+      "notify_on_error": true
+    }
+  },
+  "rendering": {
+    "output_base_path": "e:/WorldDataPipeline/output",
+    "status_file_name": ".render_status.json",
+    "timeout_minutes": 120,
+    "process_check": {
+      "enabled": true,
+      "process_name": "UnrealEditor-Cmd.exe",
+      "check_interval_seconds": 30
+    }
+  },
+  "alerts": {
+    "no_progress_timeout_minutes": 30,
+    "memory_threshold_gb": 16,
+    "disk_space_threshold_gb": 10
+  }
+}

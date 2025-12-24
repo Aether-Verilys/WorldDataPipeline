@@ -162,7 +162,8 @@ def create_render_job(
     config_path: str,
     output_directory: Optional[str] = None,
     map_path: Optional[str] = None,
-    ue_config: Optional[Dict[str, Any]] = None
+    ue_config: Optional[Dict[str, Any]] = None,
+    frame_range: Optional[Dict[str, int]] = None
 ) -> Optional[unreal.MoviePipelineExecutorJob]:
     unreal.log(f"[Rendering] 尝试加载序列: {sequence_path}")
     sequence = unreal.load_asset(sequence_path)
@@ -226,6 +227,67 @@ def create_render_job(
     
     job.set_configuration(config)
     log_output_settings(job.get_configuration(), "Job initial config")
+    
+    # 应用自定义帧范围覆盖
+    if frame_range:
+        start_frame = frame_range.get("start_frame", 0)
+        end_frame = frame_range.get("end_frame", 0)
+        if end_frame >= 0:  # Allow 0 as valid end frame
+            unreal.log(f"[Rendering] 应用帧范围覆盖: {start_frame} - {end_frame}")
+            
+            # MoviePipeline 的正确方法是通过 shot_info 设置自定义帧范围
+            # 首先获取或创建 shot_info 列表
+            try:
+                shot_list = job.shot_info
+                if not shot_list or len(shot_list) == 0:
+                    # 如果没有 shot，创建一个默认的
+                    shot = unreal.MoviePipelineExecutorShot()
+                    job.shot_info = [shot]
+                    shot_list = job.shot_info
+                    unreal.log("[Rendering] 创建默认 shot")
+                
+                # 对每个 shot 设置自定义帧范围
+                for shot in shot_list:
+                    shot.enabled = True
+                    # 使用 bUseCustomPlaybackRange 启用自定义范围
+                    try:
+                        shot.set_editor_property("bUseCustomPlaybackRange", True)
+                        shot.set_editor_property("CustomStartFrame", start_frame)
+                        shot.set_editor_property("CustomEndFrame", end_frame)
+                        unreal.log(f"[Rendering] ✓ Shot '{shot.outer_name}' 设置帧范围: {start_frame} - {end_frame}")
+                    except AttributeError:
+                        # 尝试其他可能的属性名
+                        try:
+                            shot.b_use_custom_playback_range = True
+                            shot.custom_start_frame = start_frame
+                            shot.custom_end_frame = end_frame
+                            unreal.log(f"[Rendering] ✓ Shot 设置帧范围 (属性方式): {start_frame} - {end_frame}")
+                        except Exception as e2:
+                            unreal.log_warning(f"[Rendering] 无法设置 shot 帧范围: {e2}")
+            except Exception as e:
+                unreal.log_error(f"[Rendering] 设置帧范围失败: {e}")
+                # 尝试备用方法：通过控制台变量
+                try:
+                    job_config = job.get_configuration()
+                    # 查找或添加 Console Variable Setting
+                    console_var_setting = None
+                    for setting in job_config.get_all_settings():
+                        if isinstance(setting, unreal.MoviePipelineConsoleVariableSetting):
+                            console_var_setting = setting
+                            break
+                    
+                    if not console_var_setting:
+                        console_var_setting = job_config.find_or_add_setting_by_class(
+                            unreal.MoviePipelineConsoleVariableSetting
+                        )
+                    
+                    if console_var_setting:
+                        # 注意：这种方法可能不是所有版本都支持
+                        unreal.log("[Rendering] 使用控制台变量作为备用方案")
+                except Exception as e3:
+                    unreal.log_warning(f"[Rendering] 备用方案也失败: {e3}")
+        else:
+            unreal.log_warning(f"[Rendering] 帧范围无效: start={start_frame}, end={end_frame}")
     
     # 优化配置以防止内存泄漏 todo 暂时关闭
     # optimize_render_config_for_memory(job.get_configuration())
@@ -407,6 +469,11 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
         raise ValueError("Manifest missing 'preset' in rendering config")
     base_output_path = render_config.get("output_path")
     
+    # Get frame range from rendering config
+    frame_range = render_config.get("frame_range")
+    if frame_range:
+        unreal.log(f"[Rendering] 从配置中读取帧范围: {frame_range.get('start_frame', 0)} - {frame_range.get('end_frame', 0)}")
+    
     # Build output path: base_path/scene_id/map_name/sequence_name
     output_directory = base_output_path
     
@@ -476,7 +543,6 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
     
     # Ensure output directory exists and is absolute path
     if output_directory:
-        import os
         # Always ensure absolute path (even if already absolute, normalize it)
         abs_output = os.path.abspath(output_directory)
         # Normalize to forward slashes for UE
@@ -498,7 +564,8 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
         config_path=config_path,
         output_directory=output_directory,
         map_path=map_path,
-        ue_config=ue_config
+        ue_config=ue_config,
+        frame_range=frame_range
     )
     
     if not job:
@@ -545,6 +612,26 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
     
     unreal.log(f"[Rendering] Job added to queue: {job.job_name}")
     
+    # Create render status tracking file
+    status_file = None
+    if output_directory:
+        try:
+            abs_output_for_mkdir = output_directory.replace('/', os.sep)
+            status_file = os.path.join(abs_output_for_mkdir, ".render_status.json")
+            status_data = {
+                "status": "rendering",
+                "sequence": sequence_path,
+                "job_name": job.job_name,
+                "output_directory": output_directory,
+                "start_time": str(unreal.DateTime.now())
+            }
+            with open(status_file, 'w', encoding='utf-8') as f:
+                json.dump(status_data, f, indent=2)
+            unreal.log(f"[Rendering] Created status file: {status_file}")
+        except Exception as e:
+            unreal.log_warning(f"[Rendering] Failed to create status file: {e}")
+            status_file = None
+    
     # Start render with remote executor
     executor = subsystem.render_queue_with_executor(unreal.MoviePipelineNewProcessExecutor)
     if not executor:
@@ -552,11 +639,41 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
     
     unreal.log("[Rendering] Render started")
     
+    # Setup executor callbacks to update status file
+    if status_file and executor:
+        try:
+            # Register callback for when rendering finishes
+            def on_render_finished(executor_instance, success):
+                try:
+                    status = "completed" if success else "failed"
+                    status_data = {
+                        "status": status,
+                        "sequence": sequence_path,
+                        "job_name": job.job_name,
+                        "output_directory": output_directory,
+                        "start_time": str(unreal.DateTime.now()),
+                        "end_time": str(unreal.DateTime.now()),
+                        "success": success
+                    }
+                    with open(status_file, 'w', encoding='utf-8') as f:
+                        json.dump(status_data, f, indent=2)
+                    unreal.log(f"[Rendering] Updated status to '{status}': {status_file}")
+                except Exception as e:
+                    unreal.log_error(f"[Rendering] Failed to update status file: {e}")
+            
+            # Try to bind to executor's finished event if available
+            if hasattr(executor, 'on_executor_finished_delegate'):
+                executor.on_executor_finished_delegate.add_callable(on_render_finished)
+                unreal.log("[Rendering] Registered render completion callback")
+        except Exception as e:
+            unreal.log_warning(f"[Rendering] Could not register completion callback: {e}")
+    
     return {
         "status": "started",
         "sequence": sequence_path,
         "job_name": job.job_name,
-        "output_directory": output_directory
+        "output_directory": output_directory,
+        "status_file": status_file
     }
 
 
