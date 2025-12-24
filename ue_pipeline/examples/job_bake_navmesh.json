@@ -1,0 +1,20 @@
+{
+  "job_type": "bake_navmesh",
+  "job_id": "job-navmesh-001",
+  "navmesh_config": {
+    "location": [0.0, 0.0, 0.0],
+    "scale": [150.0, 150.0, 15.0],
+    "maps": [
+      "/Game/S0001/LevelPrototyping/Lvl_FirstPerson",
+      "/Game/S0002/Seaside_Town/Maps/Demonstration",
+      "/Game/S0002/Seaside_Town/Maps/Overview",
+      "/Game/S0003/ModularScifiStation/Maps/ModularScifiStationExample",
+      "/Game/S0003/ModularScifiStation/Maps/Overview",
+      "/Game/S0004/CanyonScans/Maps/Canyon_DemoScene"
+    ]
+  },
+  "metadata": {
+    "description": "Batch add NavMesh Bounds Volume to all scenes and bake navigation data",
+    "created_date": "2025-12-25"
+  }
+}

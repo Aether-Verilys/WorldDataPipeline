@@ -1,12 +1,12 @@
 {
   "job_type": "create_sequence",
   "job_id": "job-create-sequence-test-001",
-  "map": "/Game/Maps/Lvl_FirstPerson",
+  "map": "/Game/S0004/CanyonScans/Maps/Canyon_DemoScene.Canyon_DemoScene",
   "sequence_config": {
     "output_dir": "/Game/CameraController/Generated",
     "sequence_number": 1,
     "fps": 30,
-    "duration_seconds": 120.0,
+    "duration_seconds": 30,
     "add_camera": true,
     "spawn_at_startpoint": true,
     "nav_roam": {

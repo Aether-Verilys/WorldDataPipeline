@@ -5,22 +5,12 @@ import unreal
 
 
 class NavMeshManager:
-    """Utility class to add and configure NavMesh in levels"""
     
     def __init__(self):
         self.editor_subsystem = unreal.UnrealEditorSubsystem()
         self.editor_actor_subsystem = unreal.EditorActorSubsystem()
     
     def load_map(self, map_package_path):
-        """
-        Load a map by package path
-        
-        Args:
-            map_package_path: Package path like '/Game/Maps/MyLevel'
-            
-        Returns:
-            bool: True if successful
-        """
         try:
             success = self.editor_subsystem.load_level(map_package_path)
             if success:
@@ -33,12 +23,6 @@ class NavMeshManager:
             return False
     
     def check_navmesh_exists(self):
-        """
-        Check if NavMeshBoundsVolume already exists in current level
-        
-        Returns:
-            unreal.NavMeshBoundsVolume or None
-        """
         all_actors = unreal.EditorLevelLibrary.get_all_level_actors()
         
         for actor in all_actors:
@@ -49,16 +33,6 @@ class NavMeshManager:
         return None
     
     def add_navmesh_bounds_volume(self, location=None, scale=None):
-        """
-        Add a NavMeshBoundsVolume to the current level
-        
-        Args:
-            location: unreal.Vector or tuple (x, y, z), default (0, 0, 0)
-            scale: unreal.Vector or tuple (x, y, z), default (10, 10, 10)
-            
-        Returns:
-            unreal.NavMeshBoundsVolume or None
-        """
         # Check if already exists
         existing = self.check_navmesh_exists()
         if existing:
@@ -87,7 +61,7 @@ class NavMeshManager:
                 # Set scale
                 navmesh_volume.set_actor_scale3d(scale)
                 
-                unreal.log(f"✓ Added NavMeshBoundsVolume at {location}")
+                unreal.log(f"Added NavMeshBoundsVolume at {location}")
                 unreal.log(f"  Scale: {scale}")
                 unreal.log(f"  Actor: {navmesh_volume.get_name()}")
                 
@@ -104,14 +78,6 @@ class NavMeshManager:
             return None
     
     def configure_navmesh_settings(self, navmesh_volume, settings_dict):
-        """
-        Configure NavMeshBoundsVolume settings
-        
-        Args:
-            navmesh_volume: The NavMeshBoundsVolume actor
-            settings_dict: Dictionary of settings
-                          e.g., {'supported_agents': [...]}
-        """
         try:
             for prop_name, prop_value in settings_dict.items():
                 if navmesh_volume.has_property(prop_name):
@@ -126,17 +92,6 @@ class NavMeshManager:
             unreal.log_error(f"Error configuring NavMesh: {str(e)}")
     
     def batch_add_navmesh_to_maps(self, map_list, location=None, scale=None):
-        """
-        Batch add NavMesh to multiple maps
-        
-        Args:
-            map_list: List of map package paths
-            location: NavMesh location
-            scale: NavMesh scale
-            
-        Returns:
-            dict: Results with success/failure counts
-        """
         results = {
             'total': len(map_list),
             'success': 0,
@@ -168,11 +123,11 @@ class NavMeshManager:
                 # Check if it was newly created or already existed
                 if self.check_navmesh_exists():
                     results['success'] += 1
-                    unreal.log(f"  ✓ NavMesh added/verified")
+                    unreal.log(f"  NavMesh added/verified")
             else:
                 results['failed'] += 1
                 results['failed_maps'].append(map_path)
-                unreal.log_warning(f"  ✗ Failed to add NavMesh")
+                unreal.log_warning(f"  Failed to add NavMesh")
             
             unreal.log("")
         
@@ -189,19 +144,17 @@ class NavMeshManager:
         return results
     
     def rebuild_navmesh(self):
-        """Rebuild navigation data for current level"""
         try:
             unreal.log("Rebuilding NavMesh...")
             unreal.NavigationSystemLibrary.rebuild_navigation_data(
                 unreal.EditorLevelLibrary.get_editor_world()
             )
-            unreal.log("✓ NavMesh rebuilt")
+            unreal.log("NavMesh rebuilt")
         except Exception as e:
             unreal.log_error(f"Error rebuilding NavMesh: {str(e)}")
 
 
 def example_usage():
-    """Example: Add NavMesh to multiple maps"""
     
     # Example map list
     map_list = [
