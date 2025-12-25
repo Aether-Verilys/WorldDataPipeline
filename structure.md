@@ -34,7 +34,7 @@ BOS下载场景 ──→ NavMesh烘焙          Docker容器(UE 5.7)
 
 | 组件 | 技术 | 用途 |
 |------|------|------|
-| **控制节点** | Windows 11 + Python 3.9+ | 场景管理、序列生成、任务调度 |
+| **控制节点** | Windows 11/ Linux + Python 3.9+ | 场景管理、序列生成、任务调度 |
 | **渲染集群** | Linux + Docker + UE 5.7 | 分布式MRQ渲染 |
 | **任务队列** | Redis | 渲染任务分发与状态同步 |
 | **存储** | BOS (BaiduCloud Object Storage) | 场景资产、序列文件、视频输出 |
@@ -65,14 +65,29 @@ BOS下载场景 ──→ NavMesh烘焙          Docker容器(UE 5.7)
 **输出：** 带NavMeshBoundsVolume的场景 + 导航数据
 
 **自适应策略（UE Headless模式执行）：**
-1. 加载地图，遍历所有StaticMeshActor/LandscapeComponent
-2. 计算聚合AABB边界框 (min/max XYZ)
-3. 自动设置NavMeshBoundsVolume scale = 边界尺寸 × 1.2 (20%余量)
-4. 限制范围：最小 `[20,20,5]`，最大 `[500,500,50]`
-5. 触发NavMesh重建 (`rebuild_navmesh()`)
-6. **等待NavMesh构建完成** (监控构建状态)
-7. **保存场景文件** (`EditorLevelLibrary.save_current_level()`)
-8. **验证NavMesh可用性** (检查是否有可导航区域)
+1. 加载地图，遍历所有可导航组件：
+   - 对每个组件检查：`comp.can_ever_affect_navigation() and comp.get_collision_enabled() != CollisionEnabled.NO_COLLISION`
+   - 符合条件的StaticMeshActor/LandscapeComponent才纳入边界计算
+2. 计算聚合AABB边界框（考虑Agent物理参数）：
+   - XY: 所有可导航组件的 min/max XY
+   - **ZMin**: 所有可导航组件的最小 Z - `AgentMaxStepHeight` (默认-50cm)
+   - **ZMax**: 所有可导航组件的最大 Z + `AgentMaxJumpHeight` (默认+200cm)
+   - 确保垂直空间覆盖Agent可达的所有高度层
+3. **智能Volume布局策略**：
+   - **小场景**（< 200m²）：单个NavMeshBoundsVolume覆盖全场景
+   - **中等场景**（200-500m²）：按楼层/区域拆分2-4个Volume
+   - **大场景**（> 500m²）：空间八叉树分割，每个Volume不超过250m²
+   - **优势**：减少单次烘焙内存占用，支持并行烘焙，提升NavMesh精度
+4. 自动设置每个Volume的scale = 子区域边界尺寸 × 1.2 (20%余量)
+5. 限制范围：最小 `[20,20,5]`，最大 `[500,500,50]`（单个Volume）
+6. 触发NavMesh重建 (`rebuild_navmesh()`)，支持多Volume并行烘焙
+7. **等待NavMesh构建完成** (监控构建状态，Tile生成进度)
+8. **保存场景文件** (`EditorLevelLibrary.save_current_level()`)
+9. **严格验证NavMesh可用性**：
+   - 检查 `NavigationSystemV1.GetMainNavData()` 是否存在
+   - 验证 `NavData.GetNavMeshTilesCount() > 0`（确保已生成导航网格）
+   - 测试随机点可达性（`GetRandomReachablePointInRadius()` 成功率 > 80%）
+   - 评估可导航区域面积（需 > 场景面积的30%）
 
 **重要：烘焙完成必须保存场景**
 - NavMesh数据存储在 `.umap` 和对应的 `_BuiltData.uasset` 文件中
@@ -95,7 +110,7 @@ UnrealEditor-Cmd.exe WorldData00.uproject \
 **关键代码文件：**
 - `ue_pipeline/python/pre_process/add_navmesh_to_scene.py` (新增 `calculate_map_bounds()`)
 - `ue_pipeline/python/worker_bake_navmesh.py` (添加 `auto_scale` 参数，Headless执行)
-- `ue_pipeline/run_bake_navmesh.py` (Python CLI包装器，替代PS1脚本)
+- `ue_pipeline/run_bake_navmesh.py` (Python CLI包装器)
 
 **配置示例：**
 ```json
@@ -138,11 +153,16 @@ UnrealEditor-Cmd.exe WorldData00.uproject \
    - 如果存在，验证其位置在NavMesh上（`ProjectPointToNavigation`）
    - 若不在NavMesh上，向下LineTrace投影到最近地面
 2. **优先级2**: 查找TargetPoint actor（同样验证NavMesh）
-3. **优先级3**: 随机NavMesh可达点（`get_random_reachable_point_in_radius`）
-   - **不使用场景中心作为起点**（可能在空中或墙内）
-   - 从NavMesh的任意有效点开始随机采样
+3. **优先级3**: 从最优地面区域开始
+   - **地面判定标准**：
+     - 可导航面积最大（NavMesh Polygon面积总和）
+     - 连通性最强（单个连通区域包含的导航点数量）
+     - 高度变化平缓（Z轴方差 < 100cm²）
+   - 在最优地面区域中随机采样起点（`get_random_reachable_point_in_radius`）
    - 确保起点在可导航地面上，高度合理（Z值在地面±100cm内）
-4. **优先级4**: 若以上失败，从场景边界内随机采样并投影到NavMesh
+4. **优先级4**: 若以上失败，从NavMesh的任意有效点开始随机采样
+   - **不使用场景中心作为起点**（可能在空中或墙内）
+   - 从场景边界内随机采样并投影到NavMesh
 5. **验证**: 
    - LineTrace检测起点下方有地面（不在空中）
    - 检查起点周围有足够导航空间（半径>200cm可达区域）

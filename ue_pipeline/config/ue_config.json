@@ -1,7 +1,7 @@
 {
-  "editor_path": "F:/Epic/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
-  "project_path": "E:/WorldProject/WorldProject.uproject",
-  "output_base_dir": "E:/WorldDataPipeline/output",
+  "editor_path": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
+  "project_path": "D:/WorldProject/WorldProject.uproject",
+  "output_base_dir": "D:/WorldDataPipeline/output",
   "scenes": [
     {
       "id": "S0001",

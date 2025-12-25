@@ -159,11 +159,16 @@ def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str, jo
 
 def main():
     parser = argparse.ArgumentParser(
-        description='UE NavMesh Bake Tool (Headless Mode)'
+        description='UE NavMesh Bake Tool (Headless Mode) - Supports auto-scale and manual configuration'
     )
     parser.add_argument(
         'manifest_path',
         help='Path to the navmesh bake manifest JSON file'
+    )
+    parser.add_argument(
+        '--verbose',
+        action='store_true',
+        help='Enable verbose output'
     )
     
     args = parser.parse_args()
@@ -188,16 +193,36 @@ def main():
     
     navmesh_config = manifest.get('navmesh_config', {})
     maps = navmesh_config.get('maps', [])
-    location = navmesh_config.get('location', [0.0, 0.0, 0.0])
-    scale = navmesh_config.get('scale', [100.0, 100.0, 10.0])
+    auto_scale = navmesh_config.get('auto_scale', False)
+    
+    # Display configuration
+    if auto_scale:
+        scale_margin = navmesh_config.get('scale_margin', 1.2)
+        min_scale = navmesh_config.get('min_scale', [20.0, 20.0, 5.0])
+        max_scale = navmesh_config.get('max_scale', [500.0, 500.0, 50.0])
+        print_info("Mode:", "Auto-scale")
+        print_info("Scale Margin:", f"{scale_margin}x")
+        print_info("Min Scale:", str(min_scale))
+        print_info("Max Scale:", str(max_scale))
+    else:
+        location = navmesh_config.get('location', [0.0, 0.0, 0.0])
+        scale = navmesh_config.get('scale', [100.0, 100.0, 10.0])
+        print_info("Mode:", "Manual")
+        print_info("Location:", str(location))
+        print_info("Scale:", str(scale))
+    
+    print_info("Maps:", str(len(maps)))
     
     print_info("Job ID:", job_id)
     print_info("Maps:", str(len(maps)))
-    print_info("Location:", str(location))
-    print_info("Scale:", str(scale))
     print_info("UE Editor:", ue_editor)
     print_info("Project:", project)
     print()
+    
+    if args.verbose:
+        print("Full manifest configuration:")
+        print(json.dumps(manifest, indent=2))
+        print()
     
     validate_paths(ue_editor, project, worker)
     

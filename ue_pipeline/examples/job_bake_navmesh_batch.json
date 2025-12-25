@@ -1,0 +1,24 @@
+{
+  "job_id": "bake_navmesh_batch_001",
+  "job_type": "bake_navmesh",
+  "description": "Batch NavMesh baking example - process multiple maps with auto-scale",
+  "navmesh_config": {
+    "auto_scale": true,
+    "scale_margin": 1.2,
+    "min_scale": [20.0, 20.0, 5.0],
+    "max_scale": [500.0, 500.0, 50.0],
+    "wait_for_build": true,
+    "build_timeout": 90,
+    "verify_navmesh": true,
+    "maps": [
+      "/Game/S0001/LevelPrototyping/Lvl_FirstPerson.Lvl_FirstPerson",
+      "/Game/S0002/Seaside_Town/Maps/Demonstration.Demonstration",
+      "/Game/S0002/Seaside_Town/Maps/Overview.Overview",
+      "/Game/S0003/ModularScifiStation/Maps/ModularScifiStationExample.ModularScifiStationExample"
+    ]
+  },
+  "ue_config": {
+    "editor_path": "F:/Epic/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
+    "project_path": "E:/WorldProject/WorldProject.uproject"
+  }
+}
