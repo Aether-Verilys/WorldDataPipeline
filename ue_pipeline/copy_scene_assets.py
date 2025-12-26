@@ -12,9 +12,8 @@ class SceneAssetCopier:
         self.config = self.load_config(config_path)
         self.raw_folder = Path(self.config['raw_folder'])
         self.target_content_folder = Path(self.config['target_content_folder'])
-        self.start_index = self.config.get('start_index', 1)
-        self.prefix = self.config.get('scene_prefix', 'S')
         self.exclude_patterns = self.config.get('exclude_patterns', [])
+        self.exclude_map_names = self.config.get('exclude_map_names', [])
         self.project_name = self.config.get('project_name', 'Unknown')
         self.overwrite = overwrite
         
@@ -34,21 +33,21 @@ class SceneAssetCopier:
                 "project_name": self.project_name,
                 "project_path": str(self.target_content_folder.parent),
                 "last_updated": "",
-                "scenes": []
+                "scenes": {}
             }
         
         with open(self.scene_status_file, 'r', encoding='utf-8') as f:
             return json.load(f)
     
-    def find_umap_files(self, scene_folder: Path, scene_id: str) -> List[str]:
+    def find_umap_files(self, scene_folder: Path, scene_name: str) -> List[str]:
         """查找场景文件夹下的所有.umap文件，并转换为UE路径格式
         
         Args:
-            scene_folder: 场景文件夹路径，如 Content/S0001
-            scene_id: 场景ID，如 S0001
+            scene_folder: 场景文件夹路径，如 Content/LevelPrototyping
+            scene_name: 场景名称，如 LevelPrototyping
         
         Returns:
-            UE路径格式的地图列表，如 ['/Game/S0001/Maps/MainMap']
+            UE路径格式的地图列表，如 ['/Game/LevelPrototyping/Maps/MainMap']
         """
         umap_paths = []
         
@@ -61,19 +60,23 @@ class SceneAssetCopier:
             
             for file in files:
                 if file.endswith('.umap'):
-                    file_path = Path(root) / file
-                    if not self.should_exclude(file_path):
-                        # 转换为UE路径格式: /Game/S0001/FolderPath/MapName
-                        # scene_folder 是 Content/S0001，file_path 相对于它的路径
+                    file_path = Path(root) / file                    map_name = file_path.stem
+                    
+                    # Skip excluded map names
+                    if map_name in self.exclude_map_names:
+                        continue
+                                        if not self.should_exclude(file_path):
+                        # 转换为UE路径格式: /Game/SceneName/FolderPath/MapName
+                        # scene_folder 是 Content/SceneName，file_path 相对于它的路径
                         rel_path = file_path.relative_to(scene_folder)
                         # 构建UE路径，移除.umap扩展名
                         if rel_path.parent == Path('.'):
-                            # 文件直接在S0001根目录
-                            ue_path = f"/Game/{scene_id}/{rel_path.stem}"
+                            # 文件直接在场景根目录
+                            ue_path = f"/Game/{scene_name}/{rel_path.stem}"
                         else:
                             # 文件在子文件夹中
                             folder_path = str(rel_path.parent).replace('\\', '/')
-                            ue_path = f"/Game/{scene_id}/{folder_path}/{rel_path.stem}"
+                            ue_path = f"/Game/{scene_name}/{folder_path}/{rel_path.stem}"
                         
                         umap_paths.append(ue_path)
         
@@ -86,27 +89,18 @@ class SceneAssetCopier:
         with open(self.scene_status_file, 'w', encoding='utf-8') as f:
             json.dump(status_data, f, indent=2, ensure_ascii=False)
     
-    def update_scene_status(self, scene_id: str, name: str, map_paths: List[str]):
+    def update_scene_status(self, scene_name: str, map_paths: List[str]):
         """更新场景状态，包括地图路径列表"""
         status_data = self.load_scene_status()
+        scenes = status_data.get('scenes', {})
         
-        # 查找是否已存在该场景
-        existing_scene = None
-        for scene in status_data['scenes']:
-            if scene['id'] == scene_id:
-                existing_scene = scene
-                break
-        
-        if existing_scene:
-            # 更新场景名称
-            existing_scene['name'] = name
-            
-            # 更新地图列表（保留已有的actor_added和baked状态）
-            existing_maps = {m['path']: m for m in existing_scene.get('maps', [])}
+        if scene_name in scenes:
+            # 场景已存在，更新地图列表（保留已有的actor_added和baked状态）
+            existing_maps = {m['path']: m for m in scenes[scene_name].get('maps', [])}
             new_maps = []
             
             for map_path in map_paths:
-                # 从路径提取地图名 (例如: /Game/S0001/Maps/MainMap -> MainMap)
+                # 从路径提取地图名 (例如: /Game/LevelPrototyping/Maps/MainMap -> MainMap)
                 map_name = map_path.split('/')[-1]
                 
                 if map_path in existing_maps:
@@ -120,30 +114,27 @@ class SceneAssetCopier:
                         "name": map_name,
                         "path": map_path,
                         "actor_added": False,
-                        "baked": False
+                        "baked": False,
+                        "low_mesh": False
                     })
             
-            existing_scene['maps'] = new_maps
+            scenes[scene_name]['maps'] = new_maps
         else:
             # 新场景
-            new_scene = {
-                "id": scene_id,
-                "name": name,
+            scenes[scene_name] = {
                 "maps": [
                     {
                         "name": map_path.split('/')[-1],  # 使用地图名作为name
                         "path": map_path,
                         "actor_added": False,
-                        "baked": False
+                        "baked": False,
+                        "low_mesh": False
                     }
                     for map_path in map_paths
                 ]
             }
-            status_data['scenes'].append(new_scene)
         
-        # 按场景ID排序
-        status_data['scenes'].sort(key=lambda x: x['id'])
-        
+        status_data['scenes'] = scenes
         self.save_scene_status(status_data)
     
     def find_content_folders(self) -> List[Dict[str, Path]]:
@@ -328,9 +319,6 @@ class SceneAssetCopier:
             print(f"Copy failed: {e}")
             return False
     
-    def generate_scene_id(self, index: int) -> str:
-        return f"{self.prefix}{index:04d}"
-    
     def process_all(self, dry_run: bool = False, batch_size: int = 10):
         content_folders = self.find_content_folders()
         
@@ -369,12 +357,11 @@ class SceneAssetCopier:
             batch_success = 0
             for idx, folder_info in enumerate(batch_folders):
                 global_idx = batch_start + idx
-                scene_id = self.generate_scene_id(self.start_index + global_idx)
+                scene_name = folder_info['name']  # 直接使用资产名称
                 source_path = folder_info['content_path']
-                target_path = self.target_content_folder / scene_id
+                target_path = self.target_content_folder / scene_name
                 
-                print(f"\n[{global_idx + 1}/{len(content_folders)}] Processing asset: {folder_info['name']}")
-                print(f"  Scene ID: {scene_id}")
+                print(f"\n[{global_idx + 1}/{len(content_folders)}] Processing asset: {scene_name}")
                 print(f"  Source path: {source_path}")
                 print(f"  Target path: {target_path}")
                 
@@ -388,7 +375,7 @@ class SceneAssetCopier:
                         
                         # 扫描并记录.umap文件
                         print(f"  Scanning for .umap files...")
-                        umap_paths = self.find_umap_files(target_path, scene_id)
+                        umap_paths = self.find_umap_files(target_path, scene_name)
                         if umap_paths:
                             print(f"  Found {len(umap_paths)} map(s):")
                             for umap_path in umap_paths:
@@ -396,7 +383,7 @@ class SceneAssetCopier:
                         else:
                             print(f"  No .umap files found")
                         
-                        self.update_scene_status(scene_id, folder_info['name'], umap_paths)
+                        self.update_scene_status(scene_name, umap_paths)
                         print(f"  [OK] Scene status saved to {self.scene_status_file.name}")
                         batch_success += 1
                         success_count += 1
@@ -429,9 +416,8 @@ class SceneAssetCopier:
         print(f"\nFound {len(content_folders)} assets:")
         content_folders.sort(key=lambda x: x['name'])
         
-        for idx, folder_info in enumerate(content_folders):
-            scene_id = self.generate_scene_id(self.start_index + idx)
-            print(f"{scene_id} - {folder_info['name']}")
+        for folder_info in content_folders:
+            print(f"{folder_info['name']}")
             print(f"  Content path: {folder_info['content_path']}")
 
 

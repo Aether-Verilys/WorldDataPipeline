@@ -4,6 +4,7 @@ import os
 import random
 import sys
 import time
+import traceback
 import unreal
 
 print("[WorkerCreateSequence] Starting job execution...")
@@ -343,9 +344,12 @@ def _build_multi_leg_nav_path(nav, world, start: unreal.Vector, cfg: dict):
     min_leg_dist = float(cfg.get("min_leg_distance_cm", 300.0))
 
     origin = start if start is not None else unreal.Vector(0.0, 0.0, 0.0)
+    print(f"[WorkerCreateSequence] NavRoam origin: {origin}")
 
     # Ensure start is on navmesh
     a = _project_to_nav(nav, world, origin) if project else origin
+    print(f"[WorkerCreateSequence] NavRoam start (projected): {a}")
+    print(f"[WorkerCreateSequence] NavRoam config: num_legs={num_legs}, radius={radius_cm}cm, min_step={min_step_cm}cm")
 
     seed = cfg.get("seed", None)
     use_python_rng = seed is not None
@@ -378,11 +382,12 @@ def _build_multi_leg_nav_path(nav, world, start: unreal.Vector, cfg: dict):
                 pts = _find_path_points(nav, world, start_on_nav, end_on_nav)
                 if pts and len(pts) >= 2:
                     leg_pts = pts
+                    print(f"[WorkerCreateSequence] NavRoam leg {leg}: found path with {len(pts)} points")
                     break
 
                 # No valid path; retry another destination
                 if attempt < 3:
-                    print(f"[WorkerCreateSequence] WARNING: NavRoam leg {leg}: empty path (attempt {attempt + 1}/{max_tries}); retrying")
+                    print(f"[WorkerCreateSequence] WARNING: NavRoam leg {leg}: empty path from {current} to {candidate} (attempt {attempt + 1}/{max_tries}); retrying")
             except Exception:
                 continue
 
@@ -398,6 +403,8 @@ def _build_multi_leg_nav_path(nav, world, start: unreal.Vector, cfg: dict):
     points = _subdivide_polyline(points, min_step_cm)
     if project:
         points = [_project_to_nav(nav, world, p) for p in points]
+    
+    print(f"[WorkerCreateSequence] NavRoam total points before subdivision: {len(points)}")
     return points
 
 
@@ -1197,34 +1204,73 @@ def _validate_prerequisites(map_path: str, blueprint_path: str, check_navmesh: b
         if not unreal.EditorAssetLibrary.does_asset_exist(normalized):
             errors.append(f"Blueprint does not exist: {blueprint_path}")
     
-    # 3. 检查NavMesh
+    # 3. 检查NavMesh - 使用多种方式验证
     if check_navmesh and map_path:
+        navmesh_found = False
+        
+        # 方式1: 检查ue_config.json中的baked字段
         try:
-            # 先加载地图
-            level_editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
-            if not level_editor.load_level(map_path):
-                errors.append(f"Failed to load map for NavMesh check: {map_path}")
-            else:
-                # 检查NavMesh
-                world = unreal.EditorLevelLibrary.get_editor_world()
-                nav = _get_nav_system(world)
+            # 从manifest路径推导ue_config.json路径
+            config_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(manifest_path))),
+                "ue_pipeline", "config", "ue_config.json"
+            )
+            if os.path.exists(config_path):
+                with open(config_path, "r", encoding="utf-8") as f:
+                    ue_config = json.load(f)
                 
-                # 尝试获取NavData
-                nav_data = None
-                for getter_name in ("get_main_nav_data", "get_default_nav_data_instance"):
-                    getter = getattr(nav, getter_name, None)
-                    if callable(getter):
+                # 解析map_path找到对应的场景和地图
+                # map_path格式: /Game/OceanCity/Map/OceanCity
+                for scene_name, scene_data in ue_config.get("scenes", {}).items():
+                    for map_info in scene_data.get("maps", []):
+                        if map_info.get("path") == map_path:
+                            if map_info.get("baked") is True:
+                                navmesh_found = True
+                                print(f"[WorkerCreateSequence] ✓ NavMesh verified via ue_config.json (baked=true)")
+                                break
+                    if navmesh_found:
+                        break
+        except Exception as e:
+            print(f"[WorkerCreateSequence] Warning: Failed to check ue_config.json: {e}")
+        
+        # 方式2: 如果config检查未通过，加载地图并检查场景中的NavMesh组件
+        if not navmesh_found:
+            try:
+                # 先加载地图
+                level_editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+                if not level_editor.load_level(map_path):
+                    errors.append(f"Failed to load map for NavMesh check: {map_path}")
+                else:
+                    # 检查场景中的NavMeshBoundsVolume
+                    actors = unreal.EditorLevelLibrary.get_all_level_actors()
+                    
+                    # 查找NavMeshBoundsVolume
+                    navmesh_bounds_cls = getattr(unreal, "NavMeshBoundsVolume", None)
+                    for actor in actors:
                         try:
-                            nav_data = getter(world)
-                            if nav_data:
+                            if navmesh_bounds_cls and isinstance(actor, navmesh_bounds_cls):
+                                navmesh_found = True
+                                print(f"[WorkerCreateSequence] ✓ Found NavMeshBoundsVolume in scene")
                                 break
                         except Exception:
                             pass
-                
-                if not nav_data:
-                    errors.append(f"Map has no NavMesh data: {map_path}")
-        except Exception as e:
-            errors.append(f"NavMesh validation failed: {e}")
+                    
+                    # 查找RecastNavMesh
+                    if not navmesh_found:
+                        recast_navmesh_cls = getattr(unreal, "RecastNavMesh", None)
+                        for actor in actors:
+                            try:
+                                if recast_navmesh_cls and isinstance(actor, recast_navmesh_cls):
+                                    navmesh_found = True
+                                    print(f"[WorkerCreateSequence] ✓ Found RecastNavMesh in scene")
+                                    break
+                            except Exception:
+                                pass
+                    
+                    if not navmesh_found:
+                        errors.append(f"Map has no NavMesh (checked: ue_config baked field, NavMeshBoundsVolume, RecastNavMesh): {map_path}")
+            except Exception as e:
+                errors.append(f"NavMesh validation failed: {e}")
     
     if errors:
         error_msg = "Prerequisites validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
@@ -1339,9 +1385,19 @@ try:
                     pass
 
             start = start_location if start_location is not None else spawn_location
+            print(f"[WorkerCreateSequence] NavRoam starting from: {start}")
             nav_points = _build_multi_leg_nav_path(nav, world, start, nav_roam_cfg)
+            print(f"[WorkerCreateSequence] NavRoam generated {len(nav_points)} raw points")
+            
             if len(nav_points) < 2:
-                raise RuntimeError("NavRoam produced too few points")
+                error_msg = f"NavRoam produced too few points ({len(nav_points)}). "
+                error_msg += f"Starting position: {start}. "
+                error_msg += "Possible causes: "
+                error_msg += "(1) Starting position not on NavMesh, "
+                error_msg += "(2) NavMesh coverage too small, "
+                error_msg += "(3) random_point_radius_cm too small, "
+                error_msg += f"(4) All {nav_roam_cfg.get('num_legs', 6)} legs failed to find valid paths."
+                raise RuntimeError(error_msg)
 
             key_interval_seconds = float(nav_roam_cfg.get("key_interval_seconds", 0.25))
             key_interval_frames = max(1, int(round(float(fps) * key_interval_seconds)))

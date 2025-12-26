@@ -115,6 +115,13 @@ try:
             failed_maps.append({"map": map_path, "error": "Failed to load map"})
             continue
         
+        # Count StaticMeshActor instances
+        print(f"[WorkerBakeNavMesh] Counting StaticMeshActors...")
+        mesh_count = manager.count_static_mesh_actors()
+        is_low_mesh = mesh_count < 50
+        print(f"[WorkerBakeNavMesh] StaticMeshActor count: {mesh_count}")
+        print(f"[WorkerBakeNavMesh] LowMesh status: {is_low_mesh}")
+        
         # Record file modification time before bake
         level_path = map_path.replace("/Game/", "/Content/") + ".umap"
         project_path = Path(unreal.Paths.project_content_dir()).parent
@@ -198,6 +205,9 @@ try:
         
         success_count += 1
         print(f"[WorkerBakeNavMesh] Completed: {map_path}")
+        
+        # Output lowMesh status for this map
+        print(f"[WorkerBakeNavMesh] Map metadata: mesh_count={mesh_count}, low_mesh={is_low_mesh}")
         print("")
     
     print("[WorkerBakeNavMesh] " + "="*60)

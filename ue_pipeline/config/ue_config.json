@@ -1,67 +1,107 @@
 {
   "editor_path": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
-  "project_path": "D:/WorldProject/WorldProject.uproject",
+  "project_path": "D:/UE_Projects/WorldProject/WorldProject.uproject",
   "output_base_dir": "D:/WorldDataPipeline/output",
-  "scenes": [
-    {
-      "id": "S0001",
-      "name": "S0001",
-      "maps": [
-        {
-          "name": "Lvl_FirstPerson",
-          "path": "/Game/S0001/LevelPrototyping/Lvl_FirstPerson",
-          "actor_added": false,
-          "baked": false
-        }
-      ]
-    },
-    {
-      "id": "S0002",
-      "name": "S0002",
-      "maps": [
-        {
-          "name": "Demonstration",
-          "path": "/Game/S0002/Seaside_Town/Maps/Demonstration",
-          "actor_added": false,
-          "baked": false
-        },
-        {
-          "name": "Overview",
-          "path": "/Game/S0002/Seaside_Town/Maps/Overview",
-          "actor_added": false,
-          "baked": false
-        }
-      ]
-    },
-    {
-      "id": "S0003",
-      "name": "S0003",
-      "maps": [
-        {
-          "name": "ModularScifiStationExample",
-          "path": "/Game/S0003/ModularScifiStation/Maps/ModularScifiStationExample",
-          "actor_added": false,
-          "baked": false
-        },
-        {
-          "name": "Overview",
-          "path": "/Game/S0003/ModularScifiStation/Maps/Overview",
-          "actor_added": false,
-          "baked": false
-        }
-      ]
-    },
-    {
-      "id": "S0004",
-      "name": "S0004",
+  "exclude_map_names": [
+    "Overview"
+  ],
+  "scenes": {
+    "CanyonScans": {
       "maps": [
         {
           "name": "Canyon_DemoScene",
-          "path": "/Game/S0004/CanyonScans/Maps/Canyon_DemoScene",
+          "path": "/Game/CanyonScans/Maps/Canyon_DemoScene",
           "actor_added": false,
-          "baked": false
+          "baked": false,
+          "low_mesh": false
+        }
+      ]
+    },
+    "LevelPrototyping": {
+      "maps": [
+        {
+          "name": "Lvl_FirstPerson",
+          "path": "/Game/LevelPrototyping/Lvl_FirstPerson",
+          "actor_added": false,
+          "baked": false,
+          "low_mesh": false
+        }
+      ]
+    },
+    "ModularScifiStation": {
+      "maps": [
+        {
+          "name": "ModularScifiStationExample",
+          "path": "/Game/ModularScifiStation/Maps/ModularScifiStationExample",
+          "actor_added": false,
+          "baked": false,
+          "low_mesh": false
+        }
+      ]
+    },
+    "OceanCity": {
+      "maps": [
+        {
+          "name": "Example01",
+          "path": "/Game/OceanCity/MallEnvironment/Mall/Maps/Example01",
+          "actor_added": false,
+          "baked": false,
+          "low_mesh": false
+        },
+        {
+          "name": "OceanCity",
+          "path": "/Game/OceanCity/Map/OceanCity",
+          "actor_added": false,
+          "baked": false,
+          "low_mesh": false
+        },
+        {
+          "name": "Ambulance",
+          "path": "/Game/OceanCity/VehicleBundle/Ambulance_Vehicle/Maps/Ambulance",
+          "actor_added": false,
+          "baked": false,
+          "low_mesh": false
+        },
+        {
+          "name": "BuggyDemo",
+          "path": "/Game/OceanCity/VehicleBundle/Buggy_Vehicle/Maps/BuggyDemo",
+          "actor_added": false,
+          "baked": false,
+          "low_mesh": false
+        },
+        {
+          "name": "VehicleExampleMap",
+          "path": "/Game/OceanCity/VehicleBundle/OffRoadVehicles/Maps/VehicleExampleMap",
+          "actor_added": false,
+          "baked": false,
+          "low_mesh": false
+        },
+        {
+          "name": "SwatVehicle",
+          "path": "/Game/OceanCity/VehicleBundle/SwatVehicle/Map/SwatVehicle",
+          "actor_added": false,
+          "baked": false,
+          "low_mesh": false
+        },
+        {
+          "name": "Van_Test_Map",
+          "path": "/Game/OceanCity/VehicleBundle/Van_Vehicle/Maps/Van_Test_Map",
+          "actor_added": false,
+          "baked": false,
+          "low_mesh": false
+        }
+      ]
+    },
+    "Seaside_Town": {
+      "maps": [
+        {
+          "name": "Demonstration",
+          "path": "/Game/Seaside_Town/Maps/Demonstration",
+          "actor_added": false,
+          "baked": false,
+          "low_mesh": false
         }
       ]
     }
-  ]
+  }
 }

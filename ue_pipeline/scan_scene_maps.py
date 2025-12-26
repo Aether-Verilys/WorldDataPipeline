@@ -30,10 +30,13 @@ class SceneMapScanner:
         self.project_path = Path(self.config['project_path'])
         self.project_name = self.project_path.stem
         self.content_folder = self.project_path.parent / 'Content'
+        self.exclude_map_names = self.config.get('exclude_map_names', [])
         
         print(f"Project: {self.project_name}")
         print(f"Content folder: {self.content_folder}")
         print(f"Config file: {self.config_path}")
+        if self.exclude_map_names:
+            print(f"Excluding maps: {', '.join(self.exclude_map_names)}")
         print()
     
     def load_config(self) -> dict:
@@ -47,7 +50,11 @@ class SceneMapScanner:
     
     def load_scene_status(self) -> dict:
         """Load existing scene status from config"""
-        return self.config.get('scenes', [])
+        scenes = self.config.get('scenes', [])
+        # 兼容旧格式：如果是列表，转换为字典
+        if isinstance(scenes, list):
+            return {scene.get('id', scene.get('name', '')): {k: v for k, v in scene.items() if k != 'id'} for scene in scenes}
+        return scenes
     
     def save_scene_status(self, scenes: list):
         """Save scene status to config file"""
@@ -61,42 +68,41 @@ class SceneMapScanner:
             print(f"Error: Cannot save config file: {e}")
     
     def find_scene_folders(self) -> List[Dict]:
-        """Find all scene folders in Content directory (folders starting with S followed by digits)"""
+        """Find all scene folders in Content directory (excluding system folders)"""
         if not self.content_folder.exists():
             print(f"Error: Content folder does not exist: {self.content_folder}")
             return []
         
         scene_folders = []
         
-        # Find folders matching pattern S#### (e.g., S0001, S0002)
-        for item in self.content_folder.iterdir():
-            if item.is_dir():
-                name = item.name
-                # Check if folder name matches S#### pattern
-                if name.startswith('S') and len(name) >= 5:
-                    # Check if characters after 'S' are digits
-                    number_part = name[1:5]
-                    if number_part.isdigit():
-                        scene_folders.append({
-                            'id': name,
-                            'name': name,
-                            'path': item
-                        })
+        # 排除的系统文件夹
+        exclude_folders = {
+            'Collections', 'Developers', '__ExternalActors__', '__ExternalObjects__',
+            'CameraController', 'FirstPerson', 'Input'
+        }
         
-        # Sort by scene ID
-        scene_folders.sort(key=lambda x: x['id'])
+        # 查找所有非系统文件夹
+        for item in self.content_folder.iterdir():
+            if item.is_dir() and item.name not in exclude_folders:
+                scene_folders.append({
+                    'name': item.name,
+                    'path': item
+                })
+        
+        # 按名称排序
+        scene_folders.sort(key=lambda x: x['name'])
         
         return scene_folders
     
-    def find_umap_files(self, scene_folder: Path, scene_id: str) -> List[str]:
+    def find_umap_files(self, scene_folder: Path, scene_name: str) -> List[str]:
         """Find all .umap files in scene folder and convert to UE path format
         
         Args:
-            scene_folder: Scene folder path (e.g., Content/S0001)
-            scene_id: Scene ID (e.g., S0001)
+            scene_folder: Scene folder path (e.g., Content/LevelPrototyping)
+            scene_name: Scene name (e.g., LevelPrototyping)
         
         Returns:
-            List of map paths in UE format (e.g., ['/Game/S0001/Maps/MainMap'])
+            List of map paths in UE format (e.g., ['/Game/LevelPrototyping/Maps/MainMap'])
         """
         umap_paths = []
         
@@ -107,34 +113,29 @@ class SceneMapScanner:
             for file in files:
                 if file.endswith('.umap'):
                     file_path = Path(root) / file
+                    map_name = file_path.stem
+                    
+                    # Skip excluded map names
+                    if map_name in self.exclude_map_names:
+                        continue
                     
                     # Convert to UE path format
-                    # Content/S0001/Maps/MainMap.umap -> /Game/S0001/Maps/MainMap
+                    # Content/SceneName/Maps/MainMap.umap -> /Game/SceneName/Maps/MainMap
                     rel_path = file_path.relative_to(self.content_folder)
                     ue_path = '/Game/' + str(rel_path.parent / rel_path.stem).replace('\\', '/')
                     umap_paths.append(ue_path)
         
         return sorted(umap_paths)
     
-    def update_scene_status(self, scene_id: str, name: str, map_paths: List[str], scenes: list):
+    def update_scene_status(self, scene_name: str, map_paths: List[str], scenes: dict):
         """Update scene status with map paths"""
-        # Find existing scene
-        existing_scene = None
-        for scene in scenes:
-            if scene['id'] == scene_id:
-                existing_scene = scene
-                break
-        
-        if existing_scene:
-            # Update scene name
-            existing_scene['name'] = name
-            
-            # Update map list (preserve existing actor_added and baked status)
-            existing_maps = {m['path']: m for m in existing_scene.get('maps', [])}
+        if scene_name in scenes:
+            # 场景已存在，更新地图列表（保留已有的actor_added和baked状态）
+            existing_maps = {m['path']: m for m in scenes[scene_name].get('maps', [])}
             new_maps = []
             
             for map_path in map_paths:
-                # Extract map name from path (e.g., /Game/S0001/Maps/MainMap -> MainMap)
+                # Extract map name from path (e.g., /Game/LevelPrototyping/Maps/MainMap -> MainMap)
                 map_name = map_path.split('/')[-1]
                 
                 if map_path in existing_maps:
@@ -148,26 +149,25 @@ class SceneMapScanner:
                         "name": map_name,
                         "path": map_path,
                         "actor_added": False,
-                        "baked": False
+                        "baked": False,
+                        "low_mesh": False
                     })
             
-            existing_scene['maps'] = new_maps
+            scenes[scene_name]['maps'] = new_maps
         else:
             # New scene
-            new_scene = {
-                "id": scene_id,
-                "name": name,
+            scenes[scene_name] = {
                 "maps": [
                     {
                         "name": map_path.split('/')[-1],  # Use map name as name
                         "path": map_path,
                         "actor_added": False,
-                        "baked": False
+                        "baked": False,
+                        "low_mesh": False
                     }
                     for map_path in map_paths
                 ]
             }
-            scenes.append(new_scene)
     
     def scan_all_scenes(self, dry_run: bool = False):
         """Scan all scene folders and update status"""
@@ -180,12 +180,12 @@ class SceneMapScanner:
         scene_folders = self.find_scene_folders()
         
         if not scene_folders:
-            print("No scene folders found (looking for folders named S####)")
+            print("No scene folders found")
             return
         
         print(f"Found {len(scene_folders)} scene folder(s):")
         for folder in scene_folders:
-            print(f"  - {folder['id']}")
+            print(f"  - {folder['name']}")
         print()
         
         # Load existing status
@@ -198,14 +198,14 @@ class SceneMapScanner:
         # Scan each scene folder
         total_maps = 0
         for idx, folder_info in enumerate(scene_folders, 1):
-            scene_id = folder_info['id']
+            scene_name = folder_info['name']
             scene_path = folder_info['path']
             
-            print(f"[{idx}/{len(scene_folders)}] Scanning scene: {scene_id}")
+            print(f"[{idx}/{len(scene_folders)}] Scanning scene: {scene_name}")
             print(f"  Path: {scene_path}")
             
             # Find all .umap files
-            map_paths = self.find_umap_files(scene_path, scene_id)
+            map_paths = self.find_umap_files(scene_path, scene_name)
             
             if map_paths:
                 print(f"  Found {len(map_paths)} map(s):")
@@ -217,12 +217,20 @@ class SceneMapScanner:
             
             # Update status
             if not dry_run:
-                self.update_scene_status(scene_id, scene_id, map_paths, scenes)
+                self.update_scene_status(scene_name, map_paths, scenes)
             
             print()
         
-        # Sort scenes by ID
-        scenes.sort(key=lambda x: x['id'])
+        # Remove scenes that no longer exist in Content folder
+        scanned_scene_names = {folder['name'] for folder in scene_folders}
+        scenes_to_remove = [name for name in scenes.keys() if name not in scanned_scene_names]
+        
+        if scenes_to_remove:
+            print(f"Removing {len(scenes_to_remove)} scene(s) no longer in Content folder:")
+            for scene_name in scenes_to_remove:
+                print(f"  - {scene_name}")
+                del scenes[scene_name]
+            print()
         
         # Save status
         if not dry_run:
@@ -252,12 +260,13 @@ class SceneMapScanner:
         print("=" * 70)
         print()
         
-        for scene in scenes:
-            scene_id = scene['id']
-            scene_name = scene['name']
-            maps = scene.get('maps', [])
+        # 按场景名称排序
+        sorted_scenes = sorted(scenes.items())
+        
+        for scene_name, scene_data in sorted_scenes:
+            maps = scene_data.get('maps', [])
             
-            print(f"Scene: {scene_id} ({scene_name})")
+            print(f"Scene: {scene_name}")
             print(f"  Maps: {len(maps)}")
             
             for map_info in maps:
@@ -265,12 +274,15 @@ class SceneMapScanner:
                 map_path = map_info['path']
                 actor_added = map_info.get('actor_added', False)
                 baked = map_info.get('baked', False)
+                low_mesh = map_info.get('low_mesh', False)
                 
                 status_flags = []
                 if actor_added:
                     status_flags.append("Actor")
                 if baked:
                     status_flags.append("Baked")
+                if low_mesh:
+                    status_flags.append("LowMesh")
                 
                 status_str = f" [{', '.join(status_flags)}]" if status_flags else ""
                 print(f"    [{map_name}] {map_path}{status_str}")

@@ -1,54 +1,3 @@
-"""
-Add NavMesh to UE scene/level - Universal Auto-Scaling Approach
-
-DESIGN PHILOSOPHY:
-==================
-This module provides a simple, universal approach to adding NavMesh to any UE scene,
-handling different terrain types automatically.
-
-KEY STRATEGY - Horizontal First, Vertical Second:
---------------------------------------------------
-1. Calculate XY bounds (horizontal plane) from all navigable geometry
-2. Calculate Z bounds separately:
-   - Z_min: Landscape ground level (if exists) OR geometry min - step_height
-   - Z_max: Geometry max + jump_height
-3. Landscape ALWAYS has priority as ground level (if present)
-
-CORE FUNCTIONS:
-===============
-1. auto_scale_navmesh()        - Main entry point, automatic bounds calculation
-2. calculate_map_bounds()       - XY-first bounds calculation with Landscape priority
-3. enable_landscape_navigation() - Enable navigation on Landscape actors
-
-USAGE:
-======
-Simple auto-scaling (recommended):
-    manager = NavMeshManager()
-    manager.load_map('/Game/Maps/YourMap')
-    navmesh = manager.auto_scale_navmesh()
-    manager.wait_for_navmesh_build()
-    manager.verify_navmesh_data()
-
-Batch processing:
-    manager.batch_add_navmesh_to_maps(map_list)
-
-TERRAIN SUPPORT:
-================
-- StaticMesh geometry (buildings, props, etc.)
-- Landscape (ground/terrain) - automatically detected and enforced as Z_min
-- Mixed terrain scenarios
-- Small to large scenes (auto-adapts)
-
-DELETED FEATURES:
-=================
-The following complex features have been removed for simplicity:
-- adaptive_navmesh_optimization() - Iterative sampling/shrinking (over-engineered)
-- sample_navmesh_coverage() - Runtime NavMesh sampling
-- find_largest_connected_region() - Connected region analysis
-- Multi-volume spatial partitioning - Scene size-based strategies
-
-These can be re-implemented if needed for specific advanced use cases.
-"""
 import unreal
 import time
 
@@ -91,6 +40,28 @@ class NavMeshManager:
         
         unreal.log_error(f"Failed to load map: {map_package_path}")
         return False
+    
+    def count_static_mesh_actors(self) -> int:
+        """
+        Count StaticMeshActor instances in current level
+        
+        Returns:
+            int: Number of StaticMeshActor instances found
+        """
+        try:
+            all_actors = unreal.EditorLevelLibrary.get_all_level_actors()
+            count = 0
+            
+            for actor in all_actors:
+                if isinstance(actor, unreal.StaticMeshActor):
+                    count += 1
+            
+            unreal.log(f"StaticMeshActor count: {count}")
+            return count
+            
+        except Exception as e:
+            unreal.log_error(f"Error counting StaticMeshActors: {str(e)}")
+            return 0
     
     def check_navmesh_exists(self):
         all_actors = unreal.EditorLevelLibrary.get_all_level_actors()

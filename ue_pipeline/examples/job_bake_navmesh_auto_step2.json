@@ -17,7 +17,7 @@
     "build_timeout": 120,
     "verify_navmesh": true,
     "maps": [
-      "/Game/CanyonScans/Maps/Canyon_DemoScene"
+      "/Game/OceanCity/Map/OceanCity"
     ]
   }
 }

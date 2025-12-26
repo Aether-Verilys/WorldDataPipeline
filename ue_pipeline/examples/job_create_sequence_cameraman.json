@@ -1,7 +1,7 @@
 {
   "job_type": "create_sequence",
   "job_id": "job-create-seq-cameraman-001",
-  "map": "/Game/CanyonScans/Maps/Canyon_DemoScene",
+  "map": "/Game/OceanCity/Map/OceanCity",
   "sequence_config": {
     "output_dir": "/Game/CameraController/Generated",
     "sequence_number": 1,
@@ -27,7 +27,7 @@
     "transform_key_interp": "auto",
     "actor_name": "BP_Cameraman",
     "camera_component_name": "Camera",
-    "actor_blueprint_class_path": "/Game/FirstPerson/Blueprints/BP_Cameraman.BP_Cameraman",
+    "actor_blueprint_class_path": "/Game/FirstPerson/Blueprints/BP_Cameraman",
     "actor_binding_mode": "sequence_spawnable"
   }
 }
