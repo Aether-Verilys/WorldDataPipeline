@@ -21,7 +21,7 @@
       "key_interval_seconds": 0.25,
       "interpolation": "linear",
       "project_to_nav": true,
-      "z_offset_cm": 0.0
+      "z_offset_cm": 170.0
     },
     "force_zero_pitch_roll": true,
     "max_yaw_rate_deg_per_sec": 60.0,
@@ -32,10 +32,10 @@
       { "time_seconds": 2.0, "location": { "x": 200, "y": 0, "z": 0 }, "rotation": { "pitch": 0, "yaw": 45, "roll": 0 } },
       { "time_seconds": 4.0, "location": { "x": 200, "y": 200, "z": 0 }, "rotation": { "pitch": 0, "yaw": 90, "roll": 0 } }
     ],
-    "actor_name": "BP_NPC_NavMesh",
+    "actor_name": "BP_Cameraman",
     "camera_component_name": "Camera",
-    "actor_blueprint_class_path": "/Game/FirstPerson/Blueprints/BP_NPC_NavMesh.BP_NPC_NavMesh",
-    "spawn_actor_if_missing": true,
+    "actor_blueprint_class_path": "/Game/FirstPerson/Blueprints/BP_Cameraman.BP_Cameraman",
+    "spawn_actor_if_missing": false,
     "actor_binding_mode": "sequence_spawnable",
     "save_level_if_spawned": false,
     "spawn_location": { "x": 0, "y": 0, "z": 0 },

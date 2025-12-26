@@ -1181,13 +1181,67 @@ def _add_possessable(sequence, obj):
     _debug_list_methods(sequence, "LevelSequence", "possess")
     raise RuntimeError("Unable to add possessable binding (no compatible API found)")
 
+
+def _validate_prerequisites(map_path: str, blueprint_path: str, check_navmesh: bool) -> None:
+    """验证地图、蓝图和NavMesh是否存在，缺一不可"""
+    errors = []
+    
+    # 1. 检查地图是否存在
+    if map_path:
+        if not unreal.EditorAssetLibrary.does_asset_exist(map_path):
+            errors.append(f"Map does not exist: {map_path}")
+    
+    # 2. 检查蓝图是否存在
+    if blueprint_path:
+        normalized = blueprint_path.split(".")[0] if "." in blueprint_path else blueprint_path
+        if not unreal.EditorAssetLibrary.does_asset_exist(normalized):
+            errors.append(f"Blueprint does not exist: {blueprint_path}")
+    
+    # 3. 检查NavMesh
+    if check_navmesh and map_path:
+        try:
+            # 先加载地图
+            level_editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+            if not level_editor.load_level(map_path):
+                errors.append(f"Failed to load map for NavMesh check: {map_path}")
+            else:
+                # 检查NavMesh
+                world = unreal.EditorLevelLibrary.get_editor_world()
+                nav = _get_nav_system(world)
+                
+                # 尝试获取NavData
+                nav_data = None
+                for getter_name in ("get_main_nav_data", "get_default_nav_data_instance"):
+                    getter = getattr(nav, getter_name, None)
+                    if callable(getter):
+                        try:
+                            nav_data = getter(world)
+                            if nav_data:
+                                break
+                        except Exception:
+                            pass
+                
+                if not nav_data:
+                    errors.append(f"Map has no NavMesh data: {map_path}")
+        except Exception as e:
+            errors.append(f"NavMesh validation failed: {e}")
+    
+    if errors:
+        error_msg = "Prerequisites validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+        raise RuntimeError(error_msg)
+
+
 try:
+    # 预检查：地图、蓝图、NavMesh必须都存在
+    _validate_prerequisites(map_path, actor_blueprint_class_path, nav_roam_enabled)
+    
     # Load map first (important for level possessables, and avoids world switching mid-script)
     if map_path:
         try:
             _load_map(map_path)
         except Exception as e:
-            print(f"[WorkerCreateSequence] WARNING: Map load failed early: {e}")
+            print(f"[WorkerCreateSequence] ERROR: Map load failed: {e}")
+            sys.exit(1)
 
     # If requested, resolve startpoint now (after map load)
     start_location = None

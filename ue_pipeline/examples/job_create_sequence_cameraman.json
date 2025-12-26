@@ -1,0 +1,33 @@
+{
+  "job_type": "create_sequence",
+  "job_id": "job-create-seq-cameraman-001",
+  "map": "/Game/CanyonScans/Maps/Canyon_DemoScene",
+  "sequence_config": {
+    "output_dir": "/Game/CameraController/Generated",
+    "sequence_number": 1,
+    "fps": 30,
+    "duration_seconds": 30,
+    "add_camera": true,
+    "nav_roam": {
+      "enabled": true,
+      "seed": 12345,
+      "nav_build_wait_seconds": 10.0,
+      "random_point_radius_cm": 8000.0,
+      "num_legs": 6,
+      "max_random_point_tries": 40,
+      "min_segment_step_cm": 75.0,
+      "key_interval_seconds": 0.25,
+      "interpolation": "linear",
+      "project_to_nav": true,
+      "z_offset_cm": 170.0
+    },
+    "force_zero_pitch_roll": true,
+    "max_yaw_rate_deg_per_sec": 60.0,
+    "write_transform_keys": true,
+    "transform_key_interp": "auto",
+    "actor_name": "BP_Cameraman",
+    "camera_component_name": "Camera",
+    "actor_blueprint_class_path": "/Game/FirstPerson/Blueprints/BP_Cameraman.BP_Cameraman",
+    "actor_binding_mode": "sequence_spawnable"
+  }
+}

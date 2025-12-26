@@ -101,8 +101,41 @@ def main() -> int:
                 print(f"[WorkerGenLevelSequence] WARNING: PIE not available, falling back to editor world: {e}")
                 manifest["prefer_pie"] = False
 
+        # Load actor blueprint class if specified
+        actor_class = None
+        actor_blueprint_path = manifest.get("actor_blueprint_class_path")
+        if actor_blueprint_path:
+            print(f"[WorkerGenLevelSequence] Loading blueprint class: {actor_blueprint_path}")
+            try:
+                # Try loading blueprint class
+                asset = unreal.load_asset(actor_blueprint_path)
+                if asset:
+                    actor_class = getattr(asset, "generated_class", None)
+                    if actor_class:
+                        print(f"[WorkerGenLevelSequence] ✓ Loaded blueprint class: {actor_class}")
+                    else:
+                        print(f"[WorkerGenLevelSequence] WARNING: Blueprint loaded but no generated_class found")
+            except Exception as e:
+                print(f"[WorkerGenLevelSequence] WARNING: Failed to load blueprint class: {e}")
+
         print("[WorkerGenLevelSequence] Generating LevelSequence from NavMesh...")
-        result = gen_levelsequence.generate_nav_camera_sequence_from_manifest(manifest)
+        
+        # Pass actor_class to the generation function
+        if actor_class:
+            import gen_levelsequence as gen_module
+            cfg_dict = manifest.get("nav_sequence", {}) or {}
+            allowed = set(getattr(gen_module.NavSequenceConfig, "__dataclass_fields__", {}).keys())
+            cfg = gen_module.NavSequenceConfig(**{k: v for k, v in cfg_dict.items() if k in allowed})
+            
+            seq_path = gen_module.generate_nav_camera_sequence(cfg, prefer_pie=manifest.get("prefer_pie", True), actor_class=actor_class)
+            result = {
+                "status": "success",
+                "sequence": seq_path,
+                "fps": cfg.fps,
+                "duration_seconds": cfg.duration_seconds,
+            }
+        else:
+            result = gen_levelsequence.generate_nav_camera_sequence_from_manifest(manifest)
 
         if result.get("status") == "success":
             print("[WorkerGenLevelSequence] ✓ Generation completed")
