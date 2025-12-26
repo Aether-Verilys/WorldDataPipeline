@@ -144,9 +144,8 @@ try:
         if not navmesh:
             print(f"[WorkerBakeNavMesh] WARNING: NavMesh volume not created (may already exist)")
         
-        # NavMesh auto-builds after adding NavMeshBoundsVolume, no manual rebuild needed
+        # NavMesh auto-builds after adding NavMeshBoundsVolume in UE 5.7+
         print(f"[WorkerBakeNavMesh] NavMesh auto-building for {map_path}...")
-        manager.rebuild_navmesh()  # Just logs a message
         
         # Wait for NavMesh build to complete
         if wait_for_build:
