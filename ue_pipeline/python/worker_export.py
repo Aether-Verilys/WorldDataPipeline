@@ -11,16 +11,23 @@ import export_UE_camera
 
 print("[WorkerExport] Starting camera export job execution...")
 
-# Parse command line arguments
+# Parse command line arguments or environment variable
 manifest_path = None
-for i, arg in enumerate(sys.argv):
-    if arg.startswith("--manifest="):
-        manifest_path = arg.split("=", 1)[1]
-    elif arg == "--manifest" and i + 1 < len(sys.argv):
-        manifest_path = sys.argv[i + 1]
+
+# First try environment variable (for headless mode)
+manifest_path = os.environ.get('UE_MANIFEST_PATH')
+
+# Fallback to command line arguments
+if not manifest_path:
+    for i, arg in enumerate(sys.argv):
+        if arg.startswith("--manifest="):
+            manifest_path = arg.split("=", 1)[1]
+        elif arg == "--manifest" and i + 1 < len(sys.argv):
+            manifest_path = sys.argv[i + 1]
 
 if not manifest_path:
     print("[WorkerExport] ERROR: No manifest path provided")
+    print("[WorkerExport] Usage: Set UE_MANIFEST_PATH environment variable or use --manifest=<path>")
     sys.exit(1)
 
 print(f"[WorkerExport] Manifest: {manifest_path}")
@@ -35,47 +42,37 @@ except Exception as e:
 
 job_id = manifest.get("job_id", "unknown")
 job_type = manifest.get("job_type", "unknown")
-recorded_sequence = manifest.get("sequence")
+sequence_path = manifest.get("sequence")
 camera_export_config = manifest.get("camera_export", {})
 
 print(f"[WorkerExport] Job ID: {job_id}")
 print(f"[WorkerExport] Job Type: {job_type}")
-print(f"[WorkerExport] Recorded Sequence: {recorded_sequence}")
+print(f"[WorkerExport] Sequence: {sequence_path}")
+
+# Print actual UE project directory
+try:
+    from pathlib import Path
+    # Use project_content_dir().parent to get real project root (same as worker_bake_navmesh.py)
+    project_content_dir = unreal.Paths.project_content_dir()
+    project_path = Path(project_content_dir).parent
+    project_saved_dir = project_path / "Saved"
+    
+    print(f"[WorkerExport] ========== Current UE Project Info ==========")
+    print(f"[WorkerExport] Project Root: {project_path}")
+    print(f"[WorkerExport] Content Directory: {project_content_dir}")
+    print(f"[WorkerExport] Saved Directory: {project_saved_dir}")
+    print(f"[WorkerExport] =============================================")
+except Exception as e:
+    print(f"[WorkerExport] WARNING: Failed to get project directories: {e}")
 
 # Validate job type
 if job_type != "export":
     print(f"[WorkerExport] ERROR: Invalid job type '{job_type}', expected 'export'")
     sys.exit(1)
 
-if not recorded_sequence:
+if not sequence_path:
     print("[WorkerExport] ERROR: No sequence specified in manifest")
     sys.exit(1)
-
-# Build subscene path
-# Example: /Game/CameraController/2025-12-08/Scene_1_10
-# -> /Game/CameraController/2025-12-08/Scene_1_10_Subscenes/BP_FirstPersonCharacter0_Scene_1_10
-path_parts = recorded_sequence.rsplit('/', 1)
-if len(path_parts) == 2:
-    parent_path = path_parts[0]
-    sequence_name = path_parts[1]
-else:
-    parent_path = ""
-    sequence_name = recorded_sequence
-
-binding_transform = camera_export_config.get("binding_transform", "BP_FirstPersonCharacter0")
-subscene_folder = f"{sequence_name}_Subscenes"
-subscene_name = f"{binding_transform}_{sequence_name}"
-
-if parent_path:
-    subscene_path = f"{parent_path}/{subscene_folder}/{subscene_name}"
-else:
-    subscene_path = f"{subscene_folder}/{subscene_name}"
-
-print(f"[WorkerExport] Subscene Path: {subscene_path}")
-print(f"[WorkerExport] Binding Transform: {binding_transform}")
-
-# Update manifest with subscene path for export_UE_camera
-manifest["sequence"] = subscene_path
 
 # Execute export job
 try:
@@ -95,8 +92,7 @@ try:
             log_entry = {
                 "job_type": "export",
                 "job_id": job_id,
-                "recorded_sequence": recorded_sequence,
-                "subscene_sequence": subscene_path,
+                "sequence": sequence_path,
                 "output_path": result.get('output_dir'),
                 "extrinsic_csv": result.get('extrinsic_csv'),
                 "transform_csv": result.get('transform_csv'),

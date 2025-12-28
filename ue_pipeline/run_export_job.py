@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 UE Camera Export Job Executor (Python version)
-Execute a camera export job using UnrealEditor.exe (GUI mode)
+Execute a camera export job using UnrealEditor-Cmd.exe (Headless mode)
 """
 
 import argparse
@@ -103,8 +103,13 @@ def main():
         ue_editor = ue_config.get('editor_path', ue_config_global.get('editor_path'))
         project = ue_config.get('project_path', ue_config_global.get('project_path'))
 
+        # Merge ue_config into manifest if not present
         if not manifest.get('ue_config'):
-            print_colored("WARNING: No ue_config in manifest, using config file defaults", 'yellow')
+            print_colored("WARNING: No ue_config in manifest, merging config file defaults", 'yellow')
+            manifest['ue_config'] = ue_config_global
+            # Save updated manifest
+            with open(manifest_path, 'w', encoding='utf-8') as f:
+                json.dump(manifest, f, indent=2, ensure_ascii=False)
 
         print_colored(f"Job ID:       {job_id}", 'yellow')
         print_colored(f"Job Type:     {job_type}", 'yellow')
@@ -144,14 +149,21 @@ def main():
     # Resolve absolute path for manifest
     abs_manifest_path = os.path.abspath(manifest_path)
 
-    # Build python command for worker
-    py_command = f'py "{worker_export}" --manifest="{abs_manifest_path}"'
+    # Pass manifest path via environment variable (for headless mode)
+    os.environ['UE_MANIFEST_PATH'] = abs_manifest_path
 
-    # Build UE launch arguments (GUI mode)
+    # Build UE launch arguments (Headless mode)
     ue_args = [
         str(project),
-        f'-ExecCmds="{py_command}"',
-        '-NoLoadingScreen',
+        f'-ExecutePythonScript={worker_export}',
+        '-unattended',
+        '-nopause',
+        '-nosplash',
+        '-NullRHI',
+        '-buildmachine',
+        '-NoSound',
+        '-AllowStdOutLogVerbosity',
+        '-FullStdOutLogOutput',
         '-log'
     ]
 

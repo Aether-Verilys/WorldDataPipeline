@@ -179,15 +179,13 @@ function applyRowToCamera(row, showDetails = false) {
     const pos = new THREE.Vector3(), quat = new THREE.Quaternion(), scl = new THREE.Vector3();
     matWorldThree.decompose(pos, quat, scl);
 
-    // 6) 单位转换: cm -> m
-    const unitScale = 0.01;
-    pos.multiplyScalar(unitScale);
+    // 6) 单位已经是米（CSV导出时已转换），无需再转换
+    // const unitScale = 0.01;
+    // pos.multiplyScalar(unitScale);
 
-    // 7) 应用到相机
     camera.position.copy(pos);
     camera.quaternion.copy(quat);
 
-    // 8) 详细日志（仅单步时）
     if (showDetails) {
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
         const up = new THREE.Vector3(0, 1, 0).applyQuaternion(quat);

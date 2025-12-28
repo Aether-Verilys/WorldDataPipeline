@@ -269,3 +269,21 @@ def mark_job_completed(manifest_path: str, success: bool = True) -> str:
     
     os.replace(manifest_path, target_path)
     return target_path
+
+
+# ==============================================================================
+# UE Configuration
+# ==============================================================================
+
+def load_ue_config() -> Dict[str, Any]:
+    """Load UE configuration from config/ue_config.json"""
+    script_dir = Path(__file__).parent
+    config_path = script_dir / '..' / 'config' / 'ue_config.json'
+    
+    if not config_path.exists():
+        raise FileNotFoundError(f"UE config file not found: {config_path}")
+    
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+    
+    return config

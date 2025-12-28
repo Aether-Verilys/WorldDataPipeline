@@ -21,9 +21,5 @@
         "dest_path": "renders/job-render-001"
       }
     }
-  },
-  "metadata": {
-    "description": "Render job - Renders a Level Sequence using Movie Render Queue with UnrealEditor-Cmd.exe",
-    "created_date": "2025-12-10"
   }
 }

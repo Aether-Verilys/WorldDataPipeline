@@ -9,7 +9,7 @@ def discover_level_sequences(directory: str) -> List[str]:
         unreal.log_warning(f"[Rendering] 目录不存在: {directory}")
         return []
     
-    assets = unreal.EditorAssetLibrary.list_assets(directory, recursive=False, include_folder=False)
+    assets = unreal.EditorAssetLibrary.list_assets(directory, recursive=True, include_folder=False)
     sequences = []
     
     for asset_path in assets:

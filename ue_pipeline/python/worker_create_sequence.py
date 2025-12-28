@@ -831,7 +831,7 @@ def _normalize_angle_continuous(angles_deg):
     return result
 
 
-def _sanitize_rotation_keys(keys_cfg, zero_pitch_roll: bool, max_yaw_rate_deg_per_sec: float | None, preserve_pitch: bool = False) -> None:
+def _sanitize_rotation_keys(keys_cfg, zero_pitch_roll: bool, max_yaw_rate_deg_per_sec: float | None, preserve_pitch: bool = False, max_pitch_rate_deg_per_sec: float = 20.0) -> None:
     if not keys_cfg:
         return
 
@@ -889,10 +889,43 @@ def _sanitize_rotation_keys(keys_cfg, zero_pitch_roll: bool, max_yaw_rate_deg_pe
         for rot, yaw in zip(rot_refs, continuous_yaws):
             rot["yaw"] = float(yaw)
 
+    # 对pitch进行平滑处理（如果preserve_pitch=True）
+    if preserve_pitch and len(rot_refs) > 0:
+        pitches = []
+        for rot in rot_refs:
+            pitches.append(rot.get("pitch", 0.0))
+        
+        if len(times) == len(pitches) and len(pitches) > 1:
+            smoothed_pitches = [float(pitches[0])]
+            for i in range(1, len(pitches)):
+                prev = smoothed_pitches[-1]
+                target = float(pitches[i])
+                dt = max(1e-3, times[i] - times[i - 1])
+                max_delta = max_pitch_rate_deg_per_sec * dt
+                delta = target - prev
+                
+                # 限制变化速率
+                if delta > max_delta:
+                    delta = max_delta
+                elif delta < -max_delta:
+                    delta = -max_delta
+                
+                new_pitch = prev + delta
+                
+                # 限制pitch在[-15, 15]度范围内
+                new_pitch = max(-15.0, min(15.0, new_pitch))
+                smoothed_pitches.append(new_pitch)
+            
+            # 应用平滑后的pitch值
+            for rot, pitch in zip(rot_refs, smoothed_pitches):
+                rot["pitch"] = float(pitch)
+
     msg = f"[WorkerCreateSequence] ✓ Sanitized {count} keys: yaw continuous"
     if max_yaw_rate_deg_per_sec:
         msg += f", yaw rate ≤ {max_yaw_rate_deg_per_sec:.1f} deg/s"
-    if zero_pitch_roll:
+    if preserve_pitch:
+        msg += f", pitch smoothed (rate ≤ {max_pitch_rate_deg_per_sec:.1f} deg/s, range [-15, 15])"
+    elif zero_pitch_roll:
         msg += ", pitch=0, roll=0"
     print(msg)
 
@@ -1554,8 +1587,37 @@ for batch_idx in range(batch_count):
 
             start = start_location if start_location is not None else spawn_location
             print(f"[WorkerCreateSequence] NavRoam starting from: {start}")
-            nav_points = _build_multi_leg_nav_path(nav, world, start, nav_roam_cfg)
-            print(f"[WorkerCreateSequence] NavRoam generated {len(nav_points)} raw points")
+            
+            # 尝试生成路径，如果失败则重新生成种子重试一次
+            nav_points = None
+            for path_attempt in range(2):  # 最多尝试2次
+                try:
+                    if path_attempt == 1:
+                        # 第二次尝试：重新生成随机种子
+                        actual_seed = random.randint(0, 999999)
+                        random.seed(actual_seed)
+                        print(f"[WorkerCreateSequence] ⚠ Retry with new seed: {actual_seed}")
+                    
+                    nav_points = _build_multi_leg_nav_path(nav, world, start, nav_roam_cfg)
+                    print(f"[WorkerCreateSequence] NavRoam generated {len(nav_points)} raw points")
+                    break  # 成功则跳出循环
+                    
+                except RuntimeError as e:
+                    error_msg = str(e)
+                    if "Failed to find connected NavMesh point" in error_msg:
+                        if path_attempt == 0:
+                            print(f"[WorkerCreateSequence] ⚠ NavMesh connection failed on first attempt: {e}")
+                            print(f"[WorkerCreateSequence] ⚠ Retrying with new random seed...")
+                            continue
+                        else:
+                            print(f"[WorkerCreateSequence] ✗ NavMesh connection failed after 2 attempts")
+                            raise
+                    else:
+                        # 其他类型的错误直接抛出
+                        raise
+            
+            if nav_points is None:
+                raise RuntimeError("Failed to generate nav path after retries")
             
             if len(nav_points) < 2:
                 error_msg = f"NavRoam produced too few points ({len(nav_points)}). "
@@ -1642,7 +1704,8 @@ for batch_idx in range(batch_count):
                 except (ValueError, TypeError) as e:
                     print(f"[WorkerCreateSequence] WARNING: Invalid fixed_speed value: {e}")
 
-            key_interval_seconds = float(nav_roam_cfg.get("key_interval_seconds", 0.25))
+            # 每帧一个关键帧，确保导出时能准确复现
+            key_interval_seconds = 1.0 / float(fps)  # 按照fps计算，每帧都写关键帧
             key_interval_frames = max(1, int(round(float(fps) * key_interval_seconds)))
             key_count = max(2, int(math.floor(float(total_frames) / float(key_interval_frames))) + 1)
             samples = _resample_by_distance(nav_points, key_count)
@@ -1783,7 +1846,8 @@ for batch_idx in range(batch_count):
                 try:
                     # 如果启用了camera_pitch_from_slope，保留pitch值
                     camera_pitch_from_slope = bool(sequence_config.get("camera_pitch_from_slope", False))
-                    _sanitize_rotation_keys(transform_keys_cfg, force_zero_pitch_roll, max_yaw_rate_deg_per_sec, preserve_pitch=camera_pitch_from_slope)
+                    max_pitch_rate = float(sequence_config.get("max_pitch_rate_deg_per_sec", 20.0))
+                    _sanitize_rotation_keys(transform_keys_cfg, force_zero_pitch_roll, max_yaw_rate_deg_per_sec, preserve_pitch=camera_pitch_from_slope, max_pitch_rate_deg_per_sec=max_pitch_rate)
                     _write_transform_keys(actor_binding, int(fps), int(total_frames), transform_keys_cfg)
                     transform_keys_written = True
                 except Exception as e:
