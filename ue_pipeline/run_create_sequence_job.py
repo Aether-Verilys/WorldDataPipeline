@@ -136,7 +136,6 @@ def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str) ->
         '-buildmachine',
         '-NoSound',
         '-AllowStdOutLogVerbosity',
-        '-stdout',
         '-FullStdOutLogOutput',
         '-log',
     ]

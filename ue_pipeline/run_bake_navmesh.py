@@ -124,7 +124,6 @@ def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str, jo
             '-NoSound',
             '-AllowStdOutLogVerbosity',
             '-log',
-            '-stdout',
             '-FullStdOutLogOutput',
             f'LOG=NavMeshBake_{job_id}.txt',
         ]

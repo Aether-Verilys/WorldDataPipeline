@@ -3,8 +3,8 @@
   "job_type": "bake_navmesh",
   "description": "Step 2: Auto-scale NavMesh baking with intelligent volume layout",
   "ue_config": {
-    "editor_path": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
-    "project_path": "D:/UE_Projects/WorldProject/WorldProject.uproject"
+    "editor_path": "F:/Epic/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
+    "project_path": "E:/WorldProject/WorldProject.uproject"
   },
   "navmesh_config": {
     "auto_scale": true,
@@ -17,7 +17,7 @@
     "build_timeout": 120,
     "verify_navmesh": true,
     "maps": [
-      "/Game/OceanCity/Map/OceanCity"
+      "/Game/LevelPrototyping/Lvl_FirstPerson"
     ]
   }
 }

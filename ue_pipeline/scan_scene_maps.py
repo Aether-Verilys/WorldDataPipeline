@@ -130,8 +130,8 @@ class SceneMapScanner:
     def update_scene_status(self, scene_name: str, map_paths: List[str], scenes: dict):
         """Update scene status with map paths"""
         if scene_name in scenes:
-            # 场景已存在，更新地图列表（保留已有的actor_added和baked状态）
-            existing_maps = {m['path']: m for m in scenes[scene_name].get('maps', [])}
+            # 场景已存在，更新地图列表（保留已有的actor_added状态）
+            existing_maps = {m['path']: m for m in scenes[scene_name].get('maps', [])}}
             new_maps = []
             
             for map_path in map_paths:
@@ -149,7 +149,6 @@ class SceneMapScanner:
                         "name": map_name,
                         "path": map_path,
                         "actor_added": False,
-                        "baked": False,
                         "low_mesh": False
                     })
             
@@ -162,7 +161,6 @@ class SceneMapScanner:
                         "name": map_path.split('/')[-1],  # Use map name as name
                         "path": map_path,
                         "actor_added": False,
-                        "baked": False,
                         "low_mesh": False
                     }
                     for map_path in map_paths
@@ -273,14 +271,11 @@ class SceneMapScanner:
                 map_name = map_info['name']
                 map_path = map_info['path']
                 actor_added = map_info.get('actor_added', False)
-                baked = map_info.get('baked', False)
                 low_mesh = map_info.get('low_mesh', False)
                 
                 status_flags = []
                 if actor_added:
                     status_flags.append("Actor")
-                if baked:
-                    status_flags.append("Baked")
                 if low_mesh:
                     status_flags.append("LowMesh")
                 

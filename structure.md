@@ -1,23 +1,18 @@
-# WorldDataPipeline - 3天开发计划
+# WorldDataPipeline
 
 ## 项目目标
 
 生成500小时世界模型训练数据（15,000个2分钟视频片段），通过自动化管线实现：
-- ✅ 自适应场景处理（NavMesh根据地图大小动态调整）
-- ✅ 智能相机轨迹生成（基于NavMesh随机起点）
-- ✅ 分布式渲染（Linux集群 + Docker + Redis）
-- ✅ 动态资源管理（BOS按需下载/上传，避免磁盘过载）
+- 自适应场景处理（NavMesh根据地图大小动态调整）
+- 智能相机轨迹生成（基于NavMesh随机起点）
+- 分布式渲染（Linux集群 + Docker + Redis）
+- 动态资源管理（BOS按需下载/上传，避免磁盘过载）
 
 ---
 
 ## 架构设计
 
 ### 核心设计原则：单场景作业流 + 分布式渲染
-
-**Why?**
-- 场景规模差异大（室内50m vs 开放世界5km），需自适应处理
-- 3,000+场景无法全部加载到单个UE工程（磁盘/内存限制）
-- 渲染计算密集，需要Linux GPU集群并行加速
 
 **流程分离：**
 ```
@@ -34,7 +29,7 @@ BOS下载场景 ──→ NavMesh烘焙          Docker容器(UE 5.7)
 
 | 组件 | 技术 | 用途 |
 |------|------|------|
-| **控制节点** | Windows 11/ Linux + Python 3.9+ | 场景管理、序列生成、任务调度 |
+| **控制节点** | Windows 11/ Linux + Python 3.1x | 场景管理、序列生成、任务调度 |
 | **渲染集群** | Linux + Docker + UE 5.7 | 分布式MRQ渲染 |
 | **任务队列** | Redis | 渲染任务分发与状态同步 |
 | **存储** | BOS (BaiduCloud Object Storage) | 场景资产、序列文件、视频输出 |
@@ -45,9 +40,9 @@ BOS下载场景 ──→ NavMesh烘焙          Docker容器(UE 5.7)
 
 ## 管线流程详解
 
-### Step 1: 场景配置与导入 (Windows)
-**输入：** BOS上的Raw场景资产 (`bos://bucket/raw_scenes/Seaside_Town/`)  
-**输出：** UE Content中的可用场景
+### Step 1: 数据清洗
+**输入：** BOS上的场景资产 (`bos://bucket/raw_scenes/Seaside_Town/`)  
+**输出：** UE Content中的可用场景 上传到BOS Raw中
 
 **流程：**
 1. `bos_manager.py` 下载场景到本地缓存 `D:/UE_Cache/{scene_name}/`
@@ -108,7 +103,7 @@ UnrealEditor-Cmd.exe WorldData00.uproject \
 ```
 
 **关键代码文件：**
-- `ue_pipeline/python/pre_process/add_navmesh_to_scene.py` (新增 `calculate_map_bounds()`)
+- `ue_pipeline/python/pre_process/add_navmesh_to_scene.py`
 - `ue_pipeline/python/worker_bake_navmesh.py` (添加 `auto_scale` 参数，Headless执行)
 - `ue_pipeline/run_bake_navmesh.py` (Python CLI包装器)
 
@@ -262,7 +257,7 @@ unreal.EditorAssetLibrary.save_asset(sequence.get_path_name())
   "map": "/Game/Seaside_Town/Maps/Demonstration.Demonstration",
   "sequence_config": {
     "output_dir": "/Game/CameraController/Generated",
-    "sequence_number": 1,
+    "sequence_count": 1,
     "fps": 30,
     "duration_seconds": 120,
     "actor_config": {

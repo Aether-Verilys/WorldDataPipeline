@@ -103,30 +103,6 @@ def extract_config_data(config: dict, framerate: int):
 
 def build_output_path(base_output_path: str, project_path: str, map_path: str, sequence_path: str, ue_config: dict) -> tuple:
     """Build output directory path and extract names"""
-    import re
-    
-    # Extract scene ID from map path
-    # Map path format: /Game/S0001/LevelPrototyping/Lvl_FirstPerson
-    scene_id = "UnknownScene"
-    path_parts = map_path.split("/")
-    
-    # Try to find scene ID in path (format: S####)
-    for part in path_parts:
-        if re.match(r'^S\d{4}$', part):
-            scene_id = part
-            break
-    
-    # If no scene ID found in path, try to lookup from ue_config
-    if scene_id == "UnknownScene" and ue_config:
-        scenes = ue_config.get("scenes", [])
-        for scene in scenes:
-            maps = scene.get("maps", [])
-            for map_info in maps:
-                if map_info.get("path") == map_path:
-                    scene_id = scene.get("id", "UnknownScene")
-                    break
-            if scene_id != "UnknownScene":
-                break
     
     # Extract map name
     map_name = map_path.split('/')[-1]
@@ -134,10 +110,10 @@ def build_output_path(base_output_path: str, project_path: str, map_path: str, s
     # Extract sequence name
     sequence_name = sequence_path.split('/')[-1]
     
-    # Construct output directory path: base/scene_id/map_name/sequence_name
-    output_dir = Path(base_output_path) / scene_id / map_name / sequence_name
+    # Construct output directory path: base/map_name/sequence_name
+    output_dir = Path(base_output_path) / map_name / sequence_name
     
-    return output_dir, scene_id, map_name, sequence_name
+    return output_dir, map_name, sequence_name
 
 
 def find_frame_sequences(output_dir: Path, sequence_name: str) -> list:
@@ -321,11 +297,10 @@ def main():
     ue_config = config.get('ue_config', {})
     
     # Build output path
-    output_dir, scene_id, map_name, sequence_name = build_output_path(
+    output_dir, map_name, sequence_name = build_output_path(
         base_output_path, project_path, map_path, sequence_path, ue_config
     )
     
-    print(f"\033[96mScene: {scene_id}\033[0m")
     print(f"\033[96mMap: {map_name}\033[0m")
     print(f"\033[96mSequence: {sequence_name}\033[0m")
     print(f"\033[96mOutput directory: {output_dir}\033[0m")

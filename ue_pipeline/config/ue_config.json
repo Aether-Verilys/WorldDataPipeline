@@ -1,7 +1,7 @@
 {
-  "editor_path": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
-  "project_path": "D:/UE_Projects/WorldProject/WorldProject.uproject",
-  "output_base_dir": "D:/WorldDataPipeline/output",
+  "editor_path": "F:/Epic/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
+  "project_path": "E:/WorldProject/WorldProject.uproject",
+  "output_base_dir": "E:/WorldDataPipeline/output",
   "exclude_map_names": [
     "Overview"
   ],
@@ -12,7 +12,6 @@
           "name": "Canyon_DemoScene",
           "path": "/Game/CanyonScans/Maps/Canyon_DemoScene",
           "actor_added": false,
-          "baked": false,
           "low_mesh": false
         }
       ]
@@ -23,82 +22,6 @@
           "name": "Lvl_FirstPerson",
           "path": "/Game/LevelPrototyping/Lvl_FirstPerson",
           "actor_added": false,
-          "baked": false,
-          "low_mesh": false
-        }
-      ]
-    },
-    "ModularScifiStation": {
-      "maps": [
-        {
-          "name": "ModularScifiStationExample",
-          "path": "/Game/ModularScifiStation/Maps/ModularScifiStationExample",
-          "actor_added": false,
-          "baked": false,
-          "low_mesh": false
-        }
-      ]
-    },
-    "OceanCity": {
-      "maps": [
-        {
-          "name": "Example01",
-          "path": "/Game/OceanCity/MallEnvironment/Mall/Maps/Example01",
-          "actor_added": false,
-          "baked": false,
-          "low_mesh": false
-        },
-        {
-          "name": "OceanCity",
-          "path": "/Game/OceanCity/Map/OceanCity",
-          "actor_added": false,
-          "baked": false,
-          "low_mesh": false
-        },
-        {
-          "name": "Ambulance",
-          "path": "/Game/OceanCity/VehicleBundle/Ambulance_Vehicle/Maps/Ambulance",
-          "actor_added": false,
-          "baked": false,
-          "low_mesh": false
-        },
-        {
-          "name": "BuggyDemo",
-          "path": "/Game/OceanCity/VehicleBundle/Buggy_Vehicle/Maps/BuggyDemo",
-          "actor_added": false,
-          "baked": false,
-          "low_mesh": false
-        },
-        {
-          "name": "VehicleExampleMap",
-          "path": "/Game/OceanCity/VehicleBundle/OffRoadVehicles/Maps/VehicleExampleMap",
-          "actor_added": false,
-          "baked": false,
-          "low_mesh": false
-        },
-        {
-          "name": "SwatVehicle",
-          "path": "/Game/OceanCity/VehicleBundle/SwatVehicle/Map/SwatVehicle",
-          "actor_added": false,
-          "baked": false,
-          "low_mesh": false
-        },
-        {
-          "name": "Van_Test_Map",
-          "path": "/Game/OceanCity/VehicleBundle/Van_Vehicle/Maps/Van_Test_Map",
-          "actor_added": false,
-          "baked": false,
-          "low_mesh": false
-        }
-      ]
-    },
-    "Seaside_Town": {
-      "maps": [
-        {
-          "name": "Demonstration",
-          "path": "/Game/Seaside_Town/Maps/Demonstration",
-          "actor_added": false,
-          "baked": false,
           "low_mesh": false
         }
       ]

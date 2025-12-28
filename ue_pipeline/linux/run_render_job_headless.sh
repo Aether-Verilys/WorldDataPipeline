@@ -158,7 +158,6 @@ UE_ARGS=(
     
     # Logging
     "-log"
-    "-stdout"
     "-FullStdOutLogOutput"
     "LOG=RenderLog_${JOB_ID}.txt"
 )

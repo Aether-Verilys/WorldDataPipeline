@@ -141,9 +141,9 @@ def find_map_path_from_sequence_name(sequence_name: str, ue_config: Optional[Dic
         return None
     
     # 在所有scene的maps中查找匹配的地图
-    scenes = ue_config.get("scenes", [])
-    for scene in scenes:
-        maps = scene.get("maps", [])
+    scenes = ue_config.get("scenes", {})
+    for scene_name, scene_data in scenes.items():
+        maps = scene_data.get("maps", [])
         for map_info in maps:
             map_name = map_info.get("name", "")
             map_path = map_info.get("path", "")
@@ -481,48 +481,24 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
     ue_config = manifest.get("ue_config", {})
     
     if base_output_path:
-        # Extract scene ID and map name from map_path
-        # Map path format: /Game/S0001/LevelPrototyping/Lvl_FirstPerson
-        scene_id = "UnknownScene"
+        # Extract map name from map_path
+        # Map path format: /Game/LevelPrototyping/Lvl_FirstPerson
         map_name = "UnknownMap"
         
         if map_path:
             # Extract map name (last part)
             map_name = map_path.split("/")[-1]
-            
-            # Extract scene ID from map path (e.g., S0001 from /Game/S0001/...)
-            path_parts = map_path.split("/")
-            if len(path_parts) > 2:
-                # Try to find scene ID in path (format: S####)
-                import re
-                for part in path_parts:
-                    if re.match(r'^S\d{4}$', part):
-                        scene_id = part
-                        break
-            
-            # If no scene ID found in path, try to lookup from ue_config
-            if scene_id == "UnknownScene":
-                scenes = ue_config.get("scenes", [])
-                for scene in scenes:
-                    maps = scene.get("maps", [])
-                    for map_info in maps:
-                        if map_info.get("path") == map_path:
-                            scene_id = scene.get("id", "UnknownScene")
-                            break
-                    if scene_id != "UnknownScene":
-                        break
         
         # Extract sequence name from sequence_path
         # Sequence path format: /Game/CameraController/Generated/Lvl_FirstPerson_001
         sequence_name = sequence_path.split("/")[-1] if sequence_path else "UnknownSequence"
         
-        # Construct full output path: base/scene_id/map_name/sequence_name
-        output_directory = os.path.join(base_output_path, scene_id, map_name, sequence_name)
+        # Construct full output path: base/map_name/sequence_name
+        output_directory = os.path.join(base_output_path, map_name, sequence_name)
         # Convert to absolute path immediately
         output_directory = os.path.abspath(output_directory)
         # Normalize path separators for UE (use forward slashes)
         output_directory = output_directory.replace('\\', '/')
-        unreal.log(f"[Rendering] Scene ID: {scene_id}")
         unreal.log(f"[Rendering] Map name: {map_name}")
         unreal.log(f"[Rendering] Sequence name: {sequence_name}")
         unreal.log(f"[Rendering] Constructed absolute output path: {output_directory}")

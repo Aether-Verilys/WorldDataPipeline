@@ -95,8 +95,8 @@ class SceneAssetCopier:
         scenes = status_data.get('scenes', {})
         
         if scene_name in scenes:
-            # 场景已存在，更新地图列表（保留已有的actor_added和baked状态）
-            existing_maps = {m['path']: m for m in scenes[scene_name].get('maps', [])}
+            # 场景已存在，更新地图列表（保留已有的actor_added状态）
+            existing_maps = {m['path']: m for m in scenes[scene_name].get('maps', [])}}
             new_maps = []
             
             for map_path in map_paths:
@@ -114,7 +114,6 @@ class SceneAssetCopier:
                         "name": map_name,
                         "path": map_path,
                         "actor_added": False,
-                        "baked": False,
                         "low_mesh": False
                     })
             
@@ -127,7 +126,6 @@ class SceneAssetCopier:
                         "name": map_path.split('/')[-1],  # 使用地图名作为name
                         "path": map_path,
                         "actor_added": False,
-                        "baked": False,
                         "low_mesh": False
                     }
                     for map_path in map_paths

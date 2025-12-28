@@ -1,8 +1,8 @@
 {
   "job_type": "render",
   "job_id": "job-render-001",
-  "sequence": "/Game/CameraController/Generated/Lvl_FirstPerson_001",
-  "map": "/Game/S0001/LevelPrototyping/Lvl_FirstPerson",
+  "sequence": "/Game/CameraController/Generated/Lvl_FirstPerson_003",
+  "map": "/Game/LevelPrototyping/Lvl_FirstPerson",
   "rendering": {
     "preset": "/Game/CameraController/Pending_MoviePipelinePrimaryConfig",
     "framerate": 30,

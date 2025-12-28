@@ -40,7 +40,7 @@ map_path = manifest.get("map", "")
 sequence_config = manifest.get("sequence_config", {})
 
 output_dir = sequence_config.get("output_dir", "/Game/CameraController/Generated")
-sequence_number = sequence_config.get("sequence_number", 1)
+batch_count = sequence_config.get("sequence_count", 1)  # sequence_count作为批次数量
 
 actor_name = sequence_config.get("actor_name", "BP_NPC_NavMesh")
 camera_component_name = sequence_config.get("camera_component_name", "Camera")
@@ -111,9 +111,7 @@ map_name = "Unknown"
 if map_path:
     map_name = map_path.split("/")[-1]
 
-# Generate sequence name
-sequence_name = f"{map_name}_{sequence_number:03d}"
-print(f"[WorkerCreateSequence] Sequence name: {sequence_name}")
+print(f"[WorkerCreateSequence] Will generate {batch_count} sequence(s)")
 
 
 def _debug_list_methods(obj, title: str, contains: str) -> None:
@@ -127,7 +125,9 @@ def _debug_list_methods(obj, title: str, contains: str) -> None:
 
 def _get_world():
     try:
-        return unreal.EditorLevelLibrary.get_editor_world()
+        # Use UnrealEditorSubsystem instead of deprecated EditorLevelLibrary.get_editor_world
+        subsystem = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
+        return subsystem.get_editor_world()
     except Exception as e:
         raise RuntimeError(f"Failed to get editor world: {e}")
 
@@ -172,10 +172,11 @@ def _distance_cm(a: unreal.Vector, b: unreal.Vector) -> float:
     return float(math.sqrt(dx * dx + dy * dy + dz * dz))
 
 
-def _random_navigable_point(nav, world, origin: unreal.Vector, radius_cm: float) -> unreal.Vector:
+def _random_reachable_point(nav, world, origin: unreal.Vector, radius_cm: float) -> unreal.Vector:
+    """Get a random point that is reachable from origin (not isolated)."""
     candidates = [
-        (nav, ["get_random_point_in_navigable_radius", "k2_get_random_point_in_navigable_radius"]),
-        (getattr(unreal, "NavigationSystemV1", object), ["get_random_point_in_navigable_radius", "k2_get_random_point_in_navigable_radius"]),
+        (nav, ["get_random_reachable_point_in_radius", "k2_get_random_reachable_point_in_radius"]),
+        (getattr(unreal, "NavigationSystemV1", object), ["get_random_reachable_point_in_radius", "k2_get_random_reachable_point_in_radius"]),
     ]
 
     arg_variants = [
@@ -184,11 +185,13 @@ def _random_navigable_point(nav, world, origin: unreal.Vector, radius_cm: float)
         (world, origin, radius_cm, None, None),
     ]
 
+    last_error = None
     for target, method_names in candidates:
         for args in arg_variants:
             try:
                 result = _call_maybe(target, method_names, *args)
-            except Exception:
+            except Exception as e:
+                last_error = e
                 continue
             if isinstance(result, tuple) and len(result) >= 2:
                 success, point = result[0], result[1]
@@ -197,7 +200,132 @@ def _random_navigable_point(nav, world, origin: unreal.Vector, radius_cm: float)
             if isinstance(result, unreal.Vector):
                 return result
 
-    raise RuntimeError("Failed to get random navigable point. Ensure NavMesh exists in this map.")
+    error_msg = f"Failed to get random reachable point from ({origin.x:.2f}, {origin.y:.2f}, {origin.z:.2f}) radius={radius_cm:.0f}cm"
+    if last_error:
+        error_msg += f". Last error: {last_error}"
+    raise RuntimeError(error_msg)
+
+
+def _get_navmesh_bounds(world) -> tuple:
+    """Get the bounds of the NavMesh from NavMeshBoundsVolume actors.
+    Returns (center, extent) as (Vector, Vector) or None if no bounds found.
+    """
+    try:
+        # 使用 EditorActorSubsystem 获取所有场景Actor
+        actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+        actors = actor_subsystem.get_all_level_actors()
+        navmesh_bounds_cls = getattr(unreal, "NavMeshBoundsVolume", None)
+        if not navmesh_bounds_cls:
+            print("[WorkerCreateSequence] WARNING: NavMeshBoundsVolume class not found")
+            return None
+        
+        bounds_actors = [a for a in actors if isinstance(a, navmesh_bounds_cls)]
+        if not bounds_actors:
+            print("[WorkerCreateSequence] WARNING: No NavMeshBoundsVolume actors found in level")
+            return None
+        
+        print(f"[WorkerCreateSequence] Found {len(bounds_actors)} NavMeshBoundsVolume(s)")
+        
+        # Use the first NavMeshBoundsVolume
+        bounds_actor = bounds_actors[0]
+        print(f"[WorkerCreateSequence] Using NavMeshBoundsVolume: {bounds_actor.get_name()}")
+        
+        # Method 1: Try to get bounds from brush component's Bounds property
+        brush_comp = getattr(bounds_actor, "brush_component", None)
+        if brush_comp:
+            try:
+                # Try accessing Bounds directly (not as editor property)
+                bounds_box = brush_comp.bounds
+                if bounds_box:
+                    origin = bounds_box.origin
+                    extent = bounds_box.box_extent
+                    print(f"[WorkerCreateSequence] ✓ NavMesh bounds (from BrushComponent.Bounds): center=({origin.x:.2f}, {origin.y:.2f}, {origin.z:.2f}), extent=({extent.x:.2f}, {extent.y:.2f}, {extent.z:.2f})")
+                    return (origin, extent)
+            except Exception as e:
+                print(f"[WorkerCreateSequence]   BrushComponent.Bounds failed: {e}")
+        
+        # Method 2: Calculate from actor location and scale
+        try:
+            location = bounds_actor.get_actor_location()
+            scale = bounds_actor.get_actor_scale3d()
+            # Volume bounds are typically 200x200x200 units at scale 1.0
+            base_extent = 200.0
+            extent = unreal.Vector(
+                scale.x * base_extent,
+                scale.y * base_extent,
+                scale.z * base_extent
+            )
+            print(f"[WorkerCreateSequence] ✓ NavMesh bounds (from Actor transform): center=({location.x:.2f}, {location.y:.2f}, {location.z:.2f}), extent=({extent.x:.2f}, {extent.y:.2f}, {extent.z:.2f})")
+            return (location, extent)
+        except Exception as e:
+            print(f"[WorkerCreateSequence]   Actor transform failed: {e}")
+        
+        return None
+    except Exception as e:
+        print(f"[WorkerCreateSequence] ERROR: Failed to get NavMesh bounds: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def _find_connected_navmesh_start_point(nav, world, max_attempts: int = 10) -> unreal.Vector:
+    """Find a random point on NavMesh that is well-connected (not isolated).
+    
+    Strategy:
+    1. Get NavMesh bounds to know where to search
+    2. Generate random candidate points within bounds
+    3. Project each to NavMesh
+    4. Test if point can reach other points (connectivity test)
+    5. Return first well-connected point
+    """
+    bounds = _get_navmesh_bounds(world)
+    
+    if bounds is None:
+        # Fallback: try a few common locations
+        print("[WorkerCreateSequence] WARNING: No NavMeshBoundsVolume found, trying common locations...")
+        test_origins = [
+            unreal.Vector(0, 0, 0),
+            unreal.Vector(0, 0, 500),
+            unreal.Vector(1000, 1000, 500),
+        ]
+    else:
+        center, extent = bounds
+        # Generate random test origins within NavMesh bounds
+        test_origins = []
+        for i in range(max_attempts):
+            rx = center.x + random.uniform(-extent.x * 0.8, extent.x * 0.8)
+            ry = center.y + random.uniform(-extent.y * 0.8, extent.y * 0.8)
+            rz = center.z
+            test_origins.append(unreal.Vector(rx, ry, rz))
+    
+    # Test each candidate origin
+    for i, origin in enumerate(test_origins):
+        try:
+            # Project to NavMesh
+            projected = _project_to_nav(nav, world, origin)
+            
+            print(f"[WorkerCreateSequence]   Testing candidate {i+1}: origin=({origin.x:.2f}, {origin.y:.2f}, {origin.z:.2f}), projected=({projected.x:.2f}, {projected.y:.2f}, {projected.z:.2f})")
+            
+            # Test connectivity: can we find a reachable point from here?
+            # If yes, this point is not isolated
+            test_radius = 8000.0  # 80m test radius (increased from 50m)
+            try:
+                reachable = _random_reachable_point(nav, world, projected, test_radius)
+                # Success! This point is connected
+                print(f"[WorkerCreateSequence] ✓ Found connected start point (attempt {i+1}): X={projected.x:.2f}, Y={projected.y:.2f}, Z={projected.z:.2f}")
+                print(f"[WorkerCreateSequence]   Connectivity verified: can reach ({reachable.x:.2f}, {reachable.y:.2f}, {reachable.z:.2f})")
+                return projected
+            except Exception as e:
+                # No reachable point found = isolated island, try next candidate
+                print(f"[WorkerCreateSequence]   Candidate {i+1} connectivity test failed: {e}")
+                continue
+                
+        except Exception as e:
+            print(f"[WorkerCreateSequence]   Candidate {i+1} projection failed: {e}")
+            continue
+    
+    # All attempts failed
+    raise RuntimeError(f"Failed to find connected NavMesh point after {max_attempts} attempts. NavMesh may be too fragmented or non-existent.")
 
 
 def _project_to_nav(nav, world, point: unreal.Vector) -> unreal.Vector:
@@ -343,12 +471,13 @@ def _build_multi_leg_nav_path(nav, world, start: unreal.Vector, cfg: dict):
     project = bool(cfg.get("project_to_nav", True))
     min_leg_dist = float(cfg.get("min_leg_distance_cm", 300.0))
 
-    origin = start if start is not None else unreal.Vector(0.0, 0.0, 0.0)
-    print(f"[WorkerCreateSequence] NavRoam origin: {origin}")
+    # 始终从NavMesh随机选择一个连通的有效起始点（忽略PlayerStart等场景提供的起始点）
+    print("[WorkerCreateSequence] Finding connected start point from NavMesh (ignoring scene PlayerStart)...")
+    origin = _find_connected_navmesh_start_point(nav, world, max_attempts=10)
 
     # Ensure start is on navmesh
     a = _project_to_nav(nav, world, origin) if project else origin
-    print(f"[WorkerCreateSequence] NavRoam start (projected): {a}")
+    print(f"[WorkerCreateSequence] ✓ Final start point (projected to NavMesh): X={a.x:.2f}, Y={a.y:.2f}, Z={a.z:.2f}")
     print(f"[WorkerCreateSequence] NavRoam config: num_legs={num_legs}, radius={radius_cm}cm, min_step={min_step_cm}cm")
 
     seed = cfg.get("seed", None)
@@ -370,7 +499,7 @@ def _build_multi_leg_nav_path(nav, world, start: unreal.Vector, cfg: dict):
                     )
                     candidate = _project_to_nav(nav, world, raw) if project else raw
                 else:
-                    candidate = _random_navigable_point(nav, world, current, radius_cm)
+                    candidate = _random_reachable_point(nav, world, current, radius_cm)
 
                 if _distance_cm(current, candidate) <= min_leg_dist:
                     continue
@@ -410,7 +539,9 @@ def _build_multi_leg_nav_path(nav, world, start: unreal.Vector, cfg: dict):
 
 def _find_first_startpoint(mode: str = "player_start"):
     mode = (mode or "player_start").lower()
-    actors = unreal.EditorLevelLibrary.get_all_level_actors()
+    # 使用 EditorActorSubsystem 获取所有场景Actor
+    actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    actors = actor_subsystem.get_all_level_actors()
 
     def _is_instance_of(actor, cls):
         try:
@@ -700,7 +831,7 @@ def _normalize_angle_continuous(angles_deg):
     return result
 
 
-def _sanitize_rotation_keys(keys_cfg, zero_pitch_roll: bool, max_yaw_rate_deg_per_sec: float | None) -> None:
+def _sanitize_rotation_keys(keys_cfg, zero_pitch_roll: bool, max_yaw_rate_deg_per_sec: float | None, preserve_pitch: bool = False) -> None:
     if not keys_cfg:
         return
 
@@ -715,7 +846,9 @@ def _sanitize_rotation_keys(keys_cfg, zero_pitch_roll: bool, max_yaw_rate_deg_pe
             key["rotation"] = rot
 
         if zero_pitch_roll:
-            rot["pitch"] = 0.0
+            # 如果preserve_pitch=True，则保留pitch，只清零roll
+            if not preserve_pitch:
+                rot["pitch"] = 0.0
             rot["roll"] = 0.0
 
         times.append(float(key.get("time_seconds", 0.0)))
@@ -964,7 +1097,8 @@ def _load_map(map_asset_path: str) -> None:
 
 def _find_actor_by_name(name_or_label: str):
     try:
-        actors = unreal.EditorLevelLibrary.get_all_level_actors()
+        actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+        actors = actor_subsystem.get_all_level_actors()
     except Exception as e:
         raise RuntimeError(f"Unable to enumerate level actors: {e}")
 
@@ -1037,11 +1171,8 @@ def _spawn_actor_from_blueprint(blueprint_asset_path: str, desired_label: str):
     if not cls:
         raise RuntimeError(f"Failed to load blueprint class: {blueprint_asset_path}")
 
-    spawn = getattr(unreal.EditorLevelLibrary, "spawn_actor_from_class", None)
-    if not callable(spawn):
-        raise RuntimeError("EditorLevelLibrary.spawn_actor_from_class is not available")
-
-    actor = spawn(cls, spawn_location, spawn_rotation)
+    actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    actor = actor_subsystem.spawn_actor_from_class(cls, spawn_location, spawn_rotation)
     if not actor:
         raise RuntimeError("Failed to spawn actor")
 
@@ -1068,20 +1199,19 @@ def _spawn_actor_from_blueprint(blueprint_asset_path: str, desired_label: str):
 
 def _save_current_level_if_requested() -> None:
     try:
-        save_current = getattr(unreal.EditorLevelLibrary, "save_current_level", None)
-        if callable(save_current):
-            ok = save_current()
-            print(f"[WorkerCreateSequence] ✓ Saved current level: {ok}")
-            return
+        level_editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+        level_editor.save_current_level()
+        print(f"[WorkerCreateSequence] ✓ Saved current level")
+        return
     except Exception as e:
         print(f"[WorkerCreateSequence] WARNING: save_current_level failed: {e}")
 
     try:
-        world = unreal.EditorLevelLibrary.get_editor_world()
-        save_all = getattr(unreal.EditorLevelLibrary, "save_all_dirty_levels", None)
-        if callable(save_all):
-            ok = save_all(world)
-            print(f"[WorkerCreateSequence] ✓ Saved dirty levels: {ok}")
+        subsystem = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
+        world = subsystem.get_editor_world()
+        level_editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+        level_editor.save_all_dirty_levels()
+        print(f"[WorkerCreateSequence] ✓ Saved dirty levels")
     except Exception:
         pass
 
@@ -1099,6 +1229,16 @@ def _ensure_actor_binding(sequence, map_path: str):
         if not cls:
             raise RuntimeError(f"Failed to load blueprint class for spawnable: {actor_blueprint_class_path}")
 
+        # Try using MovieSceneSequenceExtensions directly (recommended API)
+        try:
+            binding = unreal.MovieSceneSequenceExtensions.add_spawnable_from_class(sequence, cls)
+            if binding:
+                print(f"[WorkerCreateSequence] ✓ Created spawnable binding from blueprint: {actor_blueprint_class_path}")
+                return binding, None
+        except Exception as e:
+            pass
+
+        # Fallback to old methods if needed
         for fn_name in ("add_spawnable_from_class", "add_spawnable"):
             fn = getattr(sequence, fn_name, None)
             if callable(fn):
@@ -1204,185 +1344,213 @@ def _validate_prerequisites(map_path: str, blueprint_path: str, check_navmesh: b
         if not unreal.EditorAssetLibrary.does_asset_exist(normalized):
             errors.append(f"Blueprint does not exist: {blueprint_path}")
     
-    # 3. 检查NavMesh - 使用多种方式验证
+    # 3. 检查NavMesh - 检查场景中的NavMesh组件
     if check_navmesh and map_path:
         navmesh_found = False
         
-        # 方式1: 检查ue_config.json中的baked字段
         try:
-            # 从manifest路径推导ue_config.json路径
-            config_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(manifest_path))),
-                "ue_pipeline", "config", "ue_config.json"
-            )
-            if os.path.exists(config_path):
-                with open(config_path, "r", encoding="utf-8") as f:
-                    ue_config = json.load(f)
+            # 先加载地图
+            level_editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+            if not level_editor.load_level(map_path):
+                errors.append(f"Failed to load map for NavMesh check: {map_path}")
+            else:
+                # 检查场景中的NavMeshBoundsVolume
+                actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+                actors = actor_subsystem.get_all_level_actors()
                 
-                # 解析map_path找到对应的场景和地图
-                # map_path格式: /Game/OceanCity/Map/OceanCity
-                for scene_name, scene_data in ue_config.get("scenes", {}).items():
-                    for map_info in scene_data.get("maps", []):
-                        if map_info.get("path") == map_path:
-                            if map_info.get("baked") is True:
-                                navmesh_found = True
-                                print(f"[WorkerCreateSequence] ✓ NavMesh verified via ue_config.json (baked=true)")
-                                break
-                    if navmesh_found:
-                        break
-        except Exception as e:
-            print(f"[WorkerCreateSequence] Warning: Failed to check ue_config.json: {e}")
-        
-        # 方式2: 如果config检查未通过，加载地图并检查场景中的NavMesh组件
-        if not navmesh_found:
-            try:
-                # 先加载地图
-                level_editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
-                if not level_editor.load_level(map_path):
-                    errors.append(f"Failed to load map for NavMesh check: {map_path}")
-                else:
-                    # 检查场景中的NavMeshBoundsVolume
-                    actors = unreal.EditorLevelLibrary.get_all_level_actors()
-                    
-                    # 查找NavMeshBoundsVolume
-                    navmesh_bounds_cls = getattr(unreal, "NavMeshBoundsVolume", None)
+                # 查找NavMeshBoundsVolume
+                navmesh_bounds_cls = getattr(unreal, "NavMeshBoundsVolume", None)
+                for actor in actors:
+                    try:
+                        if navmesh_bounds_cls and isinstance(actor, navmesh_bounds_cls):
+                            navmesh_found = True
+                            print(f"[WorkerCreateSequence] ✓ Found NavMeshBoundsVolume in scene")
+                            break
+                    except Exception:
+                        pass
+                
+                # 查找RecastNavMesh
+                if not navmesh_found:
+                    recast_navmesh_cls = getattr(unreal, "RecastNavMesh", None)
                     for actor in actors:
                         try:
-                            if navmesh_bounds_cls and isinstance(actor, navmesh_bounds_cls):
+                            if recast_navmesh_cls and isinstance(actor, recast_navmesh_cls):
                                 navmesh_found = True
-                                print(f"[WorkerCreateSequence] ✓ Found NavMeshBoundsVolume in scene")
+                                print(f"[WorkerCreateSequence] ✓ Found RecastNavMesh in scene")
                                 break
                         except Exception:
                             pass
-                    
-                    # 查找RecastNavMesh
-                    if not navmesh_found:
-                        recast_navmesh_cls = getattr(unreal, "RecastNavMesh", None)
-                        for actor in actors:
-                            try:
-                                if recast_navmesh_cls and isinstance(actor, recast_navmesh_cls):
-                                    navmesh_found = True
-                                    print(f"[WorkerCreateSequence] ✓ Found RecastNavMesh in scene")
-                                    break
-                            except Exception:
-                                pass
-                    
-                    if not navmesh_found:
-                        errors.append(f"Map has no NavMesh (checked: ue_config baked field, NavMeshBoundsVolume, RecastNavMesh): {map_path}")
-            except Exception as e:
-                errors.append(f"NavMesh validation failed: {e}")
+                
+                if not navmesh_found:
+                    errors.append(f"Map has no NavMesh (checked: NavMeshBoundsVolume, RecastNavMesh): {map_path}")
+        except Exception as e:
+            errors.append(f"NavMesh validation failed: {e}")
     
     if errors:
         error_msg = "Prerequisites validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
         raise RuntimeError(error_msg)
 
 
+# 主循环：为每个批次生成一个sequence
+completed_sequences = []
+
+# 检测已存在的序列，找到最大编号
+print(f"[WorkerCreateSequence] Checking for existing sequences in {output_dir}...")
+existing_max_index = 0
 try:
-    # 预检查：地图、蓝图、NavMesh必须都存在
-    _validate_prerequisites(map_path, actor_blueprint_class_path, nav_roam_enabled)
-    
-    # Load map first (important for level possessables, and avoids world switching mid-script)
-    if map_path:
-        try:
-            _load_map(map_path)
-        except Exception as e:
-            print(f"[WorkerCreateSequence] ERROR: Map load failed: {e}")
-            sys.exit(1)
-
-    # If requested, resolve startpoint now (after map load)
-    start_location = None
-    start_rotation = None
-    if nav_roam_enabled or spawn_at_startpoint:
-        start_mode = (nav_roam_cfg.get("startpoint_mode", "player_start") or "player_start")
-        sp = _find_first_startpoint(start_mode)
-        if sp is None:
-            print(f"[WorkerCreateSequence] WARNING: No StartPoint found (mode={start_mode}); using spawn_location from config")
+    if unreal.EditorAssetLibrary.does_directory_exist(output_dir):
+        assets = unreal.EditorAssetLibrary.list_assets(output_dir, recursive=False, include_folder=False)
+        for asset_path in assets:
+            asset_name = asset_path.split("/")[-1].split(".")[0]  # 获取资产名称
+            # 匹配格式: MapName_NNN
+            if asset_name.startswith(f"{map_name}_"):
+                suffix = asset_name[len(map_name) + 1:]  # 提取 _NNN 中的 NNN
+                try:
+                    index = int(suffix)
+                    if index > existing_max_index:
+                        existing_max_index = index
+                except ValueError:
+                    pass  # 忽略不符合格式的资产
+        
+        if existing_max_index > 0:
+            print(f"[WorkerCreateSequence] ✓ Found existing sequences up to {map_name}_{existing_max_index:03d}")
         else:
-            try:
-                start_location = sp.get_actor_location()
-                start_rotation = sp.get_actor_rotation()
-                print(f"[WorkerCreateSequence] ✓ StartPoint: {sp.get_name()} loc={start_location} rot={start_rotation}")
-            except Exception as e:
-                print(f"[WorkerCreateSequence] WARNING: Failed reading StartPoint transform: {e}")
-
-    # If we spawn a level actor (possessable mode), optionally spawn it at the startpoint
-    if spawn_at_startpoint and start_location is not None:
-        try:
-            spawn_location = start_location
-            if start_rotation is not None:
-                spawn_rotation = start_rotation
-            print(f"[WorkerCreateSequence] ✓ Using StartPoint as spawn transform")
-        except Exception:
-            pass
-
-    # Ensure output directory exists
-    print(f"[WorkerCreateSequence] Ensuring directory exists: {output_dir}")
-    if not unreal.EditorAssetLibrary.does_directory_exist(output_dir):
-        unreal.EditorAssetLibrary.make_directory(output_dir)
-        print(f"[WorkerCreateSequence] ✓ Created directory")
+            print(f"[WorkerCreateSequence] ✓ No existing sequences found")
     else:
-        print(f"[WorkerCreateSequence] ✓ Directory exists")
+        print(f"[WorkerCreateSequence] ✓ Output directory doesn't exist yet")
+except Exception as e:
+    print(f"[WorkerCreateSequence] WARNING: Failed to check existing sequences: {e}")
+    existing_max_index = 0
 
-    # Create LevelSequence asset
-    print(f"[WorkerCreateSequence] Creating LevelSequence asset...")
-    asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
-    factory = unreal.LevelSequenceFactoryNew()
-    
-    sequence = asset_tools.create_asset(
-        sequence_name,
-        output_dir,
-        unreal.LevelSequence,
-        factory
-    )
-    
-    if not sequence:
-        print("[WorkerCreateSequence] ERROR: Failed to create LevelSequence asset")
-        sys.exit(1)
-    
-    asset_path = sequence.get_path_name()
-    print(f"[WorkerCreateSequence] ✓ Created sequence: {asset_path}")
-    
-    # Set basic properties
-    fps = sequence_config.get("fps", 30)
-    duration_seconds = sequence_config.get("duration_seconds", 60.0)
-    total_frames = int(fps * duration_seconds)
-    
-    movie_scene = sequence.get_movie_scene()
-    
-    # Set frame rate
-    try:
-        movie_scene.set_display_rate(unreal.FrameRate(fps, 1))
-        print(f"[WorkerCreateSequence] ✓ Set frame rate: {fps} fps")
-    except Exception as e:
-        print(f"[WorkerCreateSequence] WARNING: Could not set frame rate: {e}")
-    
-    # Set playback range
-    try:
-        movie_scene.set_playback_range(0, total_frames)
-        print(f"[WorkerCreateSequence] ✓ Set playback range: 0-{total_frames} ({duration_seconds}s)")
-    except Exception as e:
-        print(f"[WorkerCreateSequence] WARNING: Could not set playback range: {e}")
-    
-    # Add camera cuts bound to actor (level possessable or sequence spawnable) if requested
-    actor_binding = None
-    bound_level_actor = None
-    needs_actor_binding = bool(sequence_config.get("add_camera", False)) or bool(write_transform_keys)
-    if needs_actor_binding:
-        actor_binding, bound_level_actor = _ensure_actor_binding(sequence, map_path)
+# 从已存在的最大编号+1开始
+start_index = existing_max_index
 
-    # If NavRoam is enabled, generate keys from NavMesh and override transform_keys_cfg
-    if nav_roam_enabled:
+for batch_idx in range(batch_count):
+    try:
+        print(f"\n[WorkerCreateSequence] ========================================")
+        print(f"[WorkerCreateSequence] Generating sequence {batch_idx + 1}/{batch_count}")
+        print(f"[WorkerCreateSequence] ========================================\n")
+        
+        # 生成当前批次的sequence名称（从已存在的最大编号+1开始）
+        sequence_number = start_index + batch_idx + 1
+        sequence_name = f"{map_name}_{sequence_number:03d}"
+        print(f"[WorkerCreateSequence] Sequence name: {sequence_name}")
+        
+        # 预检查：地图、蓝图、NavMesh必须都存在（只在第一次执行）
+        if batch_idx == 0:
+            _validate_prerequisites(map_path, actor_blueprint_class_path, nav_roam_enabled)
+        
+        # Load map first (important for level possessables, and avoids world switching mid-script)
+        if map_path and batch_idx == 0:
+            try:
+                _load_map(map_path)
+            except Exception as e:
+                print(f"[WorkerCreateSequence] ERROR: Map load failed: {e}")
+                sys.exit(1)
+
+        # NavRoam模式下完全依赖NavMesh生成起始点，不使用PlayerStart
+        start_location = None
+        start_rotation = None
+        if spawn_at_startpoint and not nav_roam_enabled:
+            # 只有在非NavRoam模式下且需要在StartPoint生成时才查找PlayerStart
+            start_mode = (nav_roam_cfg.get("startpoint_mode", "player_start") or "player_start")
+            sp = _find_first_startpoint(start_mode)
+            if sp is None:
+                print(f"[WorkerCreateSequence] WARNING: No StartPoint found (mode={start_mode}); using spawn_location from config")
+            else:
+                try:
+                    start_location = sp.get_actor_location()
+                    start_rotation = sp.get_actor_rotation()
+                    print(f"[WorkerCreateSequence] ✓ StartPoint: {sp.get_name()} loc={start_location} rot={start_rotation}")
+                except Exception as e:
+                    print(f"[WorkerCreateSequence] WARNING: Failed reading StartPoint transform: {e}")
+
+        # If we spawn a level actor (possessable mode), optionally spawn it at the startpoint
+        if spawn_at_startpoint and start_location is not None:
+            try:
+                spawn_location = start_location
+                if start_rotation is not None:
+                    spawn_rotation = start_rotation
+                print(f"[WorkerCreateSequence] ✓ Using StartPoint as spawn transform")
+            except Exception:
+                pass
+
+        # Ensure output directory exists
+        print(f"[WorkerCreateSequence] Ensuring directory exists: {output_dir}")
+        if not unreal.EditorAssetLibrary.does_directory_exist(output_dir):
+            unreal.EditorAssetLibrary.make_directory(output_dir)
+            print(f"[WorkerCreateSequence] ✓ Created directory")
+        else:
+            print(f"[WorkerCreateSequence] ✓ Directory exists")
+
+        # Create LevelSequence asset
+        print(f"[WorkerCreateSequence] Creating LevelSequence asset...")
+        asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
+        factory = unreal.LevelSequenceFactoryNew()
+        
+        sequence = asset_tools.create_asset(
+            sequence_name,
+            output_dir,
+            unreal.LevelSequence,
+            factory
+        )
+        
+        if not sequence:
+            print("[WorkerCreateSequence] ERROR: Failed to create LevelSequence asset")
+            sys.exit(1)
+        
+        asset_path = sequence.get_path_name()
+        print(f"[WorkerCreateSequence] ✓ Created sequence: {asset_path}")
+        
+        # Set basic properties
+        fps = sequence_config.get("fps", 30)
+        duration_seconds = sequence_config.get("duration_seconds", 60.0)
+        total_frames = int(fps * duration_seconds)
+        
+        movie_scene = sequence.get_movie_scene()
+        
+        # Set frame rate
         try:
+            movie_scene.set_display_rate(unreal.FrameRate(fps, 1))
+            print(f"[WorkerCreateSequence] ✓ Set frame rate: {fps} fps")
+        except Exception as e:
+            print(f"[WorkerCreateSequence] WARNING: Could not set frame rate: {e}")
+        
+        # Set playback range
+        try:
+            movie_scene.set_playback_range(0, total_frames)
+            print(f"[WorkerCreateSequence] ✓ Set playback range: 0-{total_frames} ({duration_seconds}s)")
+        except Exception as e:
+            print(f"[WorkerCreateSequence] WARNING: Could not set playback range: {e}")
+        
+        # Add camera cuts bound to actor (level possessable or sequence spawnable) if requested
+        actor_binding = None
+        bound_level_actor = None
+        needs_actor_binding = bool(sequence_config.get("add_camera", False)) or bool(write_transform_keys)
+        if needs_actor_binding:
+            actor_binding, bound_level_actor = _ensure_actor_binding(sequence, map_path)
+
+        # If NavRoam is enabled, generate keys from NavMesh and override transform_keys_cfg
+        if nav_roam_enabled:
             world = _get_world()
             nav = _get_nav_system(world)
             _wait_for_navigation_ready(nav, world, float(nav_roam_cfg.get("nav_build_wait_seconds", 10.0)))
-            seed = nav_roam_cfg.get("seed", None)
-            if seed is not None:
+            seed_cfg = nav_roam_cfg.get("seed", None)
+            actual_seed = None
+            if seed_cfg is not None:
                 try:
-                    random.seed(int(seed))
-                    print(f"[WorkerCreateSequence] ✓ NavRoam seed: {seed}")
-                except Exception:
-                    pass
+                    seed_val = int(seed_cfg)
+                    if seed_val == -1:
+                        # -1表示使用随机种子
+                        actual_seed = random.randint(0, 999999)
+                        random.seed(actual_seed)
+                        print(f"[WorkerCreateSequence] ✓ NavRoam seed: {actual_seed} (random)")
+                    else:
+                        actual_seed = seed_val
+                        random.seed(actual_seed)
+                        print(f"[WorkerCreateSequence] ✓ NavRoam seed: {actual_seed}")
+                except Exception as e:
+                    print(f"[WorkerCreateSequence] WARNING: Failed to set seed: {e}")
 
             start = start_location if start_location is not None else spawn_location
             print(f"[WorkerCreateSequence] NavRoam starting from: {start}")
@@ -1398,6 +1566,81 @@ try:
                 error_msg += "(3) random_point_radius_cm too small, "
                 error_msg += f"(4) All {nav_roam_cfg.get('num_legs', 6)} legs failed to find valid paths."
                 raise RuntimeError(error_msg)
+
+            # 如果设置了固定速度，计算路径总长度并调整 duration_seconds
+            fixed_speed = sequence_config.get("fixed_speed_cm_per_sec", None)
+            strict_duration = bool(sequence_config.get("strict_duration", False))
+            
+            if fixed_speed is not None:
+                try:
+                    fixed_speed = float(fixed_speed)
+                    if fixed_speed > 0:
+                        # 计算路径总长度
+                        total_path_length_cm = 0.0
+                        for i in range(1, len(nav_points)):
+                            total_path_length_cm += _distance_cm(nav_points[i - 1], nav_points[i])
+                        
+                        # 根据固定速度计算需要的时间
+                        calculated_duration = total_path_length_cm / fixed_speed
+                        print(f"[WorkerCreateSequence] Fixed speed mode enabled:")
+                        print(f"[WorkerCreateSequence]   Path length: {total_path_length_cm:.2f} cm")
+                        print(f"[WorkerCreateSequence]   Fixed speed: {fixed_speed:.2f} cm/s")
+                        print(f"[WorkerCreateSequence]   Original duration: {duration_seconds:.2f}s")
+                        print(f"[WorkerCreateSequence]   Calculated duration (full path): {calculated_duration:.2f}s")
+                        
+                        if strict_duration:
+                            # 严格模式：保持duration_seconds不变，可能不会走完全程
+                            max_distance_cm = fixed_speed * duration_seconds
+                            print(f"[WorkerCreateSequence]   Strict duration mode: will travel max {max_distance_cm:.2f} cm in {duration_seconds:.2f}s")
+                            
+                            if max_distance_cm < total_path_length_cm:
+                                # 需要截断路径
+                                print(f"[WorkerCreateSequence]   Path will be truncated (only {max_distance_cm/total_path_length_cm*100:.1f}% of full path)")
+                                
+                                # 沿着路径行进，找到在max_distance_cm处的点
+                                accumulated_dist = 0.0
+                                truncated_points = [nav_points[0]]
+                                
+                                for i in range(1, len(nav_points)):
+                                    seg_dist = _distance_cm(nav_points[i-1], nav_points[i])
+                                    
+                                    if accumulated_dist + seg_dist <= max_distance_cm:
+                                        # 整个段都在范围内
+                                        truncated_points.append(nav_points[i])
+                                        accumulated_dist += seg_dist
+                                    else:
+                                        # 这个段需要部分截取
+                                        remaining = max_distance_cm - accumulated_dist
+                                        if remaining > 0.01:  # 至少1mm
+                                            # 在这个段上插值
+                                            ratio = remaining / seg_dist
+                                            a = nav_points[i-1]
+                                            b = nav_points[i]
+                                            final_point = unreal.Vector(
+                                                a.x + (b.x - a.x) * ratio,
+                                                a.y + (b.y - a.y) * ratio,
+                                                a.z + (b.z - a.z) * ratio
+                                            )
+                                            truncated_points.append(final_point)
+                                        break
+                                
+                                nav_points = truncated_points
+                                print(f"[WorkerCreateSequence]   Truncated to {len(nav_points)} points")
+                            else:
+                                print(f"[WorkerCreateSequence]   Full path can be completed within duration")
+                        else:
+                            # 非严格模式：调整duration_seconds以走完全程
+                            duration_seconds = calculated_duration
+                            total_frames = int(fps * duration_seconds)
+                            
+                            # 重新设置序列的播放范围
+                            try:
+                                movie_scene.set_playback_range(0, total_frames)
+                                print(f"[WorkerCreateSequence] ✓ Updated playback range: 0-{total_frames} ({duration_seconds:.2f}s)")
+                            except Exception as e:
+                                print(f"[WorkerCreateSequence] WARNING: Could not update playback range: {e}")
+                except (ValueError, TypeError) as e:
+                    print(f"[WorkerCreateSequence] WARNING: Invalid fixed_speed value: {e}")
 
             key_interval_seconds = float(nav_roam_cfg.get("key_interval_seconds", 0.25))
             key_interval_frames = max(1, int(round(float(fps) * key_interval_seconds)))
@@ -1419,6 +1662,35 @@ try:
                 if abs(dx) < 1e-4 and abs(dy) < 1e-4:
                     return 0.0
                 return float(math.degrees(math.atan2(dy, dx)))
+            
+            def calculate_pitch_from_slope(a: unreal.Vector, b: unreal.Vector, max_pitch: float = 25.0) -> float:
+                """计算从点a到点b的坡度对应的相机pitch角度
+                上坡：正pitch（向上看）
+                下坡：负pitch（向下看）
+                """
+                # 计算水平距离
+                horizontal_dist = math.sqrt((b.x - a.x)**2 + (b.y - a.y)**2)
+                if horizontal_dist < 1.0:  # 避免除以0
+                    return 0.0
+                
+                # 计算高度差
+                height_diff = b.z - a.z
+                
+                # 计算坡度角（弧度转角度）
+                slope_angle = math.degrees(math.atan2(height_diff, horizontal_dist))
+                
+                # 限制最大pitch角度，避免相机角度过大
+                if abs(slope_angle) > max_pitch:
+                    slope_angle = max_pitch if slope_angle > 0 else -max_pitch
+                
+                return float(slope_angle)
+            
+            # 是否根据坡度调整相机pitch
+            camera_pitch_from_slope = bool(sequence_config.get("camera_pitch_from_slope", False))
+            max_camera_pitch = float(sequence_config.get("max_camera_pitch_deg", 25.0))
+            
+            if camera_pitch_from_slope:
+                print(f"[WorkerCreateSequence] Camera pitch from slope enabled (max pitch: {max_camera_pitch:.1f}°)")
 
             keys = []
             for i, p in enumerate(samples):
@@ -1426,106 +1698,134 @@ try:
                 if frame > total_frames:
                     frame = total_frames
                 t = float(frame) / float(fps)
+                
+                # 计算yaw（水平朝向）
                 if i < len(samples) - 1:
                     yaw = yaw_degrees(p, samples[i + 1])
                 else:
                     yaw = yaw_degrees(samples[i - 1], p) if i > 0 else 0.0
+                
+                # 计算pitch（相机俯仰角，根据坡度）
+                pitch = 0.0
+                if camera_pitch_from_slope:
+                    if i < len(samples) - 1:
+                        # 前向坡度（看向前方）
+                        pitch = calculate_pitch_from_slope(p, samples[i + 1], max_camera_pitch)
+                    elif i > 0:
+                        # 最后一个点使用前一段的坡度
+                        pitch = calculate_pitch_from_slope(samples[i - 1], p, max_camera_pitch)
 
                 keys.append(
                     {
                         "time_seconds": t,
                         "location": {"x": float(p.x), "y": float(p.y), "z": float(p.z)},
-                        "rotation": {"pitch": 0.0, "yaw": float(yaw), "roll": 0.0},
+                        "rotation": {"pitch": float(pitch), "yaw": float(yaw), "roll": 0.0},
                     }
                 )
+                
+                # 打印前3个关键帧的位置用于调试
+                if i < 3:
+                    print(f"[WorkerCreateSequence]   Key {i}: time={t:.2f}s, pos=({p.x:.2f}, {p.y:.2f}, {p.z:.2f}), yaw={yaw:.2f}")
 
             transform_keys_cfg = keys
             write_transform_keys = True
             print(f"[WorkerCreateSequence] ✓ NavRoam generated {len(keys)} keys")
-        except Exception as e:
-            print(f"[WorkerCreateSequence] WARNING: NavRoam failed: {e}")
-            import traceback
-            traceback.print_exc()
 
-    if sequence_config.get("add_camera", False):
-        print("[WorkerCreateSequence] Adding camera cuts bound to scene actor...")
+        if sequence_config.get("add_camera", False):
+            print("[WorkerCreateSequence] Adding camera cuts bound to scene actor...")
 
-        try:
-            camera_binding = actor_binding
-
-            # If we're possessing a level actor, try binding cuts to its Camera component (more robust for renders)
-            if bound_level_actor is not None and camera_component_name:
-                cam_comp = _find_camera_component(bound_level_actor, camera_component_name)
-                if cam_comp is not None:
-                    try:
-                        camera_binding = _add_possessable(sequence, cam_comp)
-                        print(f"[WorkerCreateSequence] ✓ Using camera component binding: {cam_comp.get_name()}")
-                    except Exception as e:
-                        print(f"[WorkerCreateSequence] WARNING: Failed to bind camera component; falling back to actor binding: {e}")
-
-            # Add Camera Cuts Track
-            print("[WorkerCreateSequence]   Adding Camera Cuts Track...")
-            camera_cut_track = _create_camera_cuts_track(sequence, movie_scene)
-            print("[WorkerCreateSequence] ✓ Created Camera Cuts Track")
-
-            # Add a section to the camera cut track
-            print("[WorkerCreateSequence]   Adding Camera Cut Section...")
-            camera_cut_section = camera_cut_track.add_section()
-            if not camera_cut_section:
-                raise RuntimeError("Failed to create camera cut section")
-
-            # Set the section range to cover the entire sequence
             try:
-                camera_cut_section.set_range(0, total_frames)
-                print(f"[WorkerCreateSequence] ✓ Set section range: 0-{total_frames}")
+                camera_binding = actor_binding
+
+                # If we're possessing a level actor, try binding cuts to its Camera component (more robust for renders)
+                if bound_level_actor is not None and camera_component_name:
+                    cam_comp = _find_camera_component(bound_level_actor, camera_component_name)
+                    if cam_comp is not None:
+                        try:
+                            camera_binding = _add_possessable(sequence, cam_comp)
+                            print(f"[WorkerCreateSequence] ✓ Using camera component binding: {cam_comp.get_name()}")
+                        except Exception as e:
+                            print(f"[WorkerCreateSequence] WARNING: Failed to bind camera component; falling back to actor binding: {e}")
+
+                # Add Camera Cuts Track
+                print("[WorkerCreateSequence]   Adding Camera Cuts Track...")
+                camera_cut_track = _create_camera_cuts_track(sequence, movie_scene)
+                print("[WorkerCreateSequence] ✓ Created Camera Cuts Track")
+
+                # Add a section to the camera cut track
+                print("[WorkerCreateSequence]   Adding Camera Cut Section...")
+                camera_cut_section = camera_cut_track.add_section()
+                if not camera_cut_section:
+                    raise RuntimeError("Failed to create camera cut section")
+
+                # Set the section range to cover the entire sequence
+                try:
+                    camera_cut_section.set_range(0, total_frames)
+                    print(f"[WorkerCreateSequence] ✓ Set section range: 0-{total_frames}")
+                except Exception as e:
+                    print(f"[WorkerCreateSequence] WARNING: Could not set section range: {e}")
+
+                # Bind the camera to the section
+                # Note: We bind to the actor binding; UE will use its camera component.
+                _try_bind_camera_cut_section(camera_cut_section, sequence, movie_scene, camera_binding)
+
             except Exception as e:
-                print(f"[WorkerCreateSequence] WARNING: Could not set section range: {e}")
-
-            # Bind the camera to the section
-            # Note: We bind to the actor binding; UE will use its camera component.
-            _try_bind_camera_cut_section(camera_cut_section, sequence, movie_scene, camera_binding)
-
-        except Exception as e:
-            print(f"[WorkerCreateSequence] WARNING: Failed to add camera cuts: {e}")
-            import traceback
-            traceback.print_exc()
-
-    transform_keys_written = False
-    if write_transform_keys:
-        if not actor_binding:
-            print("[WorkerCreateSequence] WARNING: write_transform_keys=true but no actor binding was created")
-        else:
-            print("[WorkerCreateSequence] Adding transform keys to actor binding...")
-            try:
-                _sanitize_rotation_keys(transform_keys_cfg, force_zero_pitch_roll, max_yaw_rate_deg_per_sec)
-                _write_transform_keys(actor_binding, int(fps), int(total_frames), transform_keys_cfg)
-                transform_keys_written = True
-            except Exception as e:
-                print(f"[WorkerCreateSequence] WARNING: Failed to write transform keys: {e}")
+                print(f"[WorkerCreateSequence] WARNING: Failed to add camera cuts: {e}")
                 import traceback
                 traceback.print_exc()
-    
-    # Save asset
-    try:
-        unreal.EditorAssetLibrary.save_loaded_asset(sequence)
-        print(f"[WorkerCreateSequence] ✓ Saved asset")
-    except Exception as e:
-        print(f"[WorkerCreateSequence] WARNING: Save may have failed: {e}")
-    
-    print("[WorkerCreateSequence] ========================================")
-    print(f"[WorkerCreateSequence] ✓ Job completed successfully")
-    print(f"[WorkerCreateSequence] Asset: {asset_path}")
-    print(f"[WorkerCreateSequence] Location: {output_dir}")
-    if sequence_config.get("add_camera", False):
-        print(f"[WorkerCreateSequence] Camera Cuts Track: Added")
-    if write_transform_keys:
-        print(f"[WorkerCreateSequence] Transform Keys: {'Written' if transform_keys_written else 'NOT written'}")
-    print("[WorkerCreateSequence] ========================================")
-    
-    sys.exit(0)
 
-except Exception as e:
-    print(f"[WorkerCreateSequence] ERROR: {e}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
+        transform_keys_written = False
+        if write_transform_keys:
+            if not actor_binding:
+                print("[WorkerCreateSequence] WARNING: write_transform_keys=true but no actor binding was created")
+            else:
+                print("[WorkerCreateSequence] Adding transform keys to actor binding...")
+                try:
+                    # 如果启用了camera_pitch_from_slope，保留pitch值
+                    camera_pitch_from_slope = bool(sequence_config.get("camera_pitch_from_slope", False))
+                    _sanitize_rotation_keys(transform_keys_cfg, force_zero_pitch_roll, max_yaw_rate_deg_per_sec, preserve_pitch=camera_pitch_from_slope)
+                    _write_transform_keys(actor_binding, int(fps), int(total_frames), transform_keys_cfg)
+                    transform_keys_written = True
+                except Exception as e:
+                    print(f"[WorkerCreateSequence] WARNING: Failed to write transform keys: {e}")
+                    import traceback
+                    traceback.print_exc()
+        
+        # Save asset
+        try:
+            unreal.EditorAssetLibrary.save_loaded_asset(sequence)
+            print(f"[WorkerCreateSequence] ✓ Saved asset")
+        except Exception as e:
+            print(f"[WorkerCreateSequence] WARNING: Save may have failed: {e}")
+        
+        # 记录成功生成的sequence
+        completed_sequences.append({
+            "name": sequence_name,
+            "path": asset_path,
+            "seed": actual_seed if nav_roam_enabled else None
+        })
+        
+        print(f"[WorkerCreateSequence] ✓ Sequence {batch_idx + 1}/{batch_count} completed")
+        
+    except Exception as e:
+        print(f"[WorkerCreateSequence] ERROR in batch {batch_idx + 1}: {e}")
+        import traceback
+        traceback.print_exc()
+        # 继续下一个批次，不中断整个任务
+        continue
+
+# 所有批次完成后的总结
+print("\n" + "="*60)
+print(f"[WorkerCreateSequence] ✓ All batches completed")
+print(f"[WorkerCreateSequence] Successfully generated: {len(completed_sequences)}/{batch_count} sequences")
+print("="*60)
+
+for idx, seq_info in enumerate(completed_sequences, 1):
+    print(f"  {idx}. {seq_info['name']}")
+    print(f"     Path: {seq_info['path']}")
+    if seq_info['seed'] is not None:
+        print(f"     Seed: {seq_info['seed']}")
+
+print("="*60)
+
+sys.exit(0)

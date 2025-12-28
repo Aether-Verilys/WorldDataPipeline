@@ -129,9 +129,9 @@ def get_render_config(manifest: dict, ue_config: dict) -> dict:
             map_name = re.sub(r'_\d+$', '', sequence_name)
             
             # Lookup map path from ue_config scenes
-            scenes = ue_config.get('scenes', [])
-            for scene in scenes:
-                maps = scene.get('maps', [])
+            scenes = ue_config.get('scenes', {})
+            for scene_name, scene_data in scenes.items():
+                maps = scene_data.get('maps', [])
                 for map_info in maps:
                     if map_info.get('name') == map_name:
                         map_path = map_info.get('path')
@@ -431,7 +431,6 @@ def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str, jo
             '-NoSound',
             '-AllowStdOutLogVerbosity',
             '-log',
-            '-stdout',
             '-FullStdOutLogOutput',
             f'LOG=RenderLog_{job_id}.txt',
         ]
