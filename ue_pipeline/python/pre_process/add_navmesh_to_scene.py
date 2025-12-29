@@ -422,6 +422,8 @@ class NavMeshManager:
             
             # Phase 1: Find Landscape (ground) - HIGHEST PRIORITY
             landscape_z_min = None
+            landscape_z_max = None
+            landscape_z_center = None
             landscape_count = 0
             
             unreal.log("[Phase 1] Detecting Landscape (ground)...")
@@ -430,17 +432,23 @@ class NavMeshManager:
                 if 'Landscape' in actor_class_name:
                     try:
                         origin, extent = actor.get_actor_bounds(False)
-                        landscape_z = origin.z - extent.z  # Bottom of landscape
-                        if landscape_z_min is None or landscape_z < landscape_z_min:
-                            landscape_z_min = landscape_z
+                        landscape_z_bottom = origin.z - extent.z  # Bottom of landscape
+                        landscape_z_top = origin.z + extent.z      # Top of landscape
+                        
+                        if landscape_z_min is None or landscape_z_bottom < landscape_z_min:
+                            landscape_z_min = landscape_z_bottom
+                        if landscape_z_max is None or landscape_z_top > landscape_z_max:
+                            landscape_z_max = landscape_z_top
+                        
                         landscape_count += 1
-                        unreal.log(f"  Landscape #{landscape_count}: Z_min={landscape_z:.1f} cm")
+                        unreal.log(f"  Landscape #{landscape_count}: Z_min={landscape_z_bottom:.1f} cm, Z_max={landscape_z_top:.1f} cm, Z_center={origin.z:.1f} cm")
                     except Exception as e:
                         unreal.log_warning(f"  Error processing Landscape: {str(e)}")
             
-            if landscape_z_min is not None:
-                unreal.log(f"✓ Landscape ground detected: Z_min = {landscape_z_min:.1f} cm")
-                unreal.log(f"  This will be enforced as the minimum Z boundary")
+            if landscape_z_min is not None and landscape_z_max is not None:
+                landscape_z_center = (landscape_z_min + landscape_z_max) / 2.0
+                unreal.log(f"✓ Landscape detected: Z_min={landscape_z_min:.1f} cm, Z_max={landscape_z_max:.1f} cm, Z_center={landscape_z_center:.1f} cm")
+                unreal.log(f"  NavMesh Z center will align with Landscape center")
             else:
                 unreal.log("  No Landscape found, Z bounds will be based on geometry")
             unreal.log("")
@@ -585,23 +593,121 @@ class NavMeshManager:
             unreal.log(f"  Y range: {min_y:.1f} to {max_y:.1f} cm (size: {(max_y-min_y):.1f} cm)")
             unreal.log("")
             
+            # Ensure geometry Z bounds are valid (should always be set if we reach here)
+            if geometry_z_min is None or geometry_z_max is None:
+                unreal.log_error("Invalid geometry Z bounds")
+                return None, None, None
+            
             # Phase 4: Calculate Z bounds (vertical) - LANDSCAPE HAS PRIORITY
             unreal.log("[Phase 4] Calculating Z bounds (vertical)...")
             
-            # Z_min: Landscape ground level (if exists), otherwise geometry min - step height
-            if landscape_z_min is not None:
-                # LANDSCAPE PRIORITY: Force Z_min to include landscape
-                min_z = landscape_z_min - 10.0  # 10cm below landscape
-                unreal.log(f"  Z_min: {min_z:.1f} cm (Landscape ground - 10cm)")
-                unreal.log(f"    *** LANDSCAPE ENFORCED as ground level ***")
-            else:
-                # No landscape: use geometry Z min
-                min_z = geometry_z_min - agent_max_step_height
-                unreal.log(f"  Z_min: {min_z:.1f} cm (Geometry - {agent_max_step_height:.0f}cm step)")
+            # Determine reference Z center for alignment
+            reference_z_center = None
             
-            # Z_max: Geometry max + jump height
-            max_z = geometry_z_max + agent_max_jump_height
-            unreal.log(f"  Z_max: {max_z:.1f} cm (Geometry + {agent_max_jump_height:.0f}cm jump)")
+            if landscape_z_center is not None:
+                # Case 1: Landscape exists - align with Landscape center
+                reference_z_center = landscape_z_center
+                unreal.log(f"  Reference Z center: {reference_z_center:.1f} cm (Landscape center)")
+                unreal.log(f"    *** NavMesh will align with Landscape ***")
+            else:
+                # Case 2: No Landscape - find most common Z level (ground plane)
+                unreal.log("  No Landscape - finding dominant ground plane...")
+                
+                # Collect Z_min values from all navigable actors
+                z_values = []
+                for actor in all_actors:
+                    actor_class_name = actor.get_class().get_name()
+                    actor_name = actor.get_name()
+                    
+                    # Skip non-navigable actors
+                    if any(pattern in actor_class_name for pattern in exclude_patterns):
+                        continue
+                    if any(pattern in actor_name for pattern in ['Sky', 'sky', 'Atmosphere', 'atmosphere']):
+                        continue
+                    
+                    try:
+                        is_navigable = False
+                        if isinstance(actor, unreal.StaticMeshActor):
+                            is_navigable = True
+                        else:
+                            try:
+                                components = actor.get_components_by_class(unreal.StaticMeshComponent)
+                                if components and len(components) > 0:
+                                    is_navigable = True
+                            except Exception:
+                                pass
+                        
+                        if not is_navigable:
+                            continue
+                        
+                        origin, extent = actor.get_actor_bounds(False)
+                        
+                        # Skip actors with zero extent or oversized
+                        if extent.x < 1 and extent.y < 1 and extent.z < 1:
+                            continue
+                        if (extent.x > max_reasonable_extent or 
+                            extent.y > max_reasonable_extent or 
+                            extent.z > max_reasonable_extent):
+                            continue
+                        
+                        # Record bottom Z position
+                        actor_z_min = origin.z - extent.z
+                        z_values.append(actor_z_min)
+                    except Exception:
+                        continue
+                
+                # Find most clustered Z level (dominant ground plane)
+                if len(z_values) > 0:
+                    z_values.sort()
+                    # Group Z values into buckets (50cm resolution)
+                    bucket_size = 50.0  # 50cm buckets
+                    z_buckets = {}
+                    
+                    for z in z_values:
+                        bucket_key = int(z / bucket_size)
+                        if bucket_key not in z_buckets:
+                            z_buckets[bucket_key] = []
+                        z_buckets[bucket_key].append(z)
+                    
+                    # Find bucket with most values
+                    max_bucket_count = 0
+                    dominant_bucket = None
+                    for bucket_key, bucket_values in z_buckets.items():
+                        if len(bucket_values) > max_bucket_count:
+                            max_bucket_count = len(bucket_values)
+                            dominant_bucket = bucket_key
+                    
+                    if dominant_bucket is not None:
+                        # Use average of dominant bucket as ground plane
+                        dominant_z_values = z_buckets[dominant_bucket]
+                        dominant_z = sum(dominant_z_values) / len(dominant_z_values)
+                        reference_z_center = dominant_z
+                        unreal.log(f"  Dominant ground plane: Z={dominant_z:.1f} cm ({len(dominant_z_values)} actors)")
+                        unreal.log(f"  Reference Z center: {reference_z_center:.1f} cm")
+                    else:
+                        # Fallback to geometry center
+                        reference_z_center = (geometry_z_min + geometry_z_max) / 2.0
+                        unreal.log(f"  Fallback to geometry center: {reference_z_center:.1f} cm")
+                else:
+                    # No Z values found, use geometry center
+                    reference_z_center = (geometry_z_min + geometry_z_max) / 2.0
+                    unreal.log(f"  Using geometry center: {reference_z_center:.1f} cm")
+            
+            # Calculate Z bounds with reference center alignment
+            # Determine required Z extent to cover all geometry
+            z_extent_needed_below = reference_z_center - geometry_z_min + agent_max_step_height
+            z_extent_needed_above = geometry_z_max - reference_z_center + agent_max_jump_height
+            
+            # Use maximum extent (symmetric box)
+            z_extent = max(z_extent_needed_below, z_extent_needed_above)
+            
+            min_z = reference_z_center - z_extent
+            max_z = reference_z_center + z_extent
+            
+            unreal.log(f"  Z_min: {min_z:.1f} cm")
+            unreal.log(f"  Z_max: {max_z:.1f} cm")
+            unreal.log(f"  Z_center: {reference_z_center:.1f} cm (aligned)")
+            unreal.log(f"  Z_extent: {z_extent:.1f} cm")
             unreal.log(f"  Z range: {min_z:.1f} to {max_z:.1f} cm (size: {(max_z-min_z):.1f} cm)")
             unreal.log("")
             
@@ -611,13 +717,13 @@ class NavMeshManager:
             center = unreal.Vector(
                 (min_x + max_x) / 2,
                 (min_y + max_y) / 2,
-                (min_z + max_z) / 2
+                reference_z_center  # Use aligned Z center
             )
             
             extent = unreal.Vector(
                 (max_x - min_x) / 2,
                 (max_y - min_y) / 2,
-                (max_z - min_z) / 2
+                z_extent  # Use calculated Z extent
             )
             
             unreal.log(f"  Center: X={center.x:.1f}, Y={center.y:.1f}, Z={center.z:.1f} cm")
