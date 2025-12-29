@@ -1,16 +1,22 @@
 {
+  "job_id": "bake_navmesh_auto_001",
   "job_type": "bake_navmesh",
-  "job_id": "job-navmesh-001",
+  "ue_config": {
+    "editor_path": "F:/Epic/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
+    "project_path": "E:/WorldProject/WorldProject.uproject"
+  },
   "navmesh_config": {
-    "location": [0.0, 0.0, 0.0],
-    "scale": [150.0, 150.0, 15.0],
+    "auto_scale": true,
+    "scale_margin": 1.2,
+    "min_scale": [20.0, 20.0, 5.0],
+    "max_scale": [500.0, 500.0, 50.0],
+    "agent_max_step_height": 50.0,
+    "agent_max_jump_height": 200.0,
+    "wait_for_build": true,
+    "build_timeout": 120,
+    "verify_navmesh": true,
     "maps": [
-      "/Game/S0001/LevelPrototyping/Lvl_FirstPerson",
-      "/Game/S0002/Seaside_Town/Maps/Demonstration",
-      "/Game/S0002/Seaside_Town/Maps/Overview",
-      "/Game/S0003/ModularScifiStation/Maps/ModularScifiStationExample",
-      "/Game/S0003/ModularScifiStation/Maps/Overview",
-      "/Game/S0004/CanyonScans/Maps/Canyon_DemoScene"
+      "/Game/LevelPrototyping/Lvl_FirstPerson"
     ]
   }
 }

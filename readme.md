@@ -52,6 +52,8 @@ FFmpeg
 
 ### 3. 相机轨迹生成与导出导出
 批量生成levelsequence文件
+将FirstPerson文件夹拷到工程目录下，或者直接用模版工程
+run_create_sequence.py脚本 (空格) job_create_sequence_cameraman.json
 
 ### 4. 对levelsequence文件用MRQ进行渲染
 

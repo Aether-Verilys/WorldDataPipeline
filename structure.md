@@ -50,12 +50,12 @@ BOS下载场景 ──→ NavMesh烘焙          Docker容器(UE 5.7)
 3. 验证场景可加载，更新 `WorldData00_scenes_status.json`
 
 **关键代码文件：**
-- `ue_pipeline/bos_manager.py` (新建)
-- `ue_pipeline/python/pre_copy/copy_scene_assets_wrapper.py` (修改)
+- `ue_pipeline/bos_manager.py`
+- `ue_pipeline/python/pre_copy/copy_scene_assets_wrapper.py`
 
 ---
 
-### Step 2: NavMesh自适应烘焙 (Windows)
+### Step 2: NavMesh自适应烘焙
 **输入：** UE场景地图路径  
 **输出：** 带NavMeshBoundsVolume的场景 + 导航数据
 
@@ -882,29 +882,10 @@ if disk_usage > 0.9:
 
 ---
 
-## 成功标准
-
-### Day 1
-- ✅ 单场景完整流程跑通（S0001从烘焙到序列上传BOS）
-- ✅ NavMesh自适应至少支持3种不同尺寸场景
-- ✅ 生成的LevelSequence在UE中可正常播放
-
-### Day 2
-- ✅ Docker容器成功在Linux GPU机器渲染1个序列
-- ✅ Redis任务队列正常工作（推送→拉取→更新状态）
-- ✅ 视频质量验证（1920x1080, 30fps, 无黑帧/花屏）
-
-### Day 3
-- ✅ 端到端处理≥10个场景（50+视频）
-- ✅ 性能报告生成，估算500小时数据所需资源
-- ✅ 部署文档完整，其他团队成员可复现搭建
-
----
-
 ## 后续优化方向
 
 ### Week 2+
-- **质量提升**: 相机轨迹评分系统、碰撞检测、美学筛选
+- **质量提升**: 相机轨迹评分系统、碰撞检测
 - **性能优化**: GPU利用率profiling、渲染参数调优
 - **扩展性**: Kubernetes部署、自动伸缩Worker
 - **数据增强**: 天气/光照变化、镜头运动多样性
@@ -915,52 +896,3 @@ if disk_usage > 0.9:
 - **数据标注**: 自动生成camera pose、depth map等标注数据
 
 ---
-
-## 附录：关键文件清单
-
-### 新建文件 (Day 1-3)
-```
-ue_pipeline/
-├── run_single_scene_pipeline.py      # Day 1: 单场景编排器
-├── bos_manager.py                    # Day 1-3: BOS SDK封装
-├── redis_client.py                   # Day 2: Redis封装
-├── task_dispatcher.py                # Day 2: 任务调度器
-├── batch_generate_jobs.py            # Day 3: 批量作业生成
-├── cluster_manager.py                # Day 3: 集群管理
-├── cleanup_scenes.py                 # Day 3: 资源清理
-├── linux/
-│   ├── Dockerfile                    # Day 2: 渲染容器
-│   ├── render_worker.py              # Day 2: Linux Worker
-│   └── docker-compose.yml            # Day 2: 部署配置
-└── docs/
-    ├── deployment_guide.md           # Day 3: 部署文档
-    └── performance_report.json       # Day 3: 性能测试报告
-```
-
-### 修改文件
-```
-ue_pipeline/
-├── python/
-│   ├── pre_process/
-│   │   └── add_navmesh_to_scene.py   # Day 1: 添加auto_scale + NavMesh等待 + 保存验证
-│   ├── pre_copy/
-│   │   └── copy_scene_assets_wrapper.py  # Day 1: BOS集成
-│   ├── worker_bake_navmesh.py        # Day 1: 支持auto_scale，Headless执行
-│   ├── worker_create_sequence.py     # Day 1: 智能起点(NavMesh投影) + 路径验证 + 卡住重试 + 外参导出
-│   └── worker_render.py              # Day 2: 适配Docker环境
-├── run_bake_navmesh.py               # Day 1: Python CLI替代PS1 (batch_bake_all_navmesh.py重构)
-├── run_create_sequence_job.py        # Day 1: Python CLI替代PS1 (已存在，需增强)
-├── monitor_render.py                 # Day 2: Redis监控
-├── config/
-│   ├── ue_config.json                # Day 1-3: 添加Redis/BOS配置
-│   └── monitor_config.json           # Day 2: Webhook配置
-└── scenes/
-    └── WorldData00_scenes_status.json # Day 1: 统一schema
-```
-
----
-
-**文档版本**: v1.0  
-**创建日期**: 2025-12-25  
-**作者**: WorldDataPipeline Team  
-**预计完成**: 2025-12-28
