@@ -1,0 +1,7 @@
+{
+  "access_key_id": "",
+  "secret_access_key": "",
+  "endpoint": "bj.bcebos.com",
+  "bucket": "world-data",
+  "region": "bj"
+}

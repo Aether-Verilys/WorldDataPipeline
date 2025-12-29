@@ -16,7 +16,7 @@
     "build_timeout": 120,
     "verify_navmesh": true,
     "maps": [
-      "/Game/LevelPrototyping/Lvl_FirstPerson"
+      "/Game/CanyonScans/Maps/Canyon_DemoScene"
     ]
   }
 }

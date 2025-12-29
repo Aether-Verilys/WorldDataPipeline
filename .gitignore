@@ -6,3 +6,5 @@ ue_template/WorldData00/DerivedDataCache
 ue_template/WorldData00/Intermediate
 ue_template/WorldData00/Saved
 ue_pipeline/python/pre_process/__pycache__
+ue_pipeline/python/bos/__pycache__
+ue_pipeline/__pycache__

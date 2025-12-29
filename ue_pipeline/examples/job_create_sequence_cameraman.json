@@ -1,7 +1,7 @@
 {
   "job_type": "create_sequence",
   "job_id": "job-create-seq-cameraman-001",
-  "map": "/Game/LevelPrototyping/Lvl_FirstPerson",
+  "map": "/Game/CanyonScans/Maps/Canyon_DemoScene",
   "sequence_config": {
     "output_dir": "/Game/CameraController/Generated",
     "sequence_count": 2,

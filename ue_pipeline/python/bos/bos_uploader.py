@@ -149,9 +149,9 @@ class BOSUploader:
             
             # 上传文件
             self.client.put_object_from_file(
-                bucket_name=bucket,
-                key=bos_path,
-                file_name=local_path,
+                bucket,
+                bos_path,
+                local_path,
                 storage_class=storage_class
             )
             
