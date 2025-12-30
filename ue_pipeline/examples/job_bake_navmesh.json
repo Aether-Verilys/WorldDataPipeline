@@ -9,14 +9,15 @@
     "auto_scale": true,
     "scale_margin": 1.2,
     "min_scale": [20.0, 20.0, 5.0],
-    "max_scale": [500.0, 500.0, 15.0],
+    "max_scale": [500.0, 500.0, 5.0],
     "agent_max_step_height": 50.0,
     "agent_max_jump_height": 200.0,
     "wait_for_build": true,
     "build_timeout": 120,
     "verify_navmesh": true,
     "maps": [
-      "/Game/CanyonScans/Maps/Canyon_DemoScene"
+      "/Game/LevelPrototyping/Lvl_FirstPerson.umap",    
+      "/Game/GYM/Level/GYM.umap"
     ]
   }
 }

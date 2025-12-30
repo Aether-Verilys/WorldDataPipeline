@@ -424,6 +424,7 @@ class NavMeshManager:
             landscape_z_min = None
             landscape_z_max = None
             landscape_z_center = None
+            landscape_origin_z = None  # Landscape actor position Z (true ground reference)
             landscape_count = 0
             
             unreal.log("[Phase 1] Detecting Landscape (ground)...")
@@ -431,23 +432,31 @@ class NavMeshManager:
                 actor_class_name = actor.get_class().get_name()
                 if 'Landscape' in actor_class_name:
                     try:
-                        origin, extent = actor.get_actor_bounds(False)
-                        landscape_z_bottom = origin.z - extent.z  # Bottom of landscape
-                        landscape_z_top = origin.z + extent.z      # Top of landscape
+                        # Get actual actor location (Transform position)
+                        actor_location = actor.get_actor_location()
+                        
+                        # Get bounds for Z range
+                        bounds_origin, extent = actor.get_actor_bounds(False)
+                        landscape_z_bottom = bounds_origin.z - extent.z  # Bottom of landscape
+                        landscape_z_top = bounds_origin.z + extent.z      # Top of landscape
                         
                         if landscape_z_min is None or landscape_z_bottom < landscape_z_min:
                             landscape_z_min = landscape_z_bottom
                         if landscape_z_max is None or landscape_z_top > landscape_z_max:
                             landscape_z_max = landscape_z_top
                         
+                        # Store landscape actual position Z (Transform Z - this is the ground level)
+                        if landscape_origin_z is None:
+                            landscape_origin_z = actor_location.z
+                        
                         landscape_count += 1
-                        unreal.log(f"  Landscape #{landscape_count}: Z_min={landscape_z_bottom:.1f} cm, Z_max={landscape_z_top:.1f} cm, Z_center={origin.z:.1f} cm")
+                        unreal.log(f"  Landscape #{landscape_count}: Transform Z={actor_location.z:.1f} cm (ground level), Bounds center={bounds_origin.z:.1f} cm, Z_min={landscape_z_bottom:.1f} cm, Z_max={landscape_z_top:.1f} cm")
                     except Exception as e:
                         unreal.log_warning(f"  Error processing Landscape: {str(e)}")
             
             if landscape_z_min is not None and landscape_z_max is not None:
                 landscape_z_center = (landscape_z_min + landscape_z_max) / 2.0
-                unreal.log(f"✓ Landscape detected: Z_min={landscape_z_min:.1f} cm, Z_max={landscape_z_max:.1f} cm, Z_center={landscape_z_center:.1f} cm")
+                unreal.log(f"✓ Landscape detected: Position={landscape_origin_z:.1f} cm, Bounds Z_min={landscape_z_min:.1f} cm, Z_max={landscape_z_max:.1f} cm, Z_center={landscape_z_center:.1f} cm")
                 unreal.log(f"  NavMesh Z center will align with Landscape center")
             else:
                 unreal.log("  No Landscape found, Z bounds will be based on geometry")
@@ -598,17 +607,95 @@ class NavMeshManager:
                 unreal.log_error("Invalid geometry Z bounds")
                 return None, None, None
             
-            # Phase 4: Calculate Z bounds (vertical) - LANDSCAPE HAS PRIORITY
+            # Phase 4: Calculate Z bounds (vertical) - SMART ALIGNMENT
             unreal.log("[Phase 4] Calculating Z bounds (vertical)...")
             
             # Determine reference Z center for alignment
             reference_z_center = None
             
             if landscape_z_center is not None:
-                # Case 1: Landscape exists - align with Landscape center
-                reference_z_center = landscape_z_center
-                unreal.log(f"  Reference Z center: {reference_z_center:.1f} cm (Landscape center)")
-                unreal.log(f"    *** NavMesh will align with Landscape ***")
+                # Case 1: Landscape exists - analyze object distribution to choose alignment
+                unreal.log("  Landscape detected - analyzing object distribution...")
+                
+                # Determine ground plane reference: use Landscape actor position Z (true ground level)
+                # This is the actual surface level where objects sit, not the bottom of landscape bounds
+                ground_plane_z = landscape_origin_z if landscape_origin_z is not None else 0.0
+                
+                # Collect Z center positions of all navigable actors
+                actor_z_centers = []
+                for actor in all_actors:
+                    actor_class_name = actor.get_class().get_name()
+                    actor_name = actor.get_name()
+                    
+                    # Skip non-navigable actors and Landscape itself
+                    if any(pattern in actor_class_name for pattern in exclude_patterns):
+                        continue
+                    if 'Landscape' in actor_class_name:
+                        continue
+                    if any(pattern in actor_name for pattern in ['Sky', 'sky', 'Atmosphere', 'atmosphere']):
+                        continue
+                    
+                    try:
+                        is_navigable = False
+                        if isinstance(actor, unreal.StaticMeshActor):
+                            is_navigable = True
+                        else:
+                            try:
+                                components = actor.get_components_by_class(unreal.StaticMeshComponent)
+                                if components and len(components) > 0:
+                                    is_navigable = True
+                            except Exception:
+                                pass
+                        
+                        if not is_navigable:
+                            continue
+                        
+                        origin, extent = actor.get_actor_bounds(False)
+                        
+                        # Skip actors with zero extent or oversized
+                        if extent.x < 1 and extent.y < 1 and extent.z < 1:
+                            continue
+                        if (extent.x > max_reasonable_extent or 
+                            extent.y > max_reasonable_extent or 
+                            extent.z > max_reasonable_extent):
+                            continue
+                        
+                        # Record center Z position
+                        actor_z_centers.append(origin.z)
+                    except Exception:
+                        continue
+                
+                # Analyze distribution: how many objects are above vs below ground plane
+                terrain_type = "Unknown"
+                if len(actor_z_centers) > 0:
+                    above_ground = sum(1 for z in actor_z_centers if z > ground_plane_z)
+                    below_ground = sum(1 for z in actor_z_centers if z <= ground_plane_z)
+                    total_objects = len(actor_z_centers)
+                    above_ratio = above_ground / total_objects if total_objects > 0 else 0
+                    
+                    unreal.log(f"  Ground plane reference: Z={ground_plane_z:.1f} cm")
+                    unreal.log(f"  Object distribution: {above_ground} above, {below_ground} below ground ({above_ratio*100:.1f}% above)")
+                    unreal.log("")
+                    
+                    # Terrain Classification
+                    if above_ratio > 0.5:
+                        terrain_type = "Plain"
+                        reference_z_center = ground_plane_z
+                        unreal.log(f"  Terrain Type: PLAIN")
+                        unreal.log(f"     Most objects ({above_ratio*100:.1f}%) are above ground")
+                        unreal.log(f"     Alignment: Ground-level (Z={reference_z_center:.1f} cm)")
+                    else:
+                        terrain_type = "Valley"
+                        reference_z_center = landscape_z_center
+                        unreal.log(f"  Terrain Type: VALLEY")
+                        unreal.log(f"     Most objects ({(1-above_ratio)*100:.1f}%) are below ground")
+                        unreal.log(f"     Alignment: Landscape center (Z={reference_z_center:.1f} cm)")
+                else:
+                    terrain_type = "Plain (default)"
+                    reference_z_center = landscape_z_center
+                    unreal.log(f"  No objects for terrain analysis")
+                    unreal.log(f"  Terrain Type: {terrain_type}")
+                    unreal.log(f"  Using Landscape center: Z={reference_z_center:.1f} cm")
             else:
                 # Case 2: No Landscape - find most common Z level (ground plane)
                 unreal.log("  No Landscape - finding dominant ground plane...")
@@ -703,6 +790,20 @@ class NavMeshManager:
             
             min_z = reference_z_center - z_extent
             max_z = reference_z_center + z_extent
+            
+            # Safety check: Ensure volume bottom is below actual Z_min with margin
+            # Add 10cm safety margin below the minimum Z value
+            z_min_safety_margin = 10.0  # 10cm margin below Z_min
+            required_min_z = geometry_z_min - z_min_safety_margin
+            
+            if min_z > required_min_z:
+                # Volume bottom is too high, adjust to ensure it covers Z_min
+                unreal.log(f"  ⚠ Adjusting Z bounds: calculated min_z={min_z:.1f} > required_min_z={required_min_z:.1f}")
+                min_z = required_min_z
+                # Recalculate extent based on adjusted min_z
+                z_extent = max(reference_z_center - min_z, max_z - reference_z_center)
+                max_z = reference_z_center + z_extent
+                unreal.log(f"  ✓ Adjusted: min_z={min_z:.1f}, z_extent={z_extent:.1f}, max_z={max_z:.1f}")
             
             unreal.log(f"  Z_min: {min_z:.1f} cm")
             unreal.log(f"  Z_max: {max_z:.1f} cm")
