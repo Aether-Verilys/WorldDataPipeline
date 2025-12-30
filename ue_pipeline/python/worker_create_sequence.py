@@ -5,6 +5,7 @@ import random
 import sys
 import time
 import traceback
+from dataclasses import dataclass, field
 import unreal
 
 # Try to import levelsequence helpers
@@ -45,44 +46,95 @@ except Exception as e:
     print(f"[WorkerCreateSequence] ERROR: Failed to read manifest: {e}")
     sys.exit(1)
 
+
+@dataclass
+class SequenceJobConfig:
+    output_dir: str = "/Game/CameraController/Generated"
+    sequence_count: int = 1
+    actor_name: str = "BP_NPC_NavMesh"
+    camera_component_name: str = "Camera"
+    actor_blueprint_class_path: str = "/Game/FirstPerson/Blueprints/BP_NPC_NavMesh.BP_NPC_NavMesh"
+    spawn_actor_if_missing: bool = False
+    actor_binding_mode: str = "sequence_spawnable"
+    save_level_if_spawned: bool = False
+    spawn_at_startpoint: bool = False
+    nav_roam: dict = field(default_factory=dict)
+    force_zero_pitch_roll: bool = True
+    max_yaw_rate_deg_per_sec: float | None = None
+    write_transform_keys: bool = False
+    transform_keys: list | None = None
+    transform_key_interp: str = "auto"
+    spawn_location: dict = field(default_factory=lambda: {"x": 0.0, "y": 0.0, "z": 0.0})
+    spawn_rotation: dict = field(default_factory=lambda: {"pitch": 0.0, "yaw": 0.0, "roll": 0.0})
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "SequenceJobConfig":
+        cfg = data or {}
+        inst = cls()
+
+        inst.output_dir = cfg.get("output_dir", inst.output_dir)
+        inst.sequence_count = int(cfg.get("sequence_count", inst.sequence_count))
+        inst.actor_name = cfg.get("actor_name", inst.actor_name)
+        inst.camera_component_name = cfg.get("camera_component_name", inst.camera_component_name)
+        inst.actor_blueprint_class_path = cfg.get("actor_blueprint_class_path", inst.actor_blueprint_class_path)
+        inst.spawn_actor_if_missing = bool(cfg.get("spawn_actor_if_missing", inst.spawn_actor_if_missing))
+        inst.actor_binding_mode = (cfg.get("actor_binding_mode", inst.actor_binding_mode) or inst.actor_binding_mode).lower()
+        inst.save_level_if_spawned = bool(cfg.get("save_level_if_spawned", inst.save_level_if_spawned))
+        inst.spawn_at_startpoint = bool(cfg.get("spawn_at_startpoint", inst.spawn_at_startpoint))
+        inst.nav_roam = cfg.get("nav_roam", {}) or {}
+        inst.force_zero_pitch_roll = bool(cfg.get("force_zero_pitch_roll", inst.force_zero_pitch_roll))
+        inst.write_transform_keys = bool(cfg.get("write_transform_keys", inst.write_transform_keys))
+        inst.transform_keys = cfg.get("transform_keys", inst.transform_keys)
+        inst.transform_key_interp = (cfg.get("transform_key_interp", inst.transform_key_interp) or inst.transform_key_interp).lower()
+        inst.spawn_location = cfg.get("spawn_location", inst.spawn_location)
+        inst.spawn_rotation = cfg.get("spawn_rotation", inst.spawn_rotation)
+
+        max_yaw = cfg.get("max_yaw_rate_deg_per_sec", None)
+        try:
+            if max_yaw is not None:
+                max_yaw = float(max_yaw)
+                if max_yaw <= 0:
+                    max_yaw = None
+        except Exception:
+            max_yaw = None
+        inst.max_yaw_rate_deg_per_sec = max_yaw
+
+        return inst
+
+    @property
+    def nav_roam_enabled(self) -> bool:
+        return bool(self.nav_roam.get("enabled", False))
+
+
 job_id = manifest.get("job_id", "unknown")
 job_type = manifest.get("job_type", "unknown")
 map_path = manifest.get("map", "")
-sequence_config = manifest.get("sequence_config", {})
 
-output_dir = sequence_config.get("output_dir", "/Game/CameraController/Generated")
-batch_count = sequence_config.get("sequence_count", 1)  # sequence_count作为批次数量
+job_config = SequenceJobConfig.from_dict(manifest.get("sequence_config", {}))
 
-actor_name = sequence_config.get("actor_name", "BP_NPC_NavMesh")
-camera_component_name = sequence_config.get("camera_component_name", "Camera")
-actor_blueprint_class_path = sequence_config.get(
-    "actor_blueprint_class_path",
-    "/Game/FirstPerson/Blueprints/BP_NPC_NavMesh.BP_NPC_NavMesh",
-)
-spawn_actor_if_missing = bool(sequence_config.get("spawn_actor_if_missing", False))
-actor_binding_mode = (sequence_config.get("actor_binding_mode", "sequence_spawnable") or "sequence_spawnable").lower()
-save_level_if_spawned = bool(sequence_config.get("save_level_if_spawned", False))
+output_dir = job_config.output_dir
+batch_count = job_config.sequence_count  # sequence_count作为批次数量
 
-spawn_at_startpoint = bool(sequence_config.get("spawn_at_startpoint", False))
-nav_roam_cfg = sequence_config.get("nav_roam", {}) or {}
-nav_roam_enabled = bool(nav_roam_cfg.get("enabled", False))
+actor_name = job_config.actor_name
+camera_component_name = job_config.camera_component_name
+actor_blueprint_class_path = job_config.actor_blueprint_class_path
+spawn_actor_if_missing = job_config.spawn_actor_if_missing
+actor_binding_mode = job_config.actor_binding_mode
+save_level_if_spawned = job_config.save_level_if_spawned
 
-force_zero_pitch_roll = bool(sequence_config.get("force_zero_pitch_roll", True))
-max_yaw_rate_deg_per_sec = sequence_config.get("max_yaw_rate_deg_per_sec", None)
-try:
-    if max_yaw_rate_deg_per_sec is not None:
-        max_yaw_rate_deg_per_sec = float(max_yaw_rate_deg_per_sec)
-        if max_yaw_rate_deg_per_sec <= 0:
-            max_yaw_rate_deg_per_sec = None
-except Exception:
-    max_yaw_rate_deg_per_sec = None
+spawn_at_startpoint = job_config.spawn_at_startpoint
+nav_roam_cfg = job_config.nav_roam
+nav_roam_enabled = job_config.nav_roam_enabled
 
-write_transform_keys = bool(sequence_config.get("write_transform_keys", False))
-transform_keys_cfg = sequence_config.get("transform_keys", None)
-transform_key_interp = (sequence_config.get("transform_key_interp", "auto") or "auto").lower()
+force_zero_pitch_roll = job_config.force_zero_pitch_roll
+max_yaw_rate_deg_per_sec = job_config.max_yaw_rate_deg_per_sec
 
-spawn_location_cfg = sequence_config.get("spawn_location", {"x": 0.0, "y": 0.0, "z": 0.0})
-spawn_rotation_cfg = sequence_config.get("spawn_rotation", {"pitch": 0.0, "yaw": 0.0, "roll": 0.0})
+write_transform_keys = job_config.write_transform_keys
+transform_keys_cfg = job_config.transform_keys
+transform_key_interp = job_config.transform_key_interp
+
+spawn_location_cfg = job_config.spawn_location
+spawn_rotation_cfg = job_config.spawn_rotation
 
 def _as_float(v, default=0.0) -> float:
     try:
