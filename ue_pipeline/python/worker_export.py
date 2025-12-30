@@ -2,118 +2,112 @@ import unreal
 import sys
 import json
 
-# Import utilities
 import os
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
-import export_UE_camera
 
-print("[WorkerExport] Starting camera export job execution...")
+from worker_common import load_json as _load_json, resolve_manifest_path_from_env as _resolve_manifest_path_from_env
+from logger import logger
 
-# Parse command line arguments or environment variable
-manifest_path = None
 
-# First try environment variable (for headless mode)
-manifest_path = os.environ.get('UE_MANIFEST_PATH')
+def main(argv=None) -> int:
+    import export_UE_camera
 
-# Fallback to command line arguments
-if not manifest_path:
-    for i, arg in enumerate(sys.argv):
-        if arg.startswith("--manifest="):
-            manifest_path = arg.split("=", 1)[1]
-        elif arg == "--manifest" and i + 1 < len(sys.argv):
-            manifest_path = sys.argv[i + 1]
+    logger.info("Starting camera export job execution...")
 
-if not manifest_path:
-    print("[WorkerExport] ERROR: No manifest path provided")
-    print("[WorkerExport] Usage: Set UE_MANIFEST_PATH environment variable or use --manifest=<path>")
-    sys.exit(1)
+    argv = list(argv) if argv is not None else sys.argv
+    env_key = "UE_MANIFEST_PATH"
+    manifest_path = _resolve_manifest_path_from_env(env_key, argv)
+    if not manifest_path:
+        logger.error("No manifest path provided")
+        logger.info(f"Usage: Set {env_key} environment variable or use --manifest=<path>")
+        return 1
 
-print(f"[WorkerExport] Manifest: {manifest_path}")
+    logger.info(f"Manifest: {manifest_path}")
 
-# Read manifest
-try:
-    with open(manifest_path, 'r', encoding='utf-8') as f:
-        manifest = json.load(f)
-except Exception as e:
-    print(f"[WorkerExport] ERROR: Failed to read manifest: {e}")
-    sys.exit(1)
+    try:
+        manifest = _load_json(manifest_path)
+    except Exception as e:
+        logger.error(f"Failed to read manifest: {e}")
+        return 1
 
-job_id = manifest.get("job_id", "unknown")
-job_type = manifest.get("job_type", "unknown")
-sequence_path = manifest.get("sequence")
-camera_export_config = manifest.get("camera_export", {})
+    job_id = manifest.get("job_id", "unknown")
+    job_type = manifest.get("job_type", "unknown")
+    sequence_path = manifest.get("sequence")
 
-print(f"[WorkerExport] Job ID: {job_id}")
-print(f"[WorkerExport] Job Type: {job_type}")
-print(f"[WorkerExport] Sequence: {sequence_path}")
+    logger.info(f"Job ID: {job_id}")
+    logger.info(f"Job Type: {job_type}")
+    logger.info(f"Sequence: {sequence_path}")
 
-# Print actual UE project directory
-try:
-    from pathlib import Path
-    # Use project_content_dir().parent to get real project root (same as worker_bake_navmesh.py)
-    project_content_dir = unreal.Paths.project_content_dir()
-    project_path = Path(project_content_dir).parent
-    project_saved_dir = project_path / "Saved"
-    
-    print(f"[WorkerExport] ========== Current UE Project Info ==========")
-    print(f"[WorkerExport] Project Root: {project_path}")
-    print(f"[WorkerExport] Content Directory: {project_content_dir}")
-    print(f"[WorkerExport] Saved Directory: {project_saved_dir}")
-    print(f"[WorkerExport] =============================================")
-except Exception as e:
-    print(f"[WorkerExport] WARNING: Failed to get project directories: {e}")
+    # Print actual UE project directory
+    try:
+        from pathlib import Path
 
-# Validate job type
-if job_type != "export":
-    print(f"[WorkerExport] ERROR: Invalid job type '{job_type}', expected 'export'")
-    sys.exit(1)
+        project_content_dir = unreal.Paths.project_content_dir()
+        project_path = Path(project_content_dir).parent
+        project_saved_dir = project_path / "Saved"
 
-if not sequence_path:
-    print("[WorkerExport] ERROR: No sequence specified in manifest")
-    sys.exit(1)
+        logger.info("========== Current UE Project Info ==========")
+        logger.info(f"Project Root: {project_path}")
+        logger.info(f"Content Directory: {project_content_dir}")
+        logger.info(f"Saved Directory: {project_saved_dir}")
+        logger.info("=============================================")
+    except Exception as e:
+        logger.warning(f"Failed to get project directories: {e}")
 
-# Execute export job
-try:
-    print("[WorkerExport] Starting camera export...")
-    result = export_UE_camera.export_camera_from_manifest(manifest)
-    
-    if result.get("status") == "success":
-        print("[WorkerExport] ✓ Camera export completed successfully")
-        print(f"[WorkerExport] Sequence: {result.get('sequence')}")
-        print(f"[WorkerExport] Output directory: {result.get('output_dir')}")
-        print(f"[WorkerExport] Extrinsic CSV: {result.get('extrinsic_csv')}")
-        print(f"[WorkerExport] Transform CSV: {result.get('transform_csv')}")
-        
-        # Log to job_history.log
-        try:
-            import datetime
-            log_entry = {
-                "job_type": "export",
-                "job_id": job_id,
-                "sequence": sequence_path,
-                "output_path": result.get('output_dir'),
-                "extrinsic_csv": result.get('extrinsic_csv'),
-                "transform_csv": result.get('transform_csv'),
-                "timestamp": datetime.datetime.now().isoformat(timespec='seconds')
-            }
-            # Use path relative to script location
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            pipeline_dir = os.path.dirname(script_dir)
-            log_file = os.path.join(pipeline_dir, "job_history.log")
-            with open(log_file, "a", encoding="utf-8") as logf:
-                logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
-        except Exception as logerr:
-            print(f"[WorkerExport] WARNING: Failed to write job_history.log: {logerr}")
-        
-        sys.exit(0)
-    else:
-        print(f"[WorkerExport] ERROR: Export returned unexpected status: {result}")
-        sys.exit(1)
-        
-except Exception as e:
-    print(f"[WorkerExport] ERROR: Failed to execute export job: {e}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
+    if job_type != "export":
+        logger.error(f"Invalid job type '{job_type}', expected 'export'")
+        return 1
+
+    if not sequence_path:
+        logger.error("No sequence specified in manifest")
+        return 1
+
+    try:
+        logger.info("Starting camera export...")
+        result = export_UE_camera.export_camera_from_manifest(manifest)
+
+        if result.get("status") == "success":
+            logger.info("✓ Camera export completed successfully")
+            logger.info(f"Sequence: {result.get('sequence')}")
+            logger.info(f"Output directory: {result.get('output_dir')}")
+            logger.info(f"Extrinsic CSV: {result.get('extrinsic_csv')}")
+            logger.info(f"Transform CSV: {result.get('transform_csv')}")
+
+            # Log to job_history.log
+            try:
+                import datetime
+
+                log_entry = {
+                    "job_type": "export",
+                    "job_id": job_id,
+                    "sequence": sequence_path,
+                    "output_path": result.get("output_dir"),
+                    "extrinsic_csv": result.get("extrinsic_csv"),
+                    "transform_csv": result.get("transform_csv"),
+                    "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+                }
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                pipeline_dir = os.path.dirname(script_dir)
+                log_file = os.path.join(pipeline_dir, "job_history.log")
+                with open(log_file, "a", encoding="utf-8") as logf:
+                    logf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+            except Exception as logerr:
+                logger.warning(f"Failed to write job_history.log: {logerr}")
+
+            return 0
+
+        logger.error(f"Export returned unexpected status: {result}")
+        return 1
+
+    except Exception as e:
+        logger.error(f"Failed to execute export job: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

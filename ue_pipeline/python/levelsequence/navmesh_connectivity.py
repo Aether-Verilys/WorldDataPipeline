@@ -1,10 +1,3 @@
-"""
-NavMesh Connectivity Analysis
-Analyzes NavMesh to find the largest connected region for spawn point selection.
-
-Based on Matrix-Game 2.0 paper's approach to ensure agents spawn in navigable areas.
-"""
-
 import os
 import json
 import random

@@ -8,78 +8,77 @@ import os
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
-import rendering
 
-print("[WorkerRender] Starting render job execution...")
+from worker_common import load_json as _load_json, resolve_manifest_path_from_env as _resolve_manifest_path_from_env
+from logger import logger
 
-# Parse command line arguments or environment variable
-manifest_path = None
 
-# Try environment variable first (preferred for -ExecutePythonScript)
-manifest_path = os.environ.get("UE_RENDER_MANIFEST")
+def main(argv=None) -> int:
+    import rendering
 
-# Fall back to command line arguments
-if not manifest_path:
-    for i, arg in enumerate(sys.argv):
-        if arg.startswith("--manifest="):
-            manifest_path = arg.split("=", 1)[1]
-        elif arg == "--manifest" and i + 1 < len(sys.argv):
-            manifest_path = sys.argv[i + 1]
+    logger.info("Starting render job execution...")
 
-if not manifest_path:
-    print("[WorkerRender] ERROR: No manifest path provided")
-    print(f"[WorkerRender] sys.argv: {sys.argv}")
-    print(f"[WorkerRender] Environment vars: UE_RENDER_MANIFEST={os.environ.get('UE_RENDER_MANIFEST')}")
-    sys.exit(1)
+    argv = list(argv) if argv is not None else sys.argv
+    env_key = "UE_RENDER_MANIFEST"
+    manifest_path = _resolve_manifest_path_from_env(env_key, argv)
 
-print(f"[WorkerRender] Manifest: {manifest_path}")
+    if not manifest_path:
+        logger.error("No manifest path provided")
+        logger.info(f"sys.argv: {sys.argv}")
+        logger.info(f"Environment vars: {env_key}={os.environ.get(env_key)}")
+        return 1
 
-# Read manifest
-try:
-    with open(manifest_path, 'r', encoding='utf-8') as f:
-        manifest = json.load(f)
-except Exception as e:
-    print(f"[WorkerRender] ERROR: Failed to read manifest: {e}")
-    sys.exit(1)
+    logger.info(f"Manifest: {manifest_path}")
 
-job_id = manifest.get("job_id", "unknown")
-job_type = manifest.get("job_type", "unknown")
-sequence_path = manifest.get("sequence")
+    try:
+        manifest = _load_json(manifest_path)
+    except Exception as e:
+        logger.error(f"Failed to read manifest: {e}")
+        return 1
 
-print(f"[WorkerRender] Job ID: {job_id}")
-print(f"[WorkerRender] Job Type: {job_type}")
-print(f"[WorkerRender] Sequence: {sequence_path}")
+    job_id = manifest.get("job_id", "unknown")
+    job_type = manifest.get("job_type", "unknown")
+    sequence_path = manifest.get("sequence")
 
-# Validate job type
-if job_type != "render":
-    print(f"[WorkerRender] ERROR: Invalid job type '{job_type}', expected 'render'")
-    sys.exit(1)
+    logger.info(f"Job ID: {job_id}")
+    logger.info(f"Job Type: {job_type}")
+    logger.info(f"Sequence: {sequence_path}")
 
-if not sequence_path:
-    print("[WorkerRender] ERROR: No sequence specified in manifest")
-    sys.exit(1)
+    if job_type != "render":
+        logger.error(f"Invalid job type '{job_type}', expected 'render'")
+        return 1
 
-# Execute render job
-try:
-    print("[WorkerRender] Starting render job...")
-    result = rendering.render_sequence_from_manifest(manifest)
-    
-    if result.get("status") == "started":
-        print("[WorkerRender] ✓ Render job started successfully")
-        print(f"[WorkerRender] Sequence: {result.get('sequence')}")
-        print(f"[WorkerRender] Job Name: {result.get('job_name')}")
-        print(f"[WorkerRender] Output: {result.get('output_directory')}")
-        print("[WorkerRender] Note: Render will continue in background process")
-        sys.exit(0)
-    elif result.get("status") == "skipped":
-        print(f"[WorkerRender] Job skipped: {result.get('reason')}")
-        sys.exit(0)
-    else:
-        print(f"[WorkerRender] ERROR: Unknown result status: {result}")
-        sys.exit(1)
-        
-except Exception as e:
-    print(f"[WorkerRender] ERROR: Failed to execute render job: {e}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
+    if not sequence_path:
+        logger.error("No sequence specified in manifest")
+        return 1
+
+    try:
+        logger.info("Starting render job...")
+        result = rendering.render_sequence_from_manifest(manifest)
+
+        status = result.get("status")
+        if status == "started":
+            logger.info("✓ Render job started successfully")
+            logger.info(f"Sequence: {result.get('sequence')}")
+            logger.info(f"Job Name: {result.get('job_name')}")
+            logger.info(f"Output: {result.get('output_directory')}")
+            logger.info("Note: Render will continue in background process")
+            return 0
+
+        if status == "skipped":
+            logger.info(f"Job skipped: {result.get('reason')}")
+            return 0
+
+        logger.error(f"Unknown result status: {result}")
+        return 1
+
+    except Exception as e:
+        logger.error(f"Failed to execute render job: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
