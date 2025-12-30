@@ -1,0 +1,41 @@
+{
+  "job_type": "create_sequence",
+  "job_id": "job-create-seq-with-navmesh-analysis-001",
+  "map": "/Game/SecretBase/Map/SecretBase",
+  "sequence_config": {
+    "output_dir": "/Game/CameraController/Generated",
+    "sequence_count": 2,
+    "fps": 30,
+    "duration_seconds": 60,
+    "fixed_speed_cm_per_sec": 150,
+    "strict_duration": true,
+    "add_camera": true,
+    "nav_roam": {
+      "enabled": true,
+      "seed": -1,
+      "nav_build_wait_seconds": 10.0,
+      "random_point_radius_cm": 8000.0,
+      "num_legs": 6,
+      "max_random_point_tries": 40,
+      "min_segment_step_cm": 75.0,
+      "interpolation": "linear",
+      "project_to_nav": true,
+      "z_offset_cm": 170.0,
+      "_comment_connectivity": "NavMesh connectivity analysis settings",
+      "use_connectivity_analysis": true,
+      "_comment_sample": "Use 'connectivity_sample_count' for fixed count OR 'connectivity_sample_density' for area-based auto-calculation",
+      "connectivity_sample_density": 1.0
+    },
+    "force_zero_pitch_roll": true,
+    "max_yaw_rate_deg_per_sec": 30.0,
+    "max_pitch_rate_deg_per_sec": 5.0,
+    "camera_pitch_from_slope": true,
+    "max_camera_pitch_deg": 15.0,
+    "write_transform_keys": true,
+    "transform_key_interp": "auto",
+    "actor_name": "BP_Cameraman",
+    "camera_component_name": "Camera",
+    "actor_blueprint_class_path": "/Game/FirstPerson/Blueprints/BP_Cameraman",
+    "actor_binding_mode": "sequence_spawnable"
+  }
+}

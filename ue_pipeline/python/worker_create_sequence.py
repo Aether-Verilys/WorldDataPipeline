@@ -7,6 +7,17 @@ import time
 import traceback
 import unreal
 
+# Try to import levelsequence helpers
+try:
+    from levelsequence import (
+        find_largest_connected_region,
+        select_spawn_point_from_region,
+    )
+    NAVMESH_CONNECTIVITY_AVAILABLE = True
+except ImportError:
+    NAVMESH_CONNECTIVITY_AVAILABLE = False
+    print("[WorkerCreateSequence] WARNING: levelsequence.navmesh_connectivity not available")
+
 print("[WorkerCreateSequence] Starting job execution...")
 
 # Parse manifest path from environment variable or command line arguments
@@ -470,10 +481,54 @@ def _build_multi_leg_nav_path(nav, world, start: unreal.Vector, cfg: dict):
     min_step_cm = float(cfg.get("min_segment_step_cm", 75.0))
     project = bool(cfg.get("project_to_nav", True))
     min_leg_dist = float(cfg.get("min_leg_distance_cm", 300.0))
+    
+    # NavMesh connectivity analysis parameters
+    use_connectivity_analysis = bool(cfg.get("use_connectivity_analysis", True))
+    connectivity_sample_count = cfg.get("connectivity_sample_count", None)  # None = auto-calculate
+    connectivity_sample_density = cfg.get("connectivity_sample_density", None)  # points per m²
 
     # 始终从NavMesh随机选择一个连通的有效起始点（忽略PlayerStart等场景提供的起始点）
     print("[WorkerCreateSequence] Finding connected start point from NavMesh (ignoring scene PlayerStart)...")
-    origin = _find_connected_navmesh_start_point(nav, world, max_attempts=10)
+    
+    if use_connectivity_analysis and NAVMESH_CONNECTIVITY_AVAILABLE:
+        # Use advanced connectivity analysis to find largest connected region
+        try:
+            # Get logs directory for cache
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            cache_dir = os.path.join(os.path.dirname(script_dir), "logs")
+            
+            # Extract map name for cache key
+            map_name_for_cache = start.get_name() if hasattr(start, 'get_name') else "unknown_map"
+            if '/' in str(map_path):
+                map_name_for_cache = str(map_path).split('/')[-1]
+            
+            # Convert to int if specified, otherwise keep None for auto-calculation
+            sample_count_param = int(connectivity_sample_count) if connectivity_sample_count is not None else None
+            density_param = float(connectivity_sample_density) if connectivity_sample_density is not None else None
+            
+            print(f"[WorkerCreateSequence] Using connectivity analysis (sample_count={sample_count_param or 'auto'}, density={density_param or 'default'})")
+            largest_region = find_largest_connected_region(
+                nav, world, map_name_for_cache, cache_dir,
+                sample_count=sample_count_param,
+                sample_density=density_param,
+                k_nearest=8,
+                force_recompute=False
+            )
+            
+            # Select spawn point from largest region
+            seed_for_spawn = cfg.get("seed", None)
+            origin = select_spawn_point_from_region(largest_region, strategy="random", seed=seed_for_spawn)
+            print(f"[WorkerCreateSequence] ✓ Selected spawn point from largest connected region")
+            
+        except Exception as e:
+            print(f"[WorkerCreateSequence] WARNING: Connectivity analysis failed: {e}")
+            print(f"[WorkerCreateSequence] Falling back to legacy method...")
+            origin = _find_connected_navmesh_start_point(nav, world, max_attempts=10)
+    else:
+        # Use legacy method
+        if not use_connectivity_analysis:
+            print("[WorkerCreateSequence] Connectivity analysis disabled in config")
+        origin = _find_connected_navmesh_start_point(nav, world, max_attempts=10)
 
     # Ensure start is on navmesh
     a = _project_to_nav(nav, world, origin) if project else origin
