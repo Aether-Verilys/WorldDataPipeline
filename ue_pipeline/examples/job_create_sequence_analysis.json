@@ -11,7 +11,6 @@
     "strict_duration": true,
     "add_camera": true,
     "nav_roam": {
-      "enabled": true,
       "seed": -1,
       "nav_build_wait_seconds": 10.0,
       "random_point_radius_cm": 8000.0,

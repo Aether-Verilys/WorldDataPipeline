@@ -13,6 +13,8 @@ try:
     NAVMESH_CONNECTIVITY_AVAILABLE = True
 except ImportError:
     NAVMESH_CONNECTIVITY_AVAILABLE = False
+    find_largest_connected_region = None
+    select_spawn_point_from_region = None
 
 
 def call_maybe(obj, method_names, *args):
@@ -318,7 +320,20 @@ def resample_by_distance(points, sample_count: int):
     return out
 
 
-def build_multi_leg_nav_path(nav, world, start: unreal.Vector, cfg: dict, map_path: str | None = None):
+def build_multi_leg_nav_path(nav, world, cfg: dict, map_path: str | None = None, run_id: int | None = None):
+    """
+    Generate multi-leg navigation path on NavMesh.
+    
+    Args:
+        nav: NavigationSystemV1 instance
+        world: World context
+        cfg: Configuration dict with nav_roam settings
+        map_path: Map path for cache naming
+        run_id: Run session identifier for cache (None = force unique cache per call)
+    
+    Returns:
+        List of Vector points representing the navigation path
+    """
     radius_cm = float(cfg.get("random_point_radius_cm", 8000.0))
     num_legs = int(cfg.get("num_legs", 6))
     max_tries = int(cfg.get("max_random_point_tries", 40))
@@ -330,25 +345,35 @@ def build_multi_leg_nav_path(nav, world, start: unreal.Vector, cfg: dict, map_pa
     connectivity_sample_count = cfg.get("connectivity_sample_count", None)
     connectivity_sample_density = cfg.get("connectivity_sample_density", None)
 
-    print("[WorkerCreateSequence] Finding connected start point from NavMesh (ignoring scene PlayerStart)...")
+    print("[WorkerCreateSequence] Finding connected start point from NavMesh using connectivity analysis...")
 
     if use_connectivity_analysis and NAVMESH_CONNECTIVITY_AVAILABLE:
         try:
             script_dir = os.path.dirname(os.path.abspath(__file__))
             cache_dir = os.path.join(os.path.dirname(script_dir), "logs")
 
-            map_name_for_cache = start.get_name() if hasattr(start, "get_name") else "unknown_map"
+            # Use map name + run_id for cache isolation
+            map_name_for_cache = "unknown_map"
             if map_path and "/" in str(map_path):
                 map_name_for_cache = str(map_path).split("/")[-1]
+            
+            # Use run_id to identify this execution session
+            # All sequences in the same run will share this cache
+            if run_id is not None:
+                cache_name = f"{map_name_for_cache}_run{run_id}"
+            else:
+                # No run_id: use timestamp to force unique cache (never reuse)
+                import time
+                cache_name = f"{map_name_for_cache}_{int(time.time())}"
 
             sample_count_param = int(connectivity_sample_count) if connectivity_sample_count is not None else None
             density_param = float(connectivity_sample_density) if connectivity_sample_density is not None else None
 
-            print(f"[WorkerCreateSequence] Using connectivity analysis (sample_count={sample_count_param or 'auto'}, density={density_param or 'default'})")
+            print(f"[WorkerCreateSequence] Using connectivity analysis (cache_id={cache_name}, sample_count={sample_count_param or 'auto'}, density={density_param or 'default'})")
             largest_region = find_largest_connected_region(
                 nav,
                 world,
-                map_name_for_cache,
+                cache_name,
                 cache_dir,
                 sample_count=sample_count_param,
                 sample_density=density_param,
