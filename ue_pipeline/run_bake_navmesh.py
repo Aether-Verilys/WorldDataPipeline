@@ -8,24 +8,17 @@ import sys
 from pathlib import Path
 
 
-def print_header(title: str):
-    print("=" * 40)
-    print(title)
-    print("=" * 40)
-    print()
+script_dir = Path(__file__).parent
+repo_root = script_dir.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
 
-
-def print_error(message: str):
-    print(f"ERROR: {message}", file=sys.stderr)
-
-
-def print_info(key: str, value: str):
-    print(f"{key:14s} {value}")
+from ue_pipeline.python.logger import logger
 
 
 def load_manifest(manifest_path: str) -> dict:
     if not os.path.exists(manifest_path):
-        print_error(f"Manifest file not found: {manifest_path}")
+        logger.error(f"Manifest file not found: {manifest_path}")
         sys.exit(1)
     
     try:
@@ -33,7 +26,7 @@ def load_manifest(manifest_path: str) -> dict:
             manifest = json.load(f)
         return manifest
     except Exception as e:
-        print_error(f"Cannot parse manifest: {e}")
+        logger.error(f"Cannot parse manifest: {e}")
         sys.exit(1)
 
 
@@ -48,7 +41,7 @@ def load_default_ue_config() -> dict:
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
-        print_error(f"Cannot load default ue_config: {e}")
+        logger.error(f"Cannot load default ue_config: {e}")
         sys.exit(1)
 
 
@@ -59,19 +52,19 @@ def get_ue_config(manifest: dict) -> tuple[str, str]:
     ue_config = {**default_config, **manifest_config}
     
     if not ue_config:
-        print_error("No ue_config found in manifest or default config file")
+        logger.error("No ue_config found in manifest or default config file")
         sys.exit(1)
     
     editor_path = ue_config.get('editor_path')
     if not editor_path:
-        print_error("Missing 'editor_path' in ue_config")
+        logger.error("Missing 'editor_path' in ue_config")
         sys.exit(1)
     
     ue_editor = editor_path.replace('UnrealEditor.exe', 'UnrealEditor-Cmd.exe')
     
     project = ue_config.get('project_path')
     if not project:
-        print_error("Missing 'project_path' in ue_config")
+        logger.error("Missing 'project_path' in ue_config")
         sys.exit(1)
     
     return ue_editor, project
@@ -79,15 +72,15 @@ def get_ue_config(manifest: dict) -> tuple[str, str]:
 
 def validate_paths(ue_editor: str, project: str, worker: str):
     if not os.path.exists(ue_editor):
-        print_error(f"UE Editor not found at: {ue_editor}")
+        logger.error(f"UE Editor not found at: {ue_editor}")
         sys.exit(1)
     
     if not os.path.exists(project):
-        print_error(f"Project not found at: {project}")
+        logger.error(f"Project not found at: {project}")
         sys.exit(1)
     
     if not os.path.exists(worker):
-        print_error(f"Worker script not found at: {worker}")
+        logger.error(f"Worker script not found at: {worker}")
         sys.exit(1)
 
 
@@ -128,25 +121,25 @@ def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str, jo
             f'LOG=NavMeshBake_{job_id}.txt',
         ]
         
-        print(f"Command: {' '.join(ue_args)}")
-        print()
-        print("-" * 40)
+        logger.info(f"Command: {' '.join(ue_args)}")
+        logger.blank(1)
+        logger.separator(width=40, char='-')
         
         try:
             result = subprocess.run(ue_args, check=False)
-            
-            print()
-            print("-" * 40)
+
+            logger.blank(1)
+            logger.separator(width=40, char='-')
             
             if result.returncode == 0:
-                print("NavMesh bake job completed successfully")
+                logger.info("NavMesh bake job completed successfully")
                 return 0
             else:
-                print_error(f"NavMesh bake job failed with exit code: {result.returncode}")
+                logger.error(f"NavMesh bake job failed with exit code: {result.returncode}")
                 return result.returncode
                 
         except Exception as e:
-            print_error(f"Failed to launch UE: {e}")
+            logger.error(f"Failed to launch UE: {e}")
             return 1
     finally:
         try:
@@ -175,7 +168,7 @@ def main():
     script_dir = Path(__file__).parent
     worker = str(script_dir / 'python' / 'worker_bake_navmesh.py')
     
-    print_header("UE NavMesh Bake Tool (Headless Mode)")
+    logger.header("UE NavMesh Bake Tool (Headless Mode)")
     
     manifest = load_manifest(args.manifest_path)
     
@@ -183,7 +176,7 @@ def main():
     job_type = manifest.get('job_type', 'unknown')
     
     if job_type != 'bake_navmesh':
-        print_error(f"Invalid job type '{job_type}', expected 'bake_navmesh'")
+        logger.error(f"Invalid job type '{job_type}', expected 'bake_navmesh'")
         sys.exit(1)
     
     ue_editor, project = get_ue_config(manifest)
@@ -199,34 +192,34 @@ def main():
         scale_margin = navmesh_config.get('scale_margin', 1.2)
         min_scale = navmesh_config.get('min_scale', [20.0, 20.0, 5.0])
         max_scale = navmesh_config.get('max_scale', [500.0, 500.0, 50.0])
-        print_info("Mode:", "Auto-scale")
-        print_info("Scale Margin:", f"{scale_margin}x")
-        print_info("Min Scale:", str(min_scale))
-        print_info("Max Scale:", str(max_scale))
+        logger.kv("Mode:", "Auto-scale")
+        logger.kv("Scale Margin:", f"{scale_margin}x")
+        logger.kv("Min Scale:", str(min_scale))
+        logger.kv("Max Scale:", str(max_scale))
     else:
         location = navmesh_config.get('location', [0.0, 0.0, 0.0])
         scale = navmesh_config.get('scale', [100.0, 100.0, 10.0])
-        print_info("Mode:", "Manual")
-        print_info("Location:", str(location))
-        print_info("Scale:", str(scale))
+        logger.kv("Mode:", "Manual")
+        logger.kv("Location:", str(location))
+        logger.kv("Scale:", str(scale))
     
-    print_info("Maps:", str(len(maps)))
-    
-    print_info("Job ID:", job_id)
-    print_info("Maps:", str(len(maps)))
-    print_info("UE Editor:", ue_editor)
-    print_info("Project:", project)
-    print()
+    logger.kv("Maps:", str(len(maps)))
+
+    logger.kv("Job ID:", job_id)
+    logger.kv("Maps:", str(len(maps)))
+    logger.kv("UE Editor:", ue_editor)
+    logger.kv("Project:", project)
+    logger.blank(1)
     
     if args.verbose:
-        print("Full manifest configuration:")
-        print(json.dumps(manifest, indent=2))
-        print()
+        logger.info("Full manifest configuration:")
+        logger.plain(json.dumps(manifest, indent=2))
+        logger.blank(1)
     
     validate_paths(ue_editor, project, worker)
     
-    print("Starting NavMesh bake job...")
-    print()
+    logger.info("Starting NavMesh bake job...")
+    logger.blank(1)
     
     exit_code = run_ue_job(ue_editor, project, args.manifest_path, worker, job_id, full_config)
     sys.exit(exit_code)

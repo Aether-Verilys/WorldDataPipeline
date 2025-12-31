@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-UE Scene Map Scanner
-Scan UE project for scene folders and update scene status JSON
-"""
 import argparse
 import json
 import os

@@ -12,9 +12,12 @@ import sys
 from pathlib import Path
 
 
-# ============================================================
-# Helper Functions
-# ============================================================
+script_dir = Path(__file__).parent
+repo_root = script_dir.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
+from ue_pipeline.python.logger import logger
 
 def load_ue_config():
     """Load UE configuration from config file"""
@@ -22,7 +25,7 @@ def load_ue_config():
     config_path = script_dir / 'config' / 'ue_config.json'
     
     if not config_path.exists():
-        print_colored(f"ERROR: UE config file not found: {config_path}", 'red')
+        logger.error(f"UE config file not found: {config_path}")
         sys.exit(1)
     
     try:
@@ -30,43 +33,8 @@ def load_ue_config():
             config = json.load(f)
         return config
     except Exception as e:
-        print_colored(f"ERROR: Failed to load UE config: {e}", 'red')
+        logger.error(f"Failed to load UE config: {e}")
         sys.exit(1)
-
-
-# ============================================================
-# Helper Functions
-# ============================================================
-
-def print_colored(text, color):
-    """Print colored text (simple version for cross-platform compatibility)"""
-    colors = {
-        'cyan': '\033[96m',
-        'yellow': '\033[93m',
-        'green': '\033[92m',
-        'red': '\033[91m',
-        'gray': '\033[90m',
-        'reset': '\033[0m'
-    }
-    print(f"{colors.get(color, '')}{text}{colors.get('reset', '')}")
-
-
-def print_header():
-    """Print script header"""
-    print_colored("=" * 40, 'cyan')
-    print_colored("UE Camera Export Job Executor", 'cyan')
-    print_colored("=" * 40, 'cyan')
-    print()
-
-
-def print_separator():
-    """Print separator line"""
-    print_colored("-" * 40, 'cyan')
-
-
-# ============================================================
-# Main Function
-# ============================================================
 
 def main():
     # Parse arguments
@@ -76,14 +44,14 @@ def main():
 
     manifest_path = args.manifest
 
-    print_header()
+    logger.header("UE Camera Export Job Executor")
 
     # Load UE configuration from config file
     ue_config_global = load_ue_config()
 
     # Check manifest file
     if not os.path.isfile(manifest_path):
-        print_colored(f"ERROR: Manifest file not found: {manifest_path}", 'red')
+        logger.error(f"Manifest file not found: {manifest_path}")
         return 1
 
     # Parse manifest to get job_id, job_type, and ue_config
@@ -95,7 +63,7 @@ def main():
         job_type = manifest.get('job_type')
 
         if job_type != 'export':
-            print_colored(f"ERROR: Invalid job type '{job_type}', expected 'export'", 'red')
+            logger.error(f"Invalid job type '{job_type}', expected 'export'")
             return 1
 
         # Read UE paths from manifest or use config file defaults
@@ -105,46 +73,46 @@ def main():
 
         # Merge ue_config into manifest if not present
         if not manifest.get('ue_config'):
-            print_colored("WARNING: No ue_config in manifest, merging config file defaults", 'yellow')
+            logger.warning("No ue_config in manifest, merging config file defaults")
             manifest['ue_config'] = ue_config_global
             # Save updated manifest
             with open(manifest_path, 'w', encoding='utf-8') as f:
                 json.dump(manifest, f, indent=2, ensure_ascii=False)
 
-        print_colored(f"Job ID:       {job_id}", 'yellow')
-        print_colored(f"Job Type:     {job_type}", 'yellow')
+        logger.kv("Job ID:", job_id)
+        logger.kv("Job Type:", job_type)
 
     except json.JSONDecodeError as e:
-        print_colored(f"ERROR: Cannot parse manifest: {e}", 'red')
+        logger.error(f"Cannot parse manifest: {e}")
         return 1
     except Exception as e:
-        print_colored(f"ERROR: Failed to read manifest: {e}", 'red')
+        logger.error(f"Failed to read manifest: {e}")
         return 1
 
     # Worker Export script path
     script_dir = Path(__file__).parent
     worker_export = script_dir / 'python' / 'worker_export.py'
 
-    print_colored(f"Manifest:     {manifest_path}", 'yellow')
-    print_colored(f"UE Editor:    {ue_editor}", 'yellow')
-    print_colored(f"Project:      {project}", 'yellow')
-    print()
+    logger.kv("Manifest:", manifest_path)
+    logger.kv("UE Editor:", ue_editor)
+    logger.kv("Project:", project)
+    logger.blank(1)
 
     # Check required files
     if not os.path.isfile(ue_editor):
-        print_colored(f"ERROR: UE Editor not found at: {ue_editor}", 'red')
+        logger.error(f"UE Editor not found at: {ue_editor}")
         return 1
 
     if not os.path.isfile(project):
-        print_colored(f"ERROR: Project not found at: {project}", 'red')
+        logger.error(f"Project not found at: {project}")
         return 1
 
     if not os.path.isfile(worker_export):
-        print_colored(f"ERROR: Worker export script not found at: {worker_export}", 'red')
+        logger.error(f"Worker export script not found at: {worker_export}")
         return 1
 
-    print_colored("Starting export job...", 'green')
-    print()
+    logger.info("Starting export job...")
+    logger.blank(1)
 
     # Resolve absolute path for manifest
     abs_manifest_path = os.path.abspath(manifest_path)
@@ -169,9 +137,9 @@ def main():
 
     # Print command
     command_str = f'{ue_editor} {" ".join(ue_args)}'
-    print_colored(f"Command: {command_str}", 'gray')
-    print()
-    print_separator()
+    logger.info(f"Command: {command_str}")
+    logger.blank(1)
+    logger.separator(width=40, char='-')
 
     # Launch UE
     try:
@@ -180,18 +148,18 @@ def main():
             check=False
         )
 
-        print()
-        print_separator()
+        logger.blank(1)
+        logger.separator(width=40, char='-')
 
         if process.returncode == 0:
-            print_colored("Export job completed successfully", 'green')
+            logger.info("Export job completed successfully")
             return 0
         else:
-            print_colored(f"Export job failed with exit code: {process.returncode}", 'red')
+            logger.error(f"Export job failed with exit code: {process.returncode}")
             return process.returncode
 
     except Exception as e:
-        print_colored(f"ERROR: Failed to launch UE: {e}", 'red')
+        logger.error(f"Failed to launch UE: {e}")
         return 1
 
 

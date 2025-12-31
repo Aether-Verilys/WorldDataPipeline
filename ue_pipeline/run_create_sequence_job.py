@@ -11,32 +11,17 @@ import sys
 from pathlib import Path
 
 
-# ============================================================
-# Helper Functions
-# ============================================================
+script_dir = Path(__file__).parent
+repo_root = script_dir.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
 
-def print_header(title: str):
-    print("=" * 40)
-    print(title)
-    print("=" * 40)
-    print()
-
-
-def print_error(message: str):
-    print(f"ERROR: {message}", file=sys.stderr)
-
-
-def print_warning(message: str):
-    print(f"WARNING: {message}")
-
-
-def print_info(key: str, value: str):
-    print(f"{key:14s} {value}")
+from ue_pipeline.python.logger import logger
 
 
 def load_manifest(manifest_path: str) -> dict:
     if not os.path.exists(manifest_path):
-        print_error(f"Manifest file not found: {manifest_path}")
+        logger.error(f"Manifest file not found: {manifest_path}")
         sys.exit(1)
     
     try:
@@ -44,7 +29,7 @@ def load_manifest(manifest_path: str) -> dict:
             manifest = json.load(f)
         return manifest
     except Exception as e:
-        print_error(f"Cannot parse manifest: {e}")
+        logger.error(f"Cannot parse manifest: {e}")
         sys.exit(1)
 
 
@@ -53,7 +38,7 @@ def validate_manifest(manifest: dict) -> tuple[str, str]:
     job_type = manifest.get('job_type', 'unknown')
     
     if job_type != 'create_sequence':
-        print_error(f"Invalid job type '{job_type}', expected 'create_sequence'")
+        logger.error(f"Invalid job type '{job_type}', expected 'create_sequence'")
         sys.exit(1)
     
     return job_id, job_type
@@ -71,7 +56,7 @@ def load_default_ue_config() -> dict:
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
-        print_warning(f"Cannot load default ue_config: {e}")
+        logger.warning(f"Cannot load default ue_config: {e}")
         return {}
 
 
@@ -85,12 +70,12 @@ def get_ue_config(manifest: dict) -> tuple[str, str]:
     ue_config = {**default_config, **manifest_config}
     
     if not ue_config:
-        print_error("No ue_config found in manifest or default config file")
+        logger.error("No ue_config found in manifest or default config file")
         sys.exit(1)
     
     editor_path = ue_config.get('editor_path')
     if not editor_path:
-        print_error("Missing 'editor_path' in ue_config")
+        logger.error("Missing 'editor_path' in ue_config")
         sys.exit(1)
     
     # Replace UnrealEditor.exe with UnrealEditor-Cmd.exe
@@ -98,7 +83,7 @@ def get_ue_config(manifest: dict) -> tuple[str, str]:
     
     project = ue_config.get('project_path')
     if not project:
-        print_error("Missing 'project_path' in ue_config")
+        logger.error("Missing 'project_path' in ue_config")
         sys.exit(1)
     
     return ue_editor, project
@@ -106,15 +91,15 @@ def get_ue_config(manifest: dict) -> tuple[str, str]:
 
 def validate_paths(ue_editor: str, project: str, worker: str):
     if not os.path.exists(ue_editor):
-        print_error(f"UE Editor not found at: {ue_editor}")
+        logger.error(f"UE Editor not found at: {ue_editor}")
         sys.exit(1)
     
     if not os.path.exists(project):
-        print_error(f"Project not found at: {project}")
+        logger.error(f"Project not found at: {project}")
         sys.exit(1)
     
     if not os.path.exists(worker):
-        print_error(f"Worker script not found at: {worker}")
+        logger.error(f"Worker script not found at: {worker}")
         sys.exit(1)
 
 
@@ -140,25 +125,25 @@ def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str) ->
         '-log',
     ]
     
-    print(f"Command: {' '.join(ue_args)}")
-    print()
-    print("-" * 40)
+    logger.info(f"Command: {' '.join(ue_args)}")
+    logger.blank(1)
+    logger.separator(width=40, char='-')
     
     try:
         result = subprocess.run(ue_args, check=False)
-        
-        print()
-        print("-" * 40)
+
+        logger.blank(1)
+        logger.separator(width=40, char='-')
         
         if result.returncode == 0:
-            print("Job completed successfully")
+            logger.info("Job completed successfully")
             return 0
         else:
-            print_error(f"Job failed with exit code: {result.returncode}")
+            logger.error(f"Job failed with exit code: {result.returncode}")
             return result.returncode
             
     except Exception as e:
-        print_error(f"Failed to launch UE: {e}")
+        logger.error(f"Failed to launch UE: {e}")
         return 1
 
 # ============================================================
@@ -177,24 +162,24 @@ def main():
     script_dir = Path(__file__).parent
     worker = str(script_dir / 'python' / 'worker_create_sequence.py')
 
-    print_header("UE Create LevelSequence Test")
+    logger.header("UE Create LevelSequence Test")
     
     manifest = load_manifest(args.manifest_path)
     job_id, job_type = validate_manifest(manifest)
     
     ue_editor, project = get_ue_config(manifest)
     
-    print_info("Job ID:", job_id)
-    print_info("Job Type:", job_type)
-    print_info("Manifest:", args.manifest_path)
-    print_info("UE Editor:", ue_editor)
-    print_info("Project:", project)
-    print()
+    logger.kv("Job ID:", job_id)
+    logger.kv("Job Type:", job_type)
+    logger.kv("Manifest:", args.manifest_path)
+    logger.kv("UE Editor:", ue_editor)
+    logger.kv("Project:", project)
+    logger.blank(1)
     
     validate_paths(ue_editor, project, worker)
     
-    print("Creating LevelSequence...")
-    print()
+    logger.info("Creating LevelSequence...")
+    logger.blank(1)
     
     exit_code = run_ue_job(ue_editor, project, args.manifest_path, worker)
     sys.exit(exit_code)

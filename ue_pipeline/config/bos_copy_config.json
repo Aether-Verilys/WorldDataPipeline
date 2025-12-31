@@ -23,5 +23,5 @@
   ],
   "prefer_duplicated_scene_name": true,
   "skip_existing": true,
-  "description": "BOS场景复制配置 - 从源bucket复制UE场景到目标bucket。注意：bcecmd默认只列出1000个对象，使用-a参数尝试列出所有对象"
+  "description": "BOS场景复制配置 - 从源bucket复制UE场景到目标bucket。注意：bcecmd默认只列出几个对象，使用-a参数列出所有对象"
 }

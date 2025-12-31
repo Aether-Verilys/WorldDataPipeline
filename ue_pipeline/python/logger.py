@@ -75,29 +75,31 @@ class Logger:
     def error(self, message: str, *, tag: Optional[str] = None) -> None:
         self._emit(message, level="ERROR", tag=tag, stacklevel=3)
 
+    def blank(self, lines: int = 1) -> None:
+        for _ in range(max(0, int(lines))):
+            print("")
+
+    def separator(self, *, width: int = 40, char: str = "-") -> None:
+        if not char:
+            char = "-"
+        self.plain(char[0] * int(width))
+
+    def header(self, title: str, *, width: int = 40, char: str = "=") -> None:
+        if not char:
+            char = "="
+        line = char[0] * int(width)
+        self.plain(line)
+        self.plain(title)
+        self.plain(line)
+        self.blank(1)
+
+    def kv(self, key: str, value: Any, *, key_width: int = 14, tag: Optional[str] = None) -> None:
+        msg = f"{str(key):{int(key_width)}s} {value}"
+        self.info(msg, tag=tag)
+
     @staticmethod
     def plain(message: str) -> None:
         print(message)
 
 
 logger = Logger()
-
-
-class PublicPrinter:
-    """Backward-compatible shim. Prefer importing `logger` instead."""
-
-    @classmethod
-    def info(cls, message: str, *, tag: Optional[str] = None) -> None:
-        logger._emit(message, level=None, tag=tag, stacklevel=3)
-
-    @classmethod
-    def warning(cls, message: str, *, tag: Optional[str] = None) -> None:
-        logger._emit(message, level="WARNING", tag=tag, stacklevel=3)
-
-    @classmethod
-    def error(cls, message: str, *, tag: Optional[str] = None) -> None:
-        logger._emit(message, level="ERROR", tag=tag, stacklevel=3)
-
-    @staticmethod
-    def plain(message: str) -> None:
-        Logger.plain(message)
