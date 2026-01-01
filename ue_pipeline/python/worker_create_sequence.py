@@ -1,4 +1,3 @@
-import json
 import math
 import os
 import random
@@ -6,7 +5,7 @@ import sys
 import traceback
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-# Ensure local python modules (worker_common, key_frame_track, etc.) are importable
+
 _script_dir = os.path.dirname(os.path.abspath(__file__))
 if _script_dir not in sys.path:
     sys.path.insert(0, _script_dir)
@@ -28,27 +27,27 @@ except ImportError:
 
 from validators import validate_prerequisites
 from assets_manager import (
-    load_map as _load_map,
-    load_blueprint_class as _load_blueprint_class,
-    ensure_directory_exists as _ensure_directory_exists,
-    create_level_sequence as _create_level_sequence,
-    save_asset as _save_asset,
+    load_map,
+    load_blueprint_class,
+    ensure_directory_exists,
+    create_level_sequence,
+    save_asset,
 )
 from seq_camera_bindings import (
-    create_camera_cuts_track as _create_camera_cuts_track,
-    bind_camera_to_cut_section as _bind_camera_to_cut_section,
-    ensure_actor_binding as _ensure_actor_binding,
+    create_camera_cuts_track,
+    bind_camera_to_cut_section,
+    ensure_actor_binding,
 )
 from levelsequence.nav_utils import (
-    build_multi_leg_nav_path as _build_multi_leg_nav_path,
-    distance_cm as _distance_cm,
-    get_nav_system as _get_nav_system,
-    resample_by_distance as _resample_by_distance,
-    wait_for_navigation_ready as _wait_for_navigation_ready,
+    build_multi_leg_nav_path,
+    distance_cm,
+    get_nav_system,
+    resample_by_distance,
+    wait_for_navigation_ready,
 )
 from key_frame_track import (
-    sanitize_rotation_keys as _sanitize_rotation_keys,
-    write_transform_keys as _write_transform_keys,
+    sanitize_rotation_keys,
+    write_transform_keys,
 )
 
 # Try to import levelsequence helpers
@@ -106,15 +105,11 @@ class SequenceJobConfig:
     spawn_actor_if_missing: bool = False
     actor_binding_mode: str = "sequence_spawnable"
     save_level_if_spawned: bool = False
-    spawn_at_startpoint: bool = False
     nav_roam: dict = field(default_factory=dict)
     force_zero_pitch_roll: bool = True
     max_yaw_rate_deg_per_sec: Optional[float] = None
-    write_transform_keys: bool = False
     transform_keys: Optional[list] = None
     transform_key_interp: str = "auto"
-    spawn_location: dict = field(default_factory=lambda: {"x": 0.0, "y": 0.0, "z": 0.0})
-    spawn_rotation: dict = field(default_factory=lambda: {"pitch": 0.0, "yaw": 0.0, "roll": 0.0})
 
     @classmethod
     def from_dict(cls, data: dict) -> "SequenceJobConfig":
@@ -129,14 +124,10 @@ class SequenceJobConfig:
         inst.spawn_actor_if_missing = bool(cfg.get("spawn_actor_if_missing", inst.spawn_actor_if_missing))
         inst.actor_binding_mode = (cfg.get("actor_binding_mode", inst.actor_binding_mode) or inst.actor_binding_mode).lower()
         inst.save_level_if_spawned = bool(cfg.get("save_level_if_spawned", inst.save_level_if_spawned))
-        inst.spawn_at_startpoint = bool(cfg.get("spawn_at_startpoint", inst.spawn_at_startpoint))
         inst.nav_roam = cfg.get("nav_roam", {}) or {}
         inst.force_zero_pitch_roll = bool(cfg.get("force_zero_pitch_roll", inst.force_zero_pitch_roll))
-        inst.write_transform_keys = bool(cfg.get("write_transform_keys", inst.write_transform_keys))
         inst.transform_keys = cfg.get("transform_keys", inst.transform_keys)
         inst.transform_key_interp = (cfg.get("transform_key_interp", inst.transform_key_interp) or inst.transform_key_interp).lower()
-        inst.spawn_location = cfg.get("spawn_location", inst.spawn_location)
-        inst.spawn_rotation = cfg.get("spawn_rotation", inst.spawn_rotation)
 
         max_yaw = cfg.get("max_yaw_rate_deg_per_sec", None)
         try:
@@ -251,24 +242,17 @@ def generate_all_sequences(
     map_name: str,
     output_dir: str,
     actor_blueprint_class_path: str,
-    spawn_at_startpoint: bool,
     nav_roam_cfg: Dict[str, Any],
     force_zero_pitch_roll: bool,
     max_yaw_rate_deg_per_sec: Optional[float],
-    base_write_transform_keys: bool,
     base_transform_keys_cfg: Optional[list],
     base_transform_key_interp: str,
-    spawn_location: Any,
-    spawn_rotation: Any,
     sequence_config: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
     completed_sequences = []
     
-    # Generate a unique run_id for this execution session
-    # All sequences in this run will share the same connectivity analysis
     import time
     run_id = int(time.time())
-    logger.info(f"Run ID for this session: {run_id}")
     
     for batch_idx in range(batch_count):
         try:
@@ -281,25 +265,23 @@ def generate_all_sequences(
             sequence_name = f"{map_name}_{sequence_number:03d}"
             logger.info(f"Sequence name: {sequence_name}")
             
-            # 预检查：地图、蓝图、NavMesh必须都存在（只在第一次执行）
+            # 预检查：地图、蓝图、NavMesh必须都存在
             if batch_idx == 0:
                 validate_prerequisites(map_path, actor_blueprint_class_path, True, "[WorkerCreateSequence]")
             
             # Load map first (important for level possessables, and avoids world switching mid-script)
             if map_path and batch_idx == 0:
                 try:
-                    _load_map(map_path)
+                    load_map(map_path)
                 except Exception as e:
                     logger.error(f"Map load failed: {e}")
                     raise
 
             # NavRoam模式：完全依赖NavMesh连通性分析生成起始点，忽略PlayerStart和spawn_location
-            # (PlayerStart查找逻辑已移除，NavRoam是唯一模式)
+        
+            ensure_directory_exists(output_dir)
 
-            _ensure_directory_exists(output_dir)
-
-            # Create LevelSequence asset
-            sequence = _create_level_sequence(sequence_name, output_dir)
+            sequence = create_level_sequence(sequence_name, output_dir)
             if not sequence:
                 logger.error("Failed to create LevelSequence asset")
                 raise RuntimeError("Failed to create LevelSequence asset")
@@ -314,7 +296,6 @@ def generate_all_sequences(
             movie_scene = sequence.get_movie_scene()
             
             add_camera = bool(sequence_config.get("add_camera", False))
-            write_transform_keys = bool(base_write_transform_keys)
             transform_keys_cfg = base_transform_keys_cfg
             transform_key_interp = str(base_transform_key_interp or "auto").lower()
             actor_binding = None
@@ -322,8 +303,8 @@ def generate_all_sequences(
 
             # Generate keys from NavMesh using NavRoam (always enabled)
             world = _get_world()
-            nav = _get_nav_system(world)
-            _wait_for_navigation_ready(nav, world, float(nav_roam_cfg.get("nav_build_wait_seconds", 10.0)))
+            nav = get_nav_system(world)
+            wait_for_navigation_ready(nav, world, float(nav_roam_cfg.get("nav_build_wait_seconds", 10.0)))
             seed_cfg = nav_roam_cfg.get("seed", None)
             actual_seed = None
             if seed_cfg is not None:
@@ -364,7 +345,7 @@ def generate_all_sequences(
                     
                     # Pass run_id for cache: all sequences in this run share the same connectivity analysis
                     # Retry attempts will also reuse the same cached analysis
-                    nav_points = _build_multi_leg_nav_path(nav, world, nav_roam_cfg_for_path, map_path, run_id=run_id)
+                    nav_points = build_multi_leg_nav_path(nav, world, nav_roam_cfg_for_path, map_path, run_id=run_id)
                     logger.info(f"NavRoam generated {len(nav_points)} raw points")
                     break  # 成功则跳出循环
                     
@@ -405,7 +386,7 @@ def generate_all_sequences(
                         # 计算路径总长度
                         total_path_length_cm = 0.0
                         for i in range(1, len(nav_points)):
-                            total_path_length_cm += _distance_cm(nav_points[i - 1], nav_points[i])
+                            total_path_length_cm += distance_cm(nav_points[i - 1], nav_points[i])
                         
                         # 根据固定速度计算需要的时间
                         calculated_duration = total_path_length_cm / fixed_speed
@@ -420,18 +401,13 @@ def generate_all_sequences(
                             max_distance_cm = fixed_speed * duration_seconds
                             logger.info(f"  Strict duration mode: will travel max {max_distance_cm:.2f} cm in {duration_seconds:.2f}s")
                             
-                            if max_distance_cm < total_path_length_cm:
-                                # 需要截断路径
-                                logger.info(
-                                    f"  Path will be truncated (only {max_distance_cm/total_path_length_cm*100:.1f}% of full path)"
-                                )
-                                
+                            if max_distance_cm < total_path_length_cm:                                
                                 # 沿着路径行进，找到在max_distance_cm处的点
                                 accumulated_dist = 0.0
                                 truncated_points = [nav_points[0]]
                                 
                                 for i in range(1, len(nav_points)):
-                                    seg_dist = _distance_cm(nav_points[i-1], nav_points[i])
+                                    seg_dist = distance_cm(nav_points[i-1], nav_points[i])
                                     
                                     if accumulated_dist + seg_dist <= max_distance_cm:
                                         # 整个段都在范围内
@@ -465,7 +441,7 @@ def generate_all_sequences(
                             # 重新设置序列的播放范围
                             try:
                                 movie_scene.set_playback_range(0, total_frames)
-                                logger.info(f"✓ Updated playback range: 0-{total_frames} ({duration_seconds:.2f}s)")
+                                logger.info(f"Updated playback range: 0-{total_frames} ({duration_seconds:.2f}s)")
                             except Exception as e:
                                 logger.warning(f"Could not update playback range: {e}")
                 except (ValueError, TypeError) as e:
@@ -474,7 +450,7 @@ def generate_all_sequences(
             key_interval_seconds = 1.0 / float(fps)
             key_interval_frames = max(1, int(round(float(fps) * key_interval_seconds)))
             key_count = max(2, int(math.floor(float(total_frames) / float(key_interval_frames))) + 1)
-            samples = _resample_by_distance(nav_points, key_count)
+            samples = resample_by_distance(nav_points, key_count)
 
             z_offset_cm = float(nav_roam_cfg.get("z_offset_cm", 0.0))
             if abs(z_offset_cm) > 0.001:
@@ -530,16 +506,15 @@ def generate_all_sequences(
                     )
 
             transform_keys_cfg = keys
-            write_transform_keys = True
             logger.info(f"✓ NavRoam generated {len(keys)} keys")
 
-            # Add camera cuts / transform tracks need a binding
-            needs_actor_binding = bool(add_camera) or bool(write_transform_keys)
+            # Add camera cuts / transform tracks need a binding (always needed for transform keys)
+            needs_actor_binding = True
             if needs_actor_binding:
-                actor_binding = _ensure_actor_binding(
+                actor_binding = ensure_actor_binding(
                     sequence=sequence,
                     actor_blueprint_class_path=actor_blueprint_class_path,
-                    load_blueprint_class_fn=_load_blueprint_class,
+                    load_blueprint_class_fn=load_blueprint_class,
                 )
 
             if add_camera:
@@ -550,8 +525,8 @@ def generate_all_sequences(
 
                     # Add Camera Cuts Track
                     logger.info("  Adding Camera Cuts Track...")
-                    camera_cut_track = _create_camera_cuts_track(sequence, movie_scene)
-                    logger.info("✓ Created Camera Cuts Track")
+                    camera_cut_track = create_camera_cuts_track(sequence, movie_scene)
+                    logger.info("Created Camera Cuts Track")
 
                     # Add a section to the camera cut track
                     logger.info("  Adding Camera Cut Section...")
@@ -562,37 +537,35 @@ def generate_all_sequences(
                     # Set the section range to cover the entire sequence
                     try:
                         camera_cut_section.set_range(0, total_frames)
-                        logger.info(f"✓ Set section range: 0-{total_frames}")
+                        logger.info(f"Set section range: 0-{total_frames}")
                     except Exception as e:
                         logger.warning(f"Could not set section range: {e}")
 
                     # Bind the camera to the section
                     # Note: We bind to the actor binding; UE will use its camera component.
-                    _bind_camera_to_cut_section(camera_cut_section, sequence, movie_scene, camera_binding)
+                    bind_camera_to_cut_section(camera_cut_section, sequence, movie_scene, camera_binding)
 
                 except Exception as e:
                     logger.warning(f"Failed to add camera cuts: {e}")
                     traceback.print_exc()
 
-            if write_transform_keys:
-                if not actor_binding:
-                    logger.warning("write_transform_keys=true but no actor binding was created")
-                else:
-                    logger.info("Adding transform keys to actor binding...")
-                    try:
-                        # 如果启用了camera_pitch_from_slope，保留pitch值
-                        camera_pitch_from_slope = bool(sequence_config.get("camera_pitch_from_slope", False))
-                        max_pitch_rate = float(sequence_config.get("max_pitch_rate_deg_per_sec", 20.0))
-                        _sanitize_rotation_keys(transform_keys_cfg, force_zero_pitch_roll, max_yaw_rate_deg_per_sec, preserve_pitch=camera_pitch_from_slope, max_pitch_rate_deg_per_sec=max_pitch_rate)
-                        _write_transform_keys(actor_binding, int(fps), int(total_frames), transform_keys_cfg, transform_key_interp)
-                    except Exception as e:
-                        logger.warning(f"Failed to write transform keys: {e}")
-                        traceback.print_exc()
+            # Write Transform Keys (always enabled)
+            if not actor_binding:
+                logger.warning("No actor binding was created")
+            else:
+                logger.info("Adding transform keys to actor binding...")
+                try:
+                    # 如果启用了camera_pitch_from_slope，保留pitch值
+                    camera_pitch_from_slope = bool(sequence_config.get("camera_pitch_from_slope", False))
+                    max_pitch_rate = float(sequence_config.get("max_pitch_rate_deg_per_sec", 20.0))
+                    sanitize_rotation_keys(transform_keys_cfg, force_zero_pitch_roll, max_yaw_rate_deg_per_sec, preserve_pitch=camera_pitch_from_slope, max_pitch_rate_deg_per_sec=max_pitch_rate)
+                    write_transform_keys(actor_binding, int(fps), int(total_frames), transform_keys_cfg, transform_key_interp)
+                except Exception as e:
+                    logger.warning(f"Failed to write transform keys: {e}")
+                    traceback.print_exc()
             
-            # Save asset
-            _save_asset(sequence)
-            
-            # 记录成功生成的sequence
+            save_asset(sequence)
+
             completed_sequences.append(
                 {
                     "name": sequence_name,
@@ -601,12 +574,11 @@ def generate_all_sequences(
                 }
             )
             
-            logger.info(f"✓ Sequence {batch_idx + 1}/{batch_count} completed")
+            logger.info(f"Sequence {batch_idx + 1}/{batch_count} completed")
             
         except Exception as e:
             logger.error(f"in batch {batch_idx + 1}: {e}")
             traceback.print_exc()
-            # 继续下一个批次，不中断整个任务
             continue
     
     return completed_sequences
@@ -639,26 +611,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     output_dir = job_config.output_dir
     batch_count = int(job_config.sequence_count)
     actor_blueprint_class_path = job_config.actor_blueprint_class_path
-    spawn_at_startpoint = bool(job_config.spawn_at_startpoint)
     nav_roam_cfg = job_config.nav_roam
     force_zero_pitch_roll = bool(job_config.force_zero_pitch_roll)
     max_yaw_rate_deg_per_sec = job_config.max_yaw_rate_deg_per_sec
-    base_write_transform_keys = bool(job_config.write_transform_keys)
     base_transform_keys_cfg = job_config.transform_keys
     base_transform_key_interp = job_config.transform_key_interp
-
-    spawn_location_cfg = job_config.spawn_location or {}
-    spawn_rotation_cfg = job_config.spawn_rotation or {}
-    spawn_location = unreal.Vector(
-        _as_float(spawn_location_cfg.get("x", 0.0)),
-        _as_float(spawn_location_cfg.get("y", 0.0)),
-        _as_float(spawn_location_cfg.get("z", 0.0)),
-    )
-    spawn_rotation = unreal.Rotator(
-        _as_float(spawn_rotation_cfg.get("pitch", 0.0)),
-        _as_float(spawn_rotation_cfg.get("yaw", 0.0)),
-        _as_float(spawn_rotation_cfg.get("roll", 0.0)),
-    )
 
     map_name = "Unknown"
     if map_path:
@@ -671,7 +628,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     logger.info(f"Actor:    {job_config.actor_name}")
     logger.info(f"Camera:   {job_config.camera_component_name}")
     logger.info(f"BindMode: {job_config.actor_binding_mode}")
-    logger.info("NavRoam:  enabled (default)")
+
 
     if job_type != "create_sequence":
         logger.error(f"Invalid job type '{job_type}', expected 'create_sequence'")
@@ -695,15 +652,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             map_name=map_name,
             output_dir=output_dir,
             actor_blueprint_class_path=actor_blueprint_class_path,
-            spawn_at_startpoint=spawn_at_startpoint,
             nav_roam_cfg=nav_roam_cfg,
             force_zero_pitch_roll=force_zero_pitch_roll,
             max_yaw_rate_deg_per_sec=max_yaw_rate_deg_per_sec,
-            base_write_transform_keys=base_write_transform_keys,
             base_transform_keys_cfg=base_transform_keys_cfg,
             base_transform_key_interp=base_transform_key_interp,
-            spawn_location=spawn_location,
-            spawn_rotation=spawn_rotation,
             sequence_config=sequence_config,
         )
     except Exception as e:

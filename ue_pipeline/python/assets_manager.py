@@ -85,9 +85,7 @@ def ensure_directory_exists(directory_path: str) -> bool:
         else:
             print(f"[AssetsManager] WARNING: Failed to create directory")
         return result
-    else:
-        print(f"[AssetsManager] Directory exists")
-        return True
+    return True
 
 
 def create_level_sequence(sequence_name: str, output_dir: str):

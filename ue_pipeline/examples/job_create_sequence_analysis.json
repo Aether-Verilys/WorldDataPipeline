@@ -30,7 +30,6 @@
     "max_pitch_rate_deg_per_sec": 5.0,
     "camera_pitch_from_slope": true,
     "max_camera_pitch_deg": 15.0,
-    "write_transform_keys": true,
     "transform_key_interp": "auto",
     "actor_name": "BP_Cameraman",
     "camera_component_name": "Camera",
