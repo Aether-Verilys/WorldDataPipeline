@@ -10,7 +10,9 @@ from scene_registry import SceneRegistry, calculate_directory_hash
 from bos import BosManager
 
 
-def load_ue_config(config_path: str = "ue_pipeline/config/ue_config.json") -> dict:
+def load_ue_config(config_path: str | None = None) -> dict:
+    if not config_path:
+        config_path = os.environ.get('UE_CONFIG_PATH', 'ue_pipeline/config/ue_config.json')
     # 尝试多种路径解析方式
     paths_to_try = [
         Path(config_path),  # 相对于当前目录
@@ -254,8 +256,9 @@ def main():
         """
     )
     
-    parser.add_argument("--config", default="ue_pipeline/config/ue_config.json",
-                       help="UE配置文件路径（默认: ue_pipeline/config/ue_config.json）")
+    default_config = os.environ.get('UE_CONFIG_PATH', 'ue_pipeline/config/ue_config.json')
+    parser.add_argument("--config", default=default_config,
+                       help=f"UE配置文件路径（默认: {default_config}）")
     parser.add_argument("--bos-config", default="ue_pipeline/config/bos_config.json",
                        help="BOS配置文件路径（默认: ue_pipeline/config/bos_config.json）")
     parser.add_argument("--bucket", default="world-data",

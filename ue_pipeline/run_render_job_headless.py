@@ -48,7 +48,8 @@ def validate_manifest(manifest: dict) -> tuple[str, str]:
 
 def load_default_ue_config() -> dict:
     script_dir = Path(__file__).parent
-    config_path = script_dir / 'config' / 'ue_config.json'
+    env_config_path = os.environ.get('UE_CONFIG_PATH')
+    config_path = Path(env_config_path) if env_config_path else (script_dir / 'config' / 'ue_config.json')
     
     if not config_path.exists():
         return {}

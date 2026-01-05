@@ -22,7 +22,8 @@ from ue_pipeline.python.logger import logger
 def load_ue_config():
     """Load UE configuration from config file"""
     script_dir = Path(__file__).parent
-    config_path = script_dir / 'config' / 'ue_config.json'
+    env_config_path = os.environ.get('UE_CONFIG_PATH')
+    config_path = Path(env_config_path) if env_config_path else (script_dir / 'config' / 'ue_config.json')
     
     if not config_path.exists():
         logger.error(f"UE config file not found: {config_path}")

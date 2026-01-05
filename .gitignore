@@ -9,3 +9,11 @@ ue_pipeline/python/pre_process/__pycache__
 ue_pipeline/python/bos/__pycache__
 ue_pipeline/__pycache__
 ue_pipeline/python/levelsequence/__pycache__
+ue_template/WorldData/Intermediate
+ue_template/WorldData/DerivedDataCache
+ue_template/WorldData/Saved
+ue_template/project/Content/__ExternalActors__
+ue_template/project/Content/__ExternalObjects__
+ue_template/project/DerivedDataCache
+ue_template/project/Intermediate
+ue_template/project/Saved

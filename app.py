@@ -1,23 +1,4 @@
 #!/usr/bin/env python3
-"""
-Unified Entry Point for UE Pipeline Docker Deployment
-用于 Docker 环境中通过命令行参数调度所有任务脚本
-
-Usage:
-    python app.py <command> [options]
-
-Commands:
-    bake       - Bake navigation mesh for scenes
-    sequence   - Create level sequences
-    export     - Export camera/data from sequences
-    render     - Render sequences (headless mode)
-    upload     - Upload baked scenes to BOS
-
-Examples:
-    python app.py create_sequence --manifest /path/to/manifest.json
-    python app.py render --manifest /path/to/render_job.json
-    python app.py bake_navmesh --manifest /path/to/bake_job.json
-"""
 
 import argparse
 import os
@@ -27,7 +8,8 @@ from pathlib import Path
 
 # Setup path to ensure imports work
 script_dir = Path(__file__).parent
-repo_root = script_dir.parent
+repo_root = script_dir  # Now at project root
+ue_pipeline_dir = script_dir / 'ue_pipeline'
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
@@ -39,7 +21,7 @@ def setup_ue_config_env(system_type: str | None = None):
     Args:
         system_type: 'windows' 或 'linux'，如果为 None 则自动检测，默认为 linux
     """
-    config_dir = script_dir / 'config'
+    config_dir = ue_pipeline_dir / 'config'
     
     # 确定系统类型
     if system_type is None:
@@ -158,23 +140,23 @@ def main():
     
     # Dispatch to the appropriate module
     if args.command == 'bake_navmesh':
-        from run_bake_navmesh import main as bake_main
+        from ue_pipeline.run_bake_navmesh import main as bake_main
         # Pass manifest path as positional argument
         sys.argv = ['run_bake_navmesh.py', args.manifest]
         return bake_main()
     
     elif args.command == 'create_sequence':
-        from run_create_sequence_job import main as create_seq_main
+        from ue_pipeline.run_create_sequence_job import main as create_seq_main
         sys.argv = ['run_create_sequence_job.py', args.manifest]
         return create_seq_main()
     
     elif args.command == 'export':
-        from run_export_job import main as export_main
+        from ue_pipeline.run_export_job import main as export_main
         sys.argv = ['run_export_job.py', args.manifest]
         return export_main()
     
     elif args.command == 'render':
-        from run_render_job_headless import main as render_main
+        from ue_pipeline.run_render_job_headless import main as render_main
         if args.dry_run:
             sys.argv = ['run_render_job_headless.py', args.manifest, '--dry-run']
         else:
@@ -182,7 +164,7 @@ def main():
         return render_main()
     
     elif args.command == 'upload_scenes':
-        from run_upload_scenes import main as upload_main
+        from ue_pipeline.run_upload_scenes import main as upload_main
         sys.argv = ['run_upload_scenes.py']
         return upload_main()
     
