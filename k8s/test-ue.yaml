@@ -42,22 +42,27 @@ spec:
                   value: /app/ue_pipeline/config/linux_ue_config.json
 
               command:
-                - /bin/bash
-                - -lc
+                - /bin/sh
+                - -c
                 - |
-                  set -euo pipefail
+                  set -eu
+
+                  echo "=== env ==="
+                  echo "PATH=$PATH"
 
                   echo "=== python ==="
-                  python -V
-                  which python
+                  command -v python || true
+                  python -V || true
 
                   echo "=== ue binary check ==="
                   UE_BIN=/usr/local/UnrealEngine/Engine/Binaries/Linux/UnrealEditor-Cmd
-                  test -x "$UE_BIN"
-                  ls -la "$UE_BIN"
+                  ls -la /usr/local/UnrealEngine/Engine/Binaries/Linux || true
+                  ls -la "$UE_BIN" || true
+                  echo "=== ldd (diagnose missing libs) ==="
+                  command -v ldd && ldd "$UE_BIN" || true
 
-                  echo "=== run UnrealEditor-Cmd -help (first 40 lines) ==="
-                  "$UE_BIN" -help | head -n 40
+                  echo "=== run UnrealEditor-Cmd -help (first 80 lines) ==="
+                  "$UE_BIN" -help | sed -n '1,80p'
 
                   echo "=== app help ==="
                   python /app/app.py --help

@@ -16,6 +16,8 @@ RUN apt-get update \
         ca-certificates \
         curl \
         tzdata \
+        libnss3 \
+        libnspr4 \
         ffmpeg \
         tini \
     && ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime \
