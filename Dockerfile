@@ -4,35 +4,42 @@ FROM registry.baidubce.com/cce-ai-native/pytorch:22.08-py3
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+# Avoid interactive tzdata prompts during build
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Shanghai
+
 WORKDIR /app
 
-# Install Python 3.11
+# System deps (no interactive prompts)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        software-properties-common \
-        curl \
-    && add-apt-repository -y ppa:deadsnakes/ppa \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends \
-        python3.11 \
-        python3.11-dev \
-        python3.11-distutils \
-        build-essential \
         ca-certificates \
+        curl \
+        tzdata \
         ffmpeg \
         tini \
-    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 \
+    && ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime \
+    && echo ${TZ} > /etc/timezone \
     && rm -rf /var/lib/apt/lists/*
+
+# Python 3.11 (avoid Ubuntu PPA/network issues by using conda in base image)
+# NVIDIA pytorch images typically ship conda at /opt/conda.
+RUN test -x /opt/conda/bin/conda
+
+RUN /opt/conda/bin/conda create -y -n py311 python=3.11 pip \
+    && /opt/conda/bin/conda clean -afy
+
+ENV PATH=/opt/conda/envs/py311/bin:$PATH
 
 # Install Python dependencies
 COPY requirements.txt /app/requirements.txt
-RUN python3.11 -m pip install --no-cache-dir -U pip \
-    && python3.11 -m pip install --no-cache-dir -r /app/requirements.txt
+RUN python -m pip install --no-cache-dir -U pip \
+    && python -m pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy project code
 COPY . /app
 
 EXPOSE 5000
 
-ENTRYPOINT ["tini", "--", "python3.11", "app.py"]
+ENTRYPOINT ["tini", "--", "python", "app.py"]
 CMD ["--help"]

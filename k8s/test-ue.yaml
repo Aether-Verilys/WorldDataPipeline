@@ -1,0 +1,80 @@
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: test-ue-worlddatapipeline
+spec:
+  runPolicy:
+    schedulingPolicy:
+      priorityClass: normal
+      queue: default
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      restartPolicy: Never
+      template:
+        spec:
+          imagePullSecrets:
+            - name: vast-secret
+          schedulerName: volcano
+          priorityClassName: normal
+
+          containers:
+            - name: pytorch
+              image: ccr-23gxup9u-vpc.cnc.bj.baidubce.com/model/worlddatapipeline:v1
+              imagePullPolicy: Always
+              securityContext:
+                capabilities:
+                  add: ["IPC_LOCK"]
+              resources:
+                requests:
+                  cpu: "2"
+                  memory: "4Gi"
+                limits:
+                  cpu: "4"
+                  memory: "8Gi"
+
+              env:
+                - name: TZ
+                  value: Asia/Shanghai
+                - name: UE_SYSTEM_TYPE
+                  value: linux
+                - name: UE_CONFIG_PATH
+                  value: /app/ue_pipeline/config/linux_ue_config.json
+
+              command:
+                - /bin/bash
+                - -lc
+                - |
+                  set -euo pipefail
+
+                  echo "=== python ==="
+                  python -V
+                  which python
+
+                  echo "=== ue binary check ==="
+                  UE_BIN=/usr/local/UnrealEngine/Engine/Binaries/Linux/UnrealEditor-Cmd
+                  test -x "$UE_BIN"
+                  ls -la "$UE_BIN"
+
+                  echo "=== run UnrealEditor-Cmd -help (first 40 lines) ==="
+                  "$UE_BIN" -help | head -n 40
+
+                  echo "=== app help ==="
+                  python /app/app.py --help
+
+              volumeMounts:
+                # 只挂载允许的子目录，不挂 /mnt/pfs 根目录
+                - name: ue-engine
+                  mountPath: /usr/local/UnrealEngine
+                  readOnly: true
+                - name: devshm
+                  mountPath: /dev/shm
+
+          volumes:
+            - name: ue-engine
+              hostPath:
+                path: /mnt/pfs/users/wuyibo/UE5.7
+                type: Directory
+            - name: devshm
+              emptyDir:
+                medium: Memory
