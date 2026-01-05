@@ -31,9 +31,7 @@ Set-Location $UE_PIPELINE_DIR
 Write-Host "  OK Current directory: $UE_PIPELINE_DIR" -ForegroundColor Green
 
 Write-Host ""
-Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Environment Ready!" -ForegroundColor Green
-Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Define shortcut functions

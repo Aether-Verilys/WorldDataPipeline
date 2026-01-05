@@ -13,8 +13,6 @@ from contextlib import contextmanager
 
 
 class SceneRegistry:
-    """场景注册表，管理所有场景的状态"""
-    
     def __init__(self, db_path: str = "database/scene_registry.db"):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -23,6 +21,9 @@ class SceneRegistry:
     def _init_database(self):
         """初始化数据库表结构"""
         with self._get_connection() as conn:
+            # 先检查是否需要迁移（在创建表之前）
+            self._migrate_database(conn)
+            
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS scenes (
                     scene_name TEXT PRIMARY KEY,
@@ -79,13 +80,9 @@ class SceneRegistry:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_maps_navmesh ON maps(navmesh_baked)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_sequences_created ON sequences(created_at)")
             
-            # 迁移：添加缺失的列（兼容旧数据库）
-            self._migrate_database(conn)
-            
             conn.commit()
     
     def _migrate_database(self, conn):
-        """数据库迁移，添加新列到现有表"""
         # 检查 scenes 表是否存在
         cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='scenes'")
         if not cursor.fetchone():
@@ -95,9 +92,12 @@ class SceneRegistry:
         cursor = conn.execute("PRAGMA table_info(scenes)")
         columns = {row[1]: {'type': row[2], 'notnull': row[3], 'pk': row[5]} for row in cursor.fetchall()}
         
-        # 需要迁移：旧表有 bos_path NOT NULL，新表需要 bos_baked_path
-        if 'bos_path' in columns and 'bos_baked_path' not in columns:
-            print("迁移数据库: 重建 scenes 表结构...")
+        # 需要迁移：旧表有 bos_path，新表需要 bos_baked_path
+        # 处理两种情况：
+        # 1. 只有 bos_path，没有 bos_baked_path（完全旧版本）
+        # 2. 同时有 bos_path 和 bos_baked_path（部分迁移）
+        if 'bos_path' in columns:
+            print("🔄 迁移数据库: 重建 scenes 表结构 (移除旧的 bos_path 列)...")
             
             # 重建表（SQLite 不支持删除/修改列，只能重建）
             conn.execute("""
@@ -116,24 +116,47 @@ class SceneRegistry:
                 )
             """)
             
-            # 复制旧数据，将 bos_path 映射到 bos_baked_path
-            conn.execute("""
-                INSERT INTO scenes_new (scene_name, bos_baked_path, local_path, content_hash, 
-                                       file_count, total_size_bytes, bos_exists, bos_last_verified,
-                                       downloaded_at, last_updated, metadata)
-                SELECT scene_name, 
-                       COALESCE(bos_path, ''),
-                       local_path, 
-                       content_hash,
-                       COALESCE(file_count, 0),
-                       COALESCE(total_size_bytes, 0),
-                       COALESCE(bos_exists, 1),
-                       bos_last_verified,
-                       downloaded_at,
-                       last_updated,
-                       metadata
-                FROM scenes
-            """)
+            # 复制旧数据
+            # 优先使用 bos_baked_path（如果存在），否则使用 bos_path
+            # 如果两者都为 NULL，使用默认值
+            if 'bos_baked_path' in columns:
+                # 同时有两列的情况
+                conn.execute("""
+                    INSERT INTO scenes_new (scene_name, bos_baked_path, local_path, content_hash, 
+                                           file_count, total_size_bytes, bos_exists, bos_last_verified,
+                                           downloaded_at, last_updated, metadata)
+                    SELECT scene_name, 
+                           COALESCE(bos_baked_path, bos_path, 'bos://unknown/'),
+                           local_path, 
+                           content_hash,
+                           COALESCE(file_count, 0),
+                           COALESCE(total_size_bytes, 0),
+                           COALESCE(bos_exists, 1),
+                           bos_last_verified,
+                           downloaded_at,
+                           last_updated,
+                           metadata
+                    FROM scenes
+                """)
+            else:
+                # 只有 bos_path 的情况
+                conn.execute("""
+                    INSERT INTO scenes_new (scene_name, bos_baked_path, local_path, content_hash, 
+                                           file_count, total_size_bytes, bos_exists, bos_last_verified,
+                                           downloaded_at, last_updated, metadata)
+                    SELECT scene_name, 
+                           COALESCE(bos_path, 'bos://unknown/'),
+                           local_path, 
+                           content_hash,
+                           COALESCE(file_count, 0),
+                           COALESCE(total_size_bytes, 0),
+                           COALESCE(bos_exists, 1),
+                           bos_last_verified,
+                           downloaded_at,
+                           last_updated,
+                           metadata
+                    FROM scenes
+                """)
             
             # 删除旧表，重命名新表
             conn.execute("DROP TABLE scenes")
@@ -143,6 +166,8 @@ class SceneRegistry:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_scenes_hash ON scenes(content_hash)")
             
             print("✓ 数据库迁移完成")
+            conn.commit()
+            return  # 迁移完成，退出
         
         # 如果是新数据库但缺少某些列，添加它们
         elif 'bos_baked_path' not in columns:

@@ -1,15 +1,9 @@
-"""
-从配置文件批量上传已烘焙场景到BOS
-自动读取 ue_config.json，上传所有 navmesh_baked=true 的场景
-"""
-
 import argparse
 import json
 import os
 import sys
 from pathlib import Path
 
-# 添加路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from scene_registry import SceneRegistry, calculate_directory_hash
@@ -17,7 +11,6 @@ from bos import BosManager
 
 
 def load_ue_config(config_path: str = "ue_pipeline/config/ue_config.json") -> dict:
-    """加载UE配置文件"""
     # 尝试多种路径解析方式
     paths_to_try = [
         Path(config_path),  # 相对于当前目录
@@ -78,7 +71,7 @@ def get_bos_credentials(config_path: str = "ue_pipeline/config/bos_config.json")
         return ak, sk, endpoint
     
     # 未找到凭证
-    print("\n❌ 错误: 未找到BOS凭证信息")
+    print("\n错误: 未找到BOS凭证信息")
     print("\n请使用以下任一方式提供凭证：")
     print("\n方式1 - 配置文件（推荐）:")
     print(f"  编辑配置文件: {config_path}")
@@ -253,15 +246,6 @@ def main():
     parser = argparse.ArgumentParser(
         description="从配置文件批量上传已烘焙场景到BOS",
         epilog="""
-示例:
-  # 模拟运行（不实际上传）
-  python ue_pipeline/batch_upload_baked_scenes.py --dry-run
-  
-  # 真实上传（需要设置环境变量 BCE_ACCESS_KEY_ID 和 BCE_SECRET_ACCESS_KEY）
-  python ue_pipeline/batch_upload_baked_scenes.py
-  
-  # 指定配置文件和bucket
-  python ue_pipeline/batch_upload_baked_scenes.py --config ue_pipeline/config/ue_config.json --bucket world-data
   
 环境变量:
   BCE_ACCESS_KEY_ID      - BOS访问密钥ID

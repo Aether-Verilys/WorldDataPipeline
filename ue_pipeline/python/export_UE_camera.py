@@ -2,10 +2,35 @@ import unreal
 import csv
 import math
 import os
-import re
+import sys
 
-# 单位转换常量
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+if _script_dir not in sys.path:
+    sys.path.insert(0, _script_dir)
+from logger import logger
+
+
 UE_TO_METERS = 0.01  # UE默认单位是cm，转换为m需要乘以0.01
+
+
+def _split_ue_asset_path(sequence_path: str) -> tuple[str, str]:
+    """Normalize UE asset paths.
+
+    UE sometimes returns object paths like `/Game/X/Y/Asset.Asset`.
+    For file naming and EditorAssetLibrary operations we want the package path:
+    `/Game/X/Y/Asset`, and the asset name `Asset`.
+    """
+    p = (sequence_path or "").strip()
+    if not p:
+        return p, ""
+
+    leaf = p.rstrip("/").split("/")[-1]
+    if "." in leaf:
+        package_path = p.rsplit(".", 1)[0]
+        asset_name = leaf.split(".", 1)[0]
+        return package_path, asset_name
+
+    return p, leaf
 
 
 # 读取 Sequencer 中某个绑定（Binding）的Transform通道
@@ -44,7 +69,7 @@ def get_transform_channels(sequence, binding_name):
 
             return channels
 
-    unreal.log_warning(f"[Warn] Binding '{binding_name}' 未找到！")
+    logger.warning(f"[Warn] Binding '{binding_name}' 未找到！")
     return None
 
 
@@ -146,39 +171,39 @@ def export_camera_data(sequence_path, binding_name_camera, output_dir):
         binding_name_camera: Camera binding名称（如BP_Cameraman0）
         output_dir: 输出目录
     """
-    # 首先检查asset是否存在
-    if not unreal.EditorAssetLibrary.does_asset_exist(sequence_path):
-        unreal.log_error(f"[ExportCamera] Asset不存在: {sequence_path}")
+    package_path, sequence_name = _split_ue_asset_path(sequence_path)
+
+    if not unreal.EditorAssetLibrary.does_asset_exist(package_path):
+        logger.error(f"[ExportCamera] Asset不存在: {package_path}")
         return
     
     # 使用EditorAssetLibrary加载asset
-    asset_data = unreal.EditorAssetLibrary.find_asset_data(sequence_path)
+    asset_data = unreal.EditorAssetLibrary.find_asset_data(package_path)
     if not asset_data:
-        unreal.log_error(f"[ExportCamera] 无法获取asset data: {sequence_path}")
+        logger.error(f"[ExportCamera] 无法获取asset data: {package_path}")
         return
     
     # 检查是否是LevelSequence
     if asset_data.asset_class_path.asset_name != "LevelSequence":
-        unreal.log_error(f"[ExportCamera] Asset不是LevelSequence: {sequence_path}")
+        logger.error(f"[ExportCamera] Asset不是LevelSequence: {sequence_path}")
         return
     
     # 加载asset
-    sequence = unreal.EditorAssetLibrary.load_asset(sequence_path)
+    sequence = unreal.EditorAssetLibrary.load_asset(package_path)
     if sequence is None:
-        unreal.log_error(f"[ExportCamera] 无法加载 Level Sequence: {sequence_path}")
+        logger.error(f"[ExportCamera] 无法加载 Level Sequence: {package_path}")
         return
 
     # 获取相机的transform通道
     camera_channels = get_transform_channels(sequence, binding_name_camera)
     if not camera_channels:
-        unreal.log_error(f"无法获取Binding '{binding_name_camera}' 的通道")
+        logger.error(f"无法获取Binding '{binding_name_camera}' 的通道")
         return
 
     start_frame = sequence.get_playback_start()
     end_frame = sequence.get_playback_end()
 
     # 预先缓存所有channel的keys，避免循环中重复调用get_keys()
-    unreal.log("[ExportCamera] Caching channel keys...")
     camera_cache = {
         "loc_x": cache_channel_keys(camera_channels.get("loc_x")),
         "loc_y": cache_channel_keys(camera_channels.get("loc_y")),
@@ -187,7 +212,7 @@ def export_camera_data(sequence_path, binding_name_camera, output_dir):
         "rot_y": cache_channel_keys(camera_channels.get("rot_y")),
         "rot_z": cache_channel_keys(camera_channels.get("rot_z"))
     }
-    unreal.log(f"[ExportCamera] Keys cached. Processing {end_frame - start_frame + 1} frames...")
+    # logger.info(f"[ExportCamera] Keys cached. Processing {end_frame - start_frame + 1} frames...")
 
     # 规范化输出目录路径
     output_dir = os.path.normpath(output_dir)
@@ -195,14 +220,9 @@ def export_camera_data(sequence_path, binding_name_camera, output_dir):
     # 确保输出目录存在
     os.makedirs(output_dir, exist_ok=True)
 
-    # 从序列路径中提取序列名称
-    sequence_name = sequence_path.rstrip('/').split('/')[-1]
     output_extrinsic_csv = os.path.join(output_dir, f"{sequence_name}_extrinsic.csv")
     output_transform_csv = os.path.join(output_dir, f"{sequence_name}_transform.csv")
-    
-    unreal.log(f"[ExportCamera] Output directory: {output_dir}")
-    unreal.log(f"[ExportCamera] Extrinsic CSV: {output_extrinsic_csv}")
-    unreal.log(f"[ExportCamera] Transform CSV: {output_transform_csv}")
+
 
     # 同时打开两个CSV文件，在一次循环中写入所有数据
     with open(output_extrinsic_csv, 'w', newline='') as f_ext, \
@@ -246,8 +266,8 @@ def export_camera_data(sequence_path, binding_name_camera, output_dir):
             # 写入 Transform CSV
             writer_trans.writerow([frame, loc_x, loc_y, loc_z, rot_x, rot_y, rot_z])
 
-    unreal.log(f"✓ 外参矩阵导出完成 → {output_extrinsic_csv}")
-    unreal.log(f"✓ Transform数据导出完成 → {output_transform_csv}")
+    # logger.info(f"外参矩阵导出完成 → {output_extrinsic_csv}")
+    # logger.info(f"Transform数据导出完成 → {output_transform_csv}")
 
 
 # Manifest-driven API
@@ -264,6 +284,8 @@ def export_camera_from_manifest(manifest: dict) -> dict:
     sequence_path = manifest.get("sequence")
     if not sequence_path:
         raise ValueError("Manifest missing 'sequence' field")
+
+    package_path, sequence_name = _split_ue_asset_path(sequence_path)
     
     # 获取相机配置
     camera_config = manifest.get("camera_export", {})
@@ -276,42 +298,34 @@ def export_camera_from_manifest(manifest: dict) -> dict:
         ue_config = manifest.get("ue_config", {})
         output_base = ue_config.get("output_base_dir", "output")
         if not output_base or output_base == "output":
-            unreal.log_warning("[ExportCamera] No output_base_dir in manifest.ue_config, using default 'output'")
+            logger.warning("[ExportCamera] No output_base_dir in manifest.ue_config, using default 'output'")
         
-        # 从sequence路径提取序列名
-        sequence_name = sequence_path.rstrip('/').split('/')[-1]  # Lvl_FirstPerson_007
+        # 从sequence路径提取场景名（倒数第三个部分）
+        # /Game/SecretBase/Levelsequence/SecretBase_003 -> SecretBase
+        path_parts = package_path.rstrip('/').split('/')
+        if len(path_parts) >= 3:
+            scene_name = path_parts[-3]  # 取 /Game/[SecretBase]/Levelsequence/SecretBase_003
+        else:
+            # 如果路径太短，从序列名提取场景名（去除后缀数字）
+            import re
+            scene_name = re.sub(r'_\d+$', '', sequence_name)
         
-        # 从序列名提取场景名（去除后缀数字）
-        # Lvl_FirstPerson_007 -> Lvl_FirstPerson
-        import re
-        scene_name = re.sub(r'_\d+$', '', sequence_name)
-        
-        # 构建输出路径：output/场景名/序列名
-        output_dir = os.path.join(output_base, scene_name, sequence_name)
-        unreal.log(f"[ExportCamera] Auto-generated output path: {output_dir}")
+        # 构建输出路径：output/场景名（不包含序列名子目录）
+        output_dir = os.path.join(output_base, scene_name)
     
-    # 规范化输出目录路径
     output_dir = os.path.normpath(output_dir)
     
-    # 获取binding名称
     binding_camera = camera_config.get("binding_camera") or camera_config.get("binding_transform")
     if not binding_camera:
         raise ValueError("No camera binding specified in manifest")
     
-    unreal.log(f"[ExportCamera] Exporting from sequence: {sequence_path}")
-    unreal.log(f"[ExportCamera] Camera binding: {binding_camera}")
-    unreal.log(f"[ExportCamera] Output directory: {output_dir}")
+    logger.info(f"[ExportCamera] Output directory: {output_dir}")
     
-    # 调用主导出函数
-    export_camera_data(sequence_path, binding_camera, output_dir)
-    
-    # 返回结果路径
-    sequence = unreal.EditorAssetLibrary.load_asset(sequence_path)
-    sequence_name = sequence.get_name() if sequence else "unknown"
+    export_camera_data(package_path, binding_camera, output_dir)
     
     return {
         "status": "success",
-        "sequence": sequence_path,
+        "sequence": package_path,
         "output_dir": output_dir,
         "extrinsic_csv": os.path.normpath(os.path.join(output_dir, f"{sequence_name}_extrinsic.csv")),
         "transform_csv": os.path.normpath(os.path.join(output_dir, f"{sequence_name}_transform.csv"))
@@ -319,5 +333,5 @@ def export_camera_from_manifest(manifest: dict) -> dict:
 
 
 if __name__ == "__main__":
-    unreal.log_error("This script should be called through export_camera_from_manifest() with a job manifest")
-    unreal.log_error("Example: python -c \"import export_UE_camera; export_UE_camera.export_camera_from_manifest(manifest)\"")
+    logger.error("This script should be called through export_camera_from_manifest() with a job manifest")
+    logger.error("Example: python -c \"import export_UE_camera; export_UE_camera.export_camera_from_manifest(manifest)\"")

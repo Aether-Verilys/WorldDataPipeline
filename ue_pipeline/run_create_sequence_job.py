@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-"""
-UE LevelSequence Creation Job Runner (Python)
-Simple test: create an empty LevelSequence asset
-"""
 import argparse
 import json
 import os
@@ -60,8 +56,8 @@ def load_default_ue_config() -> dict:
         return {}
 
 
-def get_ue_config(manifest: dict) -> tuple[str, str]:
-    """Extract UE configuration from manifest or default config file"""
+def get_ue_config(manifest: dict) -> tuple[str, str, dict]:
+    """Extract and merge UE configuration, return editor, project, and full config"""
     # Load default config first
     default_config = load_default_ue_config()
     
@@ -86,7 +82,7 @@ def get_ue_config(manifest: dict) -> tuple[str, str]:
         logger.error("Missing 'project_path' in ue_config")
         sys.exit(1)
     
-    return ue_editor, project
+    return ue_editor, project, ue_config
 
 
 def validate_paths(ue_editor: str, project: str, worker: str):
@@ -167,13 +163,25 @@ def main():
     manifest = load_manifest(args.manifest_path)
     job_id, job_type = validate_manifest(manifest)
     
-    ue_editor, project = get_ue_config(manifest)
+    ue_editor, project, ue_config = get_ue_config(manifest)
+    
+    # Merge complete ue_config back into manifest for worker
+    manifest['ue_config'] = ue_config
+    
+    # Save updated manifest with merged ue_config
+    try:
+        with open(args.manifest_path, 'w', encoding='utf-8') as f:
+            json.dump(manifest, f, indent=2, ensure_ascii=False)
+        logger.info(f"Updated manifest with merged ue_config (output_base_dir: {ue_config.get('output_base_dir', 'N/A')})")
+    except Exception as e:
+        logger.warning(f"Failed to update manifest file: {e}")
     
     logger.kv("Job ID:", job_id)
     logger.kv("Job Type:", job_type)
     logger.kv("Manifest:", args.manifest_path)
     logger.kv("UE Editor:", ue_editor)
     logger.kv("Project:", project)
+    logger.kv("Output Base:", ue_config.get('output_base_dir', 'N/A'))
     logger.blank(1)
     
     validate_paths(ue_editor, project, worker)

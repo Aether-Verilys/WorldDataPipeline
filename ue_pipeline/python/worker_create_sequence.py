@@ -48,6 +48,7 @@ from key_frame_track import (
     sanitize_rotation_keys,
     write_transform_keys,
 )
+import export_UE_camera
 
 from levelsequence.sequence_type import (
     FixedSpeedResult,
@@ -477,6 +478,56 @@ def _add_camera_cuts_if_enabled(
         traceback.print_exc()
 
 
+def _export_camera_if_enabled(
+    *,
+    sequence_path: str,
+    camera_export_cfg: Optional[Dict[str, Any]],
+    ue_config: Dict[str, Any],
+) -> None:
+    """
+    如果启用了camera_export，自动导出相机数据
+    """
+    if not camera_export_cfg or not camera_export_cfg.get("enabled", False):
+        logger.info("Camera export disabled, skipping")
+        return
+    
+    binding_camera = camera_export_cfg.get("binding_camera")
+    if not binding_camera:
+        logger.warning("camera_export enabled but no binding_camera specified, skipping export")
+        return
+    
+    try:
+        logger.info("========================================")
+        logger.info("AUTO-EXPORTING CAMERA DATA")
+        logger.info("========================================")
+        logger.info(f"Sequence: {sequence_path}")
+        logger.info(f"Camera binding: {binding_camera}")
+        logger.info(f"UE Config output_base_dir: {ue_config.get('output_base_dir', 'NOT SET')}")
+        
+        # 构建导出manifest
+        export_manifest = {
+            "sequence": sequence_path,
+            "camera_export": camera_export_cfg,
+            "ue_config": ue_config,
+        }
+        
+        # 调用导出函数
+        result = export_UE_camera.export_camera_from_manifest(export_manifest)
+        
+        if result.get("status") == "success":
+            logger.info(f"  Camera data exported successfully")
+            logger.info(f"  Output: {result.get('output_dir')}")
+            logger.info(f"  Extrinsic: {result.get('extrinsic_csv')}")
+            logger.info(f"  Transform: {result.get('transform_csv')}")
+        else:
+            logger.warning(f"Camera export returned unexpected status: {result}")
+            
+    except Exception as e:
+        logger.error(f"Failed to auto-export camera data: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def _write_transform_keys_to_binding(
     *,
     actor_binding: Any,
@@ -524,6 +575,8 @@ def generate_all_sequences(
     base_transform_keys_cfg: Optional[list],
     base_transform_key_interp: str,
     sequence_config: Dict[str, Any],
+    camera_export_cfg: Optional[Dict[str, Any]],
+    ue_config: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
     completed_sequences = []
 
@@ -673,12 +726,37 @@ def generate_all_sequences(
             
             logger.info(f"Sequence {batch_idx + 1}/{batch_count} completed")
             
+            # Auto-export camera data if enabled
+            _export_camera_if_enabled(
+                sequence_path=asset_path,
+                camera_export_cfg=camera_export_cfg,
+                ue_config=ue_config,
+            )
+            
         except Exception as e:
             logger.error(f"in batch {batch_idx + 1}: {e}")
             traceback.print_exc()
             continue
     
     return completed_sequences
+
+
+def _derive_output_dir_from_map(map_path: str) -> Optional[str]:
+    if not map_path:
+        return None
+    
+    parts = map_path.split('/')
+    if len(parts) < 3:  # 至少需要 /Game/SceneName/...
+        return None
+    
+    # 找到场景根目录 (通常是 /Game/ 后的第一级)
+    # /Game/SecretBase/Map -> /Game/SecretBase
+    scene_root = '/'.join(parts[:3])
+    
+    output_dir = f"{scene_root}/Levelsequence"
+    logger.info(f"  Output dir: {output_dir}")
+    
+    return output_dir
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -704,8 +782,33 @@ def main(argv: Optional[List[str]] = None) -> int:
     map_path = manifest.get("map", "")
     sequence_config = manifest.get("sequence_config", {}) or {}
     job_config = SequenceJobConfig.from_dict(sequence_config)
+    
+    # Extract camera_export config and ue_config for auto-export
+    camera_export_cfg = sequence_config.get("camera_export", None)
+    ue_config = manifest.get("ue_config", {})
+    
+    logger.info("========================================")
+    logger.info("CAMERA EXPORT CONFIGURATION")
+    logger.info("========================================")
+    if camera_export_cfg:
+        logger.info(f"Camera export enabled: {camera_export_cfg.get('enabled', False)}")
+        logger.info(f"Binding camera: {camera_export_cfg.get('binding_camera', 'N/A')}")
+    else:
+        logger.info("Camera export config: NOT FOUND")
+    logger.info(f"UE Config has output_base_dir: {ue_config.get('output_base_dir', 'NOT SET')}")
+    logger.info("========================================")
 
+    # 如果配置中没有指定 output_dir 或为空，则从 map 路径自动推导
     output_dir = job_config.output_dir
+    if not output_dir or output_dir.strip() == "":
+        derived_dir = _derive_output_dir_from_map(map_path)
+        if derived_dir:
+            output_dir = derived_dir
+            logger.info(f"Using auto-derived output directory: {output_dir}")
+        else:
+            logger.error("Failed to derive output directory from map path and no output_dir specified")
+            return 1
+    
     batch_count = int(job_config.sequence_count)
     actor_blueprint_class_path = job_config.actor_blueprint_class_path
     nav_roam_cfg = job_config.nav_roam
@@ -755,6 +858,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             base_transform_keys_cfg=base_transform_keys_cfg,
             base_transform_key_interp=base_transform_key_interp,
             sequence_config=sequence_config,
+            camera_export_cfg=camera_export_cfg,
+            ue_config=ue_config,
         )
     except Exception as e:
         logger.error(str(e))

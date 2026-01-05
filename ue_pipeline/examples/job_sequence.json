@@ -1,10 +1,15 @@
 {
   "job_type": "create_sequence",
-  "job_id": "job-create-seq-with-navmesh-analysis-001",
+  "job_id": "job-create-seq-001",
   "map": "/Game/SecretBase/Map/SecretBase",
   "sequence_config": {
-    "output_dir": "/Game/CameraController/Generated",
+    "output_dir": "",
     "sequence_count": 2,
+    "camera_export": {
+      "enabled": true,
+      "binding_camera": "BP Cameraman C",
+      "export_format": "csv"
+    },
     "fps": 30,
     "duration_seconds": 60,
     "fixed_speed_cm_per_sec": 150,
@@ -35,5 +40,34 @@
     "camera_component_name": "Camera",
     "actor_blueprint_class_path": "/Game/FirstPerson/Blueprints/BP_Cameraman",
     "actor_binding_mode": "sequence_spawnable"
+  },
+  "ue_config": {
+    "editor_path": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
+    "project_path": "D:/UE_Projects/WorldProject/WorldProject.uproject",
+    "output_base_dir": "D:/WorldDataPipeline/output",
+    "exclude_map_names": [
+      "Overview"
+    ],
+    "scenes": {
+      "CanyonScans": {
+        "maps": [
+          {
+            "name": "Canyon_DemoScene",
+            "path": "/Game/CanyonScans/Maps/Canyon_DemoScene",
+            "navmesh_baked": true,
+            "low_mesh": false
+          }
+        ]
+      },
+      "LevelPrototyping": {
+        "maps": [
+          {
+            "name": "Lvl_FirstPerson",
+            "path": "/Game/LevelPrototyping/Lvl_FirstPerson",
+            "low_mesh": false
+          }
+        ]
+      }
+    }
   }
 }
