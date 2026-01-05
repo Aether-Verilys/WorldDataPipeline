@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 FROM registry.baidubce.com/cce-ai-native/pytorch:22.08-py3
 
 # Prevent Python from writing pyc files and enable unbuffered logs

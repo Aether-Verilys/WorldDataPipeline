@@ -24,6 +24,3 @@ ue_pipeline/logs/
 ue_pipeline/python/logs/
 ue_pipeline/python/__pycache__/
 ue_pipeline/__pycache__/
-
-# Unreal template / large assets (adjust if you need them in container)
-ue_template/
