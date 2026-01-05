@@ -5,17 +5,6 @@ import time
 import traceback
 import unreal
 
-try:
-    from levelsequence import (
-        find_largest_connected_region,
-        select_spawn_point_from_region,
-    )
-    NAVMESH_CONNECTIVITY_AVAILABLE = True
-except ImportError:
-    NAVMESH_CONNECTIVITY_AVAILABLE = False
-    find_largest_connected_region = None
-    select_spawn_point_from_region = None
-
 
 def call_maybe(obj, method_names, *args):
     last_err = None
@@ -83,7 +72,6 @@ def project_to_nav(nav, world, point: unreal.Vector) -> unreal.Vector:
 
 
 def random_reachable_point(nav, world, origin: unreal.Vector, radius_cm: float) -> unreal.Vector:
-    """Get a random point that is reachable from origin (not isolated)."""
     candidates = [
         (nav, ["get_random_reachable_point_in_radius", "k2_get_random_reachable_point_in_radius"]),
         (getattr(unreal, "NavigationSystemV1", object), ["get_random_reachable_point_in_radius", "k2_get_random_reachable_point_in_radius"]),
@@ -117,9 +105,6 @@ def random_reachable_point(nav, world, origin: unreal.Vector, radius_cm: float) 
 
 
 def get_navmesh_bounds(world) -> tuple:
-    """Get the bounds of the NavMesh from NavMeshBoundsVolume actors.
-    Returns (center, extent) as (Vector, Vector) or None if no bounds found.
-    """
     try:
         actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
         actors = actor_subsystem.get_all_level_actors()
@@ -172,7 +157,6 @@ def get_navmesh_bounds(world) -> tuple:
 
 
 def find_connected_navmesh_start_point(nav, world, max_attempts: int = 10) -> unreal.Vector:
-    """Find a random point on NavMesh that is well-connected (not isolated)."""
     bounds = get_navmesh_bounds(world)
 
     if bounds is None:
@@ -320,16 +304,18 @@ def resample_by_distance(points, sample_count: int):
     return out
 
 
-def build_multi_leg_nav_path(nav, world, cfg: dict, map_path: str | None = None, run_id: int | None = None):
+def build_multi_leg_nav_path(nav, world, cfg: dict, map_path: str | None = None):
     """
     Generate multi-leg navigation path on NavMesh.
+    
+    This function will attempt to use connectivity analysis if enabled in config,
+    otherwise falls back to the legacy random search method.
     
     Args:
         nav: NavigationSystemV1 instance
         world: World context
         cfg: Configuration dict with nav_roam settings
         map_path: Map path for cache naming
-        run_id: Run session identifier for cache (None = force unique cache per call)
     
     Returns:
         List of Vector points representing the navigation path
@@ -341,57 +327,21 @@ def build_multi_leg_nav_path(nav, world, cfg: dict, map_path: str | None = None,
     project = bool(cfg.get("project_to_nav", True))
     min_leg_dist = float(cfg.get("min_leg_distance_cm", 300.0))
 
+    # Try to use connectivity analysis if available and enabled
     use_connectivity_analysis = bool(cfg.get("use_connectivity_analysis", True))
-    connectivity_sample_count = cfg.get("connectivity_sample_count", None)
-    connectivity_sample_density = cfg.get("connectivity_sample_density", None)
-
-    print("[WorkerCreateSequence] Finding connected start point from NavMesh using connectivity analysis...")
-
-    if use_connectivity_analysis and NAVMESH_CONNECTIVITY_AVAILABLE:
+    if use_connectivity_analysis:
         try:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            cache_dir = os.path.join(os.path.dirname(script_dir), "logs")
-
-            # Use map name + run_id for cache isolation
-            map_name_for_cache = "unknown_map"
-            if map_path and "/" in str(map_path):
-                map_name_for_cache = str(map_path).split("/")[-1]
-            
-            # Use run_id to identify this execution session
-            # All sequences in the same run will share this cache
-            if run_id is not None:
-                cache_name = f"{map_name_for_cache}_run{run_id}"
-            else:
-                # No run_id: use timestamp to force unique cache (never reuse)
-                import time
-                cache_name = f"{map_name_for_cache}_{int(time.time())}"
-
-            sample_count_param = int(connectivity_sample_count) if connectivity_sample_count is not None else None
-            density_param = float(connectivity_sample_density) if connectivity_sample_density is not None else None
-
-            print(f"[WorkerCreateSequence] Using connectivity analysis (cache_id={cache_name}, sample_count={sample_count_param or 'auto'}, density={density_param or 'default'})")
-            largest_region = find_largest_connected_region(
-                nav,
-                world,
-                cache_name,
-                cache_dir,
-                sample_count=sample_count_param,
-                sample_density=density_param,
-                k_nearest=8,
-                force_recompute=False,
-            )
-
-            seed_for_spawn = cfg.get("seed", None)
-            origin = select_spawn_point_from_region(largest_region, strategy="random", seed=seed_for_spawn)
-            print("[WorkerCreateSequence] ✓ Selected spawn point from largest connected region")
-
+            from .navmesh_connectivity import get_spawn_point_with_connectivity
+            print("[WorkerCreateSequence] Using connectivity analysis for spawn point selection...")
+            origin = get_spawn_point_with_connectivity(nav, world, map_path, cfg)
+        except ImportError:
+            print("[WorkerCreateSequence] Connectivity analysis not available, using legacy method...")
+            origin = find_connected_navmesh_start_point(nav, world, max_attempts=10)
         except Exception as e:
-            print(f"[WorkerCreateSequence] WARNING: Connectivity analysis failed: {e}")
-            print(f"[WorkerCreateSequence] Falling back to legacy method...")
+            print(f"[WorkerCreateSequence] Connectivity analysis failed: {e}, using legacy method...")
             origin = find_connected_navmesh_start_point(nav, world, max_attempts=10)
     else:
-        if not use_connectivity_analysis:
-            print("[WorkerCreateSequence] Connectivity analysis disabled in config")
+        print("[WorkerCreateSequence] Connectivity analysis disabled, using legacy method...")
         origin = find_connected_navmesh_start_point(nav, world, max_attempts=10)
 
     a = project_to_nav(nav, world, origin) if project else origin
@@ -454,7 +404,6 @@ def build_multi_leg_nav_path(nav, world, cfg: dict, map_path: str | None = None,
 
 
 def wait_for_navigation_ready(nav, world, timeout_seconds: float) -> None:
-    """Best-effort wait until navigation is not building/locked."""
     try:
         timeout = max(0.0, float(timeout_seconds))
     except Exception:

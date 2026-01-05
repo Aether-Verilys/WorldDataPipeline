@@ -1,0 +1,75 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ue-sequence-job
+  labels:
+    app: ue-pipeline
+    task: create-sequence
+spec:
+  # 失败后不自动重试（避免重复生成序列）
+  backoffLimit: 0
+  # 任务超时时间（24小时）
+  activeDeadlineSeconds: 86400
+  template:
+    metadata:
+      labels:
+        app: ue-pipeline
+        task: create-sequence
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: ue-pipeline
+        image: your-registry/ue-pipeline:latest
+        imagePullPolicy: IfNotPresent
+        
+        # 容器入口点
+        command: ["python3", "app.py"]
+        args: 
+          - "--system"
+          - "linux"
+          - "create_sequence"
+          - "--manifest"
+          - "examples/job_sequence_analysis.json"
+        
+        # 工作目录
+        workingDir: /app/ue_pipeline
+        
+        # 环境变量
+        env:
+        - name: UE_SYSTEM_TYPE
+          value: "linux"
+        - name: UE_PROJECT_PATH
+          value: "/app/ue_template/WorldData/WorldData.uproject"
+        - name: UE_EDITOR_CMD
+          value: "/usr/local/UnrealEngine/Engine/Binaries/Linux/UnrealEditor-Cmd"
+        
+        # 资源限制
+        resources:
+          requests:
+            memory: "16Gi"
+            cpu: "4"
+          limits:
+            memory: "32Gi"
+            cpu: "8"
+        
+        # 持久化存储挂载
+        volumeMounts:
+        - name: ue-project
+          mountPath: /app/ue_template
+          readOnly: true
+        - name: output
+          mountPath: /app/output
+        - name: job-configs
+          mountPath: /app/ue_pipeline/examples
+          readOnly: true
+      
+      volumes:
+      - name: ue-project
+        persistentVolumeClaim:
+          claimName: ue-project-pvc
+      - name: output
+        persistentVolumeClaim:
+          claimName: ue-output-pvc
+      - name: job-configs
+        configMap:
+          name: ue-job-configs

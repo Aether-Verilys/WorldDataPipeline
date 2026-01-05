@@ -1,7 +1,7 @@
 {
   "job_type": "create_sequence",
   "job_id": "job-create-seq-cameraman-001",
-  "map": "/Game/CanyonScans/Maps/Canyon_DemoScene",
+  "map": "/Game/SecretBase/Map/SecretBase",
   "sequence_config": {
     "output_dir": "/Game/CameraController/Generated",
     "sequence_count": 2,

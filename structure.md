@@ -5,8 +5,8 @@
 生成500小时世界模型训练数据（15,000个2分钟视频片段），通过自动化管线实现：
 - 自适应场景处理（NavMesh根据地图大小动态调整）
 - 智能相机轨迹生成（基于NavMesh随机起点）
-- 分布式渲染（Linux集群 + Docker + Redis）
-- 动态资源管理（BOS按需下载/上传，避免磁盘过载）
+- 分布式渲染（集群 + Docker + Redis）
+- 动态资源管理（BOS按需下载/上传）
 
 ---
 
@@ -16,7 +16,7 @@
 
 **流程分离：**
 ```
-[Windows控制节点]                    [Linux渲染集群]
+[控制节点]                    [Linux渲染集群]
     ↓                                      ↓
 BOS下载场景 ──→ NavMesh烘焙          Docker容器(UE 5.7)
     ↓                                      ↓
@@ -29,7 +29,7 @@ BOS下载场景 ──→ NavMesh烘焙          Docker容器(UE 5.7)
 
 | 组件 | 技术 | 用途 |
 |------|------|------|
-| **控制节点** | Windows 11/ Linux + Python 3.1x | 场景管理、序列生成、任务调度 |
+| **控制节点** | Linux + Python 3.1x | 场景管理、序列生成、任务调度 |
 | **渲染集群** | Linux + Docker + UE 5.7 | 分布式MRQ渲染 |
 | **任务队列** | Redis | 渲染任务分发与状态同步 |
 | **存储** | BOS (BaiduCloud Object Storage) | 场景资产、序列文件、视频输出 |
@@ -48,10 +48,6 @@ BOS下载场景 ──→ NavMesh烘焙          Docker容器(UE 5.7)
 1. `bos_manager.py` 下载场景到本地缓存 `D:/UE_Cache/{scene_name}/`
 2. `copy_scene_assets_wrapper.py` 复制.umap/.uasset到UE Content
 3. 验证场景可加载，更新 `WorldData00_scenes_status.json`
-
-**关键代码文件：**
-- `ue_pipeline/bos_manager.py`
-- `ue_pipeline/python/pre_copy/copy_scene_assets_wrapper.py`
 
 ---
 
@@ -84,46 +80,14 @@ BOS下载场景 ──→ NavMesh烘焙          Docker容器(UE 5.7)
    - 测试随机点可达性（`GetRandomReachablePointInRadius()` 成功率 > 80%）
    - 评估可导航区域面积（需 > 场景面积的30%）
 
-**重要：烘焙完成必须保存场景**
+**烘焙完成必须保存场景**
 - NavMesh数据存储在 `.umap` 和对应的 `_BuiltData.uasset` 文件中
 - 不保存则下次加载地图NavMesh丢失，导致轨迹生成失败
 - 保存后上传到BOS，确保渲染节点可使用烘焙好的NavMesh
 
-**执行方式（Headless模式）：**
-```bash
-# Windows控制节点执行（通过Python调用UE Cmd）
-python ue_pipeline/run_bake_navmesh.py --map /Game/S0001/Scene01 --auto-scale
-
-# 内部调用UE命令行：
-UnrealEditor-Cmd.exe WorldData00.uproject \
-  -run=pythonscript \
-  -script=ue_pipeline/python/worker_bake_navmesh.py \
-  -manifest=jobs/inbox/job_bake_001.json \
-  -stdout -unattended -nothreading -NoLoadingScreen
-```
-
-**关键代码文件：**
-- `ue_pipeline/python/pre_process/add_navmesh_to_scene.py`
-- `ue_pipeline/python/worker_bake_navmesh.py` (添加 `auto_scale` 参数，Headless执行)
-- `ue_pipeline/run_bake_navmesh.py` (Python CLI包装器)
-
-**配置示例：**
-```json
-{
-  "job_type": "bake_navmesh",
-  "navmesh_config": {
-    "auto_scale": true,
-    "min_scale": [20, 20, 5],
-    "max_scale": [500, 500, 50],
-    "scale_margin": 1.2,
-    "maps": ["/Game/S0001/Scene01.Scene01"]
-  }
-}
-```
-
 ---
 
-### Step 3: 相机轨迹生成 (Windows)
+### Step 3: 相机轨迹生成
 **输入：** 烘焙好的场景地图  
 **输出：** LevelSequence资产 (`.uasset`)，包含完整的相机动画数据
 
@@ -155,10 +119,7 @@ UnrealEditor-Cmd.exe WorldData00.uproject \
      - 高度变化平缓（Z轴方差 < 100cm²）
    - 在最优地面区域中随机采样起点（`get_random_reachable_point_in_radius`）
    - 确保起点在可导航地面上，高度合理（Z值在地面±100cm内）
-4. **优先级4**: 若以上失败，从NavMesh的任意有效点开始随机采样
-   - **不使用场景中心作为起点**（可能在空中或墙内）
-   - 从场景边界内随机采样并投影到NavMesh
-5. **验证**: 
+**验证**: 
    - LineTrace检测起点下方有地面（不在空中）
    - 检查起点周围有足够导航空间（半径>200cm可达区域）
    - 确保起点不在墙内或封闭空间
@@ -185,115 +146,6 @@ UnrealEditor-Cmd.exe WorldData00.uproject \
 - 同时生成4x4变换矩阵（世界坐标系 → 相机坐标系）
 - 上传到BOS：`bos://bucket/sequences/{scene_id}/{map_name}_seq_{id}_camera_extrinsics.csv`
 
-**执行方式（Headless模式）：**
-```bash
-# Windows控制节点执行
-python ue_pipeline/run_create_sequence_job.py \
-  --map /Game/Seaside_Town/Maps/Demonstration \
-  --num-sequences 5 \
-  --seed-start 10000 \
-  --actor-blueprint /Game/FirstPerson/Blueprints/BP_FirstPersonCharacter \
-  --camera-component FollowCamera
-
-# 内部调用UE命令行：
-UnrealEditor-Cmd.exe WorldData00.uproject \
-  -run=pythonscript \
-  -script=ue_pipeline/python/worker_create_sequence.py \
-  -manifest=jobs/inbox/job_create_seq_001.json \
-  -stdout -unattended -nothreading
-```
-
-**序列生成核心逻辑：**
-```python
-# worker_create_sequence.py 关键步骤
-# 1. 创建LevelSequence资产
-sequence = create_level_sequence(output_dir, sequence_name)
-movie_scene = sequence.get_movie_scene()
-
-# 2. 生成或绑定Actor
-if spawn_actor:
-    # Spawnable模式：序列控制actor生命周期
-    actor_binding = add_spawnable_actor(sequence, actor_blueprint_path)
-else:
-    # Possessable模式：绑定关卡中已有actor
-    actor = find_actor_in_level(actor_name)
-    actor_binding = add_possessable_actor(sequence, actor)
-
-# 3. 添加Camera Cut Track
-camera_component = actor.get_component_by_class(unreal.CameraComponent)
-camera_cut_track = movie_scene.add_master_track(unreal.MovieSceneCameraCutTrack)
-camera_cut_section = camera_cut_track.add_section()
-camera_cut_section.set_camera_binding_id(camera_component_binding)
-
-# 4. 添加Transform Track并写入关键帧
-transform_track = actor_binding.add_track(unreal.MovieScene3DTransformTrack)
-transform_section = transform_track.add_section()
-
-for i, waypoint in enumerate(path_waypoints):
-    time = i * key_interval_seconds
-    # 写入Location关键帧
-    transform_section.get_channel_by_type(unreal.MovieSceneScriptChannel.LOCATION_X).add_key(
-        unreal.FrameNumber(time * fps), waypoint.location.x
-    )
-    # 写入Rotation关键帧
-    transform_section.get_channel_by_type(unreal.MovieSceneScriptChannel.ROTATION_YAW).add_key(
-        unreal.FrameNumber(time * fps), waypoint.rotation.yaw
-    )
-
-# 5. 保存序列
-unreal.EditorAssetLibrary.save_asset(sequence.get_path_name())
-```
-
-**关键代码文件：**
-- `ue_pipeline/python/worker_create_sequence.py` (增强 `_find_first_startpoint()`，添加路径验证和卡住重试，Headless执行)
-- `ue_pipeline/python/gen_levelsequence.py` (核心库)
-- `ue_pipeline/python/export_UE_camera.py` (外参矩阵导出，已存在，需集成到序列生成流程)
-- `ue_pipeline/run_create_sequence_job.py` (Python CLI包装器，替代PS1脚本)
-
-**配置示例：**
-```json
-{
-  "job_type": "create_sequence",
-  "map": "/Game/Seaside_Town/Maps/Demonstration.Demonstration",
-  "sequence_config": {
-    "output_dir": "/Game/CameraController/Generated",
-    "sequence_count": 1,
-    "fps": 30,
-    "duration_seconds": 120,
-    "actor_config": {
-      "actor_blueprint_class_path": "/Game/FirstPerson/Blueprints/BP_FirstPersonCharacter.BP_FirstPersonCharacter",
-      "camera_component_name": "FollowCamera",
-      "actor_binding_mode": "spawnable",  // spawnable | possessable
-      "spawn_location": {"x": 0, "y": 0, "z": 0},
-      "spawn_rotation": {"pitch": 0, "yaw": 0, "roll": 0}
-    },
-    "nav_roam": {
-      "enabled": true,
-      "startpoint_mode": "auto",
-      "seed": 12345,
-      "num_legs": 6,
-      "random_point_radius_cm": 8000.0,
-      "key_interval_seconds": 0.25,
-      "min_segment_step_cm": 75.0,
-      "max_random_point_tries": 40,
-      "stuck_retry_max": 5,
-      "seed_increment_on_retry": 1000,
-      "path_validation": {
-        "min_path_length_cm": 200.0,
-        "min_turn_angle_deg": 15.0,
-        "min_point_distance_cm": 500.0,
-        "require_path_diversity": true
-      }
-    },
-    "camera_cut": {
-      "enabled": true,
-      "single_shot": true  // 单镜头模式，整个序列使用同一camera
-    },
-    "export_camera_extrinsics": true
-  }
-}
-```
-
 **输出：** 
 - LevelSequence文件保存到Content
 - 上传到BOS: 
@@ -303,13 +155,13 @@ unreal.EditorAssetLibrary.save_asset(sequence.get_path_name())
 
 ---
 
-### Step 4: 渲染任务调度 (Windows → Redis)
+### Step 4: 渲染任务调度
 **输入：** 生成的LevelSequence列表  
 **输出：** Redis队列中的渲染任务
 
 **架构：**
 ```
-Windows控制节点                    Redis Server           Linux渲染节点 (N台)
+    控制节点                    Redis Server           Linux渲染节点 (N台)
      |                                |                          |
      |-- 扫描生成的序列 ----------→   |                          |
      |-- 为每个序列创建任务 -------→  | LPUSH render_queue      |
@@ -320,114 +172,11 @@ Windows控制节点                    Redis Server           Linux渲染节点 
      |← 监控任务状态 (HGET) --------  | HSET task:{id} status   |
 ```
 
-**任务数据结构（Redis Hash）：**
-```json
-{
-  "task_id": "render_Seaside_Town_Demonstration_seq_001",
-  "scene_bos_path": "bos://bucket/raw_scenes/Seaside_Town/",
-  "sequence_bos_path": "bos://bucket/sequences/Seaside_Town/Demonstration_seq_001.uasset",
-  "map_path": "/Game/Seaside_Town/Maps/Demonstration.Demonstration",
-  "sequence_path": "/Game/CameraController/Generated/Demonstration_seq_001",
-  "output_bos_path": "bos://bucket/output/{scene_name}/{map_name}/seq_{id}/",
-  "render_config": {
-    "fps": 30,
-    "resolution": [1920, 1080],
-    "quality_preset": "high",
-    "format": "png"
-  },
-  "status": "pending",  // pending | processing | rendering | encoding | completed | failed
-  "worker_id": null,
-  "created_at": "2025-12-25T10:00:00Z",
-  "started_at": null,
-  "completed_at": null,
-  "retry_count": 0,
-  "error_message": null
-}
-```
-
-**关键代码文件：**
-- `ue_pipeline/task_dispatcher.py` (新建，扫描序列 → 推送Redis)
-- `ue_pipeline/redis_client.py` (新建，Redis封装)
-
 ---
 
 ### Step 5: Linux集群渲染 (Docker + UE)
 **环境：** Linux服务器 + NVIDIA GPU + Docker
-
-**Docker容器配置：**
-```dockerfile
-FROM nvidia/cuda:11.8.0-runtime-ubuntu22.04
-
-# 安装UE 5.7 + 依赖
-RUN apt-get update && apt-get install -y \
-    unzip wget python3 python3-pip ffmpeg \
-    libgl1 libglu1 libxrandr2 libxi6
-
-# 复制UE引擎（预编译）
-COPY UnrealEngine-5.7/ /opt/UnrealEngine/
-
-# Python依赖
-COPY requirements.txt /app/
-RUN pip3 install -r /app/requirements.txt
-
-# 渲染Worker脚本
-COPY ue_pipeline/ /app/ue_pipeline/
-WORKDIR /app
-
-ENTRYPOINT ["python3", "ue_pipeline/linux/render_worker.py"]
-```
-
-**Worker流程 (`render_worker.py` 新建):**
-```python
-while True:
-    # 1. 从Redis拉取任务
-    task = redis.brpop('render_queue', timeout=60)
-    if not task:
-        continue
-    
-    task_data = json.loads(task[1])
-    task_id = task_data['task_id']
-    redis.hset(f'task:{task_id}', 'status', 'processing')
-    
-    try:
-        # 2. 下载场景和序列从BOS
-        download_scene(task_data['scene_bos_path'])
-        download_sequence(task_data['sequence_bos_path'])
-        
-        # 3. 启动UE Headless渲染
-        cmd = [
-            '/opt/UnrealEngine/Engine/Binaries/Linux/UnrealEditor-Cmd',
-            '/app/WorldData00/WorldData00.uproject',
-            '-game', '-MoviePipelineConfig=...', '-NoLoadingScreen',
-            '-unattended', '-nothreading', '-StdOut', '-FullStdOutLogOutput'
-        ]
-        subprocess.run(cmd, check=True)
-        
-        # 4. FFmpeg合成视频
-        convert_frames_to_video(output_dir, f'{task_id}.mp4')
-        
-        # 5. 上传视频到BOS
-        upload_to_bos(f'{task_id}.mp4', task_data['output_bos_path'])
-        
-        # 6. 更新状态
-        redis.hset(f'task:{task_id}', 'status', 'completed')
-        
-        # 7. 清理本地文件
-        cleanup_temp_files()
-        
-    except Exception as e:
-        redis.hset(f'task:{task_id}', 'status', 'failed')
-        redis.hset(f'task:{task_id}', 'error_message', str(e))
-        # 重试逻辑
-        if task_data['retry_count'] < 3:
-            task_data['retry_count'] += 1
-            redis.lpush('render_queue', json.dumps(task_data))
-```
-
-**关键代码文件：**
-- `ue_pipeline/linux/render_worker.py` (新建)
-- `ue_pipeline/linux/Dockerfile` (新建)
-- `ue_pipeline/linux/run_render_job_headless.sh` (修改，适配Docker环境)
+   Docker容器配置
 
 **部署命令：**
 ```bash
@@ -523,8 +272,6 @@ ffmpeg_cmd = [
   - 测量Day 3实际上传速度（MB/s）
   - 若瓶颈，考虑并行上传或多线程
   - 与BOS运维协调带宽扩容
-
-### 中风险项
 
 **4. NavMesh自动检测失败**
 - **风险**: 某些特殊场景（空场景、纯程序化）边界检测异常

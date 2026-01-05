@@ -3,7 +3,6 @@ import os
 import random
 import sys
 import traceback
-from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 _script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -50,15 +49,23 @@ from key_frame_track import (
     write_transform_keys,
 )
 
+from levelsequence.sequence_type import (
+    FixedSpeedResult,
+    KeyGenResult,
+    NavPathResult,
+    SampleResult,
+    SequenceJobConfig,
+)
+
 # Try to import levelsequence helpers
 try:
     from levelsequence import (
-        find_largest_connected_region,
-        select_spawn_point_from_region,
+        get_spawn_point_with_connectivity,
     )
     NAVMESH_CONNECTIVITY_AVAILABLE = True
 except ImportError:
     NAVMESH_CONNECTIVITY_AVAILABLE = False
+    get_spawn_point_with_connectivity = None
     logger.warning("levelsequence.navmesh_connectivity not available")
 
 
@@ -93,55 +100,6 @@ def _calculate_pitch_from_slope(a: unreal.Vector, b: unreal.Vector, max_pitch_de
         slope_angle = max_pitch_deg if slope_angle > 0 else -max_pitch_deg
 
     return float(slope_angle)
-
-
-@dataclass
-class SequenceJobConfig:
-    output_dir: str = "/Game/CameraController/Generated"
-    sequence_count: int = 1
-    actor_name: str = "BP_NPC_NavMesh"
-    camera_component_name: str = "Camera"
-    actor_blueprint_class_path: str = "/Game/FirstPerson/Blueprints/BP_NPC_NavMesh.BP_NPC_NavMesh"
-    spawn_actor_if_missing: bool = False
-    actor_binding_mode: str = "sequence_spawnable"
-    save_level_if_spawned: bool = False
-    nav_roam: dict = field(default_factory=dict)
-    force_zero_pitch_roll: bool = True
-    max_yaw_rate_deg_per_sec: Optional[float] = None
-    transform_keys: Optional[list] = None
-    transform_key_interp: str = "auto"
-
-    @classmethod
-    def from_dict(cls, data: dict) -> "SequenceJobConfig":
-        cfg = data or {}
-        inst = cls()
-
-        inst.output_dir = cfg.get("output_dir", inst.output_dir)
-        inst.sequence_count = int(cfg.get("sequence_count", inst.sequence_count))
-        inst.actor_name = cfg.get("actor_name", inst.actor_name)
-        inst.camera_component_name = cfg.get("camera_component_name", inst.camera_component_name)
-        inst.actor_blueprint_class_path = cfg.get("actor_blueprint_class_path", inst.actor_blueprint_class_path)
-        inst.spawn_actor_if_missing = bool(cfg.get("spawn_actor_if_missing", inst.spawn_actor_if_missing))
-        inst.actor_binding_mode = (cfg.get("actor_binding_mode", inst.actor_binding_mode) or inst.actor_binding_mode).lower()
-        inst.save_level_if_spawned = bool(cfg.get("save_level_if_spawned", inst.save_level_if_spawned))
-        inst.nav_roam = cfg.get("nav_roam", {}) or {}
-        inst.force_zero_pitch_roll = bool(cfg.get("force_zero_pitch_roll", inst.force_zero_pitch_roll))
-        inst.transform_keys = cfg.get("transform_keys", inst.transform_keys)
-        inst.transform_key_interp = (cfg.get("transform_key_interp", inst.transform_key_interp) or inst.transform_key_interp).lower()
-
-        max_yaw = cfg.get("max_yaw_rate_deg_per_sec", None)
-        try:
-            if max_yaw is not None:
-                max_yaw = float(max_yaw)
-                if max_yaw <= 0:
-                    max_yaw = None
-        except Exception:
-            max_yaw = None
-        inst.max_yaw_rate_deg_per_sec = max_yaw
-
-        return inst
-
-
 def _get_world():
     try:
         # Use UnrealEditorSubsystem instead of deprecated EditorLevelLibrary.get_editor_world
@@ -234,6 +192,324 @@ def _load_manifest(manifest_path: str) -> Dict[str, Any]:
         raise RuntimeError(f"Failed to read manifest: {e}")
 
 
+def _prepare_sequence_generation_run(
+    *,
+    map_path: str,
+    actor_blueprint_class_path: str,
+    output_dir: str,
+    nav_roam_cfg: Dict[str, Any],
+) -> tuple[Any, Any]:
+    validate_prerequisites(map_path, actor_blueprint_class_path, True, "[WorkerCreateSequence]")
+
+    # Load map first (important for level possessables, and avoids world switching mid-script)
+    if map_path:
+        try:
+            load_map(map_path)
+        except Exception as e:
+            logger.error(f"Map load failed: {e}")
+            raise
+
+    ensure_directory_exists(output_dir)
+
+    world = _get_world()
+    nav = get_nav_system(world)
+    wait_for_navigation_ready(nav, world, float(nav_roam_cfg.get("nav_build_wait_seconds", 10.0)))
+    return world, nav
+
+
+def _build_nav_points_with_retry(
+    *,
+    nav: Any,
+    world: Any,
+    roam_cfg: Dict[str, Any],
+    map_path: str,
+    run_id: int,
+) -> NavPathResult:
+    seed_cfg = roam_cfg.get("seed", None)
+    actual_seed: Optional[int] = None
+    if seed_cfg is not None:
+        try:
+            seed_val = int(seed_cfg)
+            if seed_val == -1:
+                # -1表示使用随机种子
+                actual_seed = random.randint(0, 999999)
+                random.seed(actual_seed)
+                logger.info(f"✓ NavRoam seed: {actual_seed} (random)")
+            else:
+                actual_seed = seed_val
+                random.seed(actual_seed)
+                logger.info(f"✓ NavRoam seed: {actual_seed}")
+        except Exception as e:
+            logger.warning(f"Failed to set seed: {e}")
+
+    def _cfg_for_seed(seed: Optional[int]) -> Dict[str, Any]:
+        cfg = dict(roam_cfg)
+        if seed is not None:
+            cfg["seed"] = int(seed)
+        return cfg
+
+    nav_roam_cfg_for_path = _cfg_for_seed(actual_seed)
+
+    # 尝试生成路径，如果失败则重新生成种子重试一次
+    for path_attempt in range(2):  # 最多尝试2次
+        try:
+            if path_attempt == 1:
+                # 第二次尝试：重新生成随机种子
+                actual_seed = random.randint(0, 999999)
+                random.seed(actual_seed)
+                logger.warning(f"Retry with new seed: {actual_seed}")
+                nav_roam_cfg_for_path = _cfg_for_seed(actual_seed)
+
+            # Pass map_path for cache naming
+            nav_points = build_multi_leg_nav_path(nav, world, nav_roam_cfg_for_path, map_path)
+            logger.info(f"NavRoam generated {len(nav_points)} raw points")
+            return NavPathResult(nav_points=nav_points, actual_seed=actual_seed)
+
+        except RuntimeError as e:
+            error_msg = str(e)
+            if "Failed to find connected NavMesh point" in error_msg:
+                if path_attempt == 0:
+                    logger.warning(f"NavMesh connection failed on first attempt: {e}")
+                    logger.warning("Retrying with new random seed...")
+                    continue
+                logger.error("NavMesh connection failed after 2 attempts")
+                raise
+            raise
+
+    raise RuntimeError("Failed to generate nav path after retries")
+
+
+def _apply_fixed_speed_if_configured(
+    *,
+    nav_points: list,
+    fps: int,
+    duration_seconds: float,
+    total_frames: int,
+    movie_scene: Any,
+    fixed_speed_cfg: Any,
+    strict_duration: bool,
+) -> FixedSpeedResult:
+    if fixed_speed_cfg is None:
+        return FixedSpeedResult(nav_points=nav_points, duration_seconds=duration_seconds, total_frames=total_frames)
+
+    try:
+        fixed_speed = float(fixed_speed_cfg)
+        if fixed_speed <= 0:
+            return FixedSpeedResult(nav_points=nav_points, duration_seconds=duration_seconds, total_frames=total_frames)
+
+        # 计算路径总长度
+        total_path_length_cm = 0.0
+        for i in range(1, len(nav_points)):
+            total_path_length_cm += distance_cm(nav_points[i - 1], nav_points[i])
+
+        # 根据固定速度计算需要的时间
+        calculated_duration = total_path_length_cm / fixed_speed
+        logger.info("Fixed speed mode enabled:")
+        logger.info(f"  Path length: {total_path_length_cm:.2f} cm")
+        logger.info(f"  Fixed speed: {fixed_speed:.2f} cm/s")
+        logger.info(f"  Original duration: {duration_seconds:.2f}s")
+        logger.info(f"  Calculated duration (full path): {calculated_duration:.2f}s")
+
+        if strict_duration:
+            # 严格模式：保持duration_seconds不变，可能不会走完全程
+            max_distance_cm = fixed_speed * duration_seconds
+            logger.info(
+                f"  Strict duration mode: will travel max {max_distance_cm:.2f} cm in {duration_seconds:.2f}s"
+            )
+
+            if max_distance_cm < total_path_length_cm:
+                # 沿着路径行进，找到在max_distance_cm处的点
+                accumulated_dist = 0.0
+                truncated_points = [nav_points[0]]
+
+                for i in range(1, len(nav_points)):
+                    seg_dist = distance_cm(nav_points[i - 1], nav_points[i])
+
+                    if accumulated_dist + seg_dist <= max_distance_cm:
+                        # 整个段都在范围内
+                        truncated_points.append(nav_points[i])
+                        accumulated_dist += seg_dist
+                    else:
+                        # 这个段需要部分截取
+                        remaining = max_distance_cm - accumulated_dist
+                        if remaining > 0.01:  # 至少1mm
+                            # 在这个段上插值
+                            ratio = remaining / seg_dist
+                            a = nav_points[i - 1]
+                            b = nav_points[i]
+                            final_point = unreal.Vector(
+                                a.x + (b.x - a.x) * ratio,
+                                a.y + (b.y - a.y) * ratio,
+                                a.z + (b.z - a.z) * ratio,
+                            )
+                            truncated_points.append(final_point)
+                        break
+
+                nav_points = truncated_points
+                logger.info(f"  Truncated to {len(nav_points)} points")
+            else:
+                logger.info("  Full path can be completed within duration")
+
+            return FixedSpeedResult(nav_points=nav_points, duration_seconds=duration_seconds, total_frames=total_frames)
+
+        # 非严格模式：调整duration_seconds以走完全程
+        duration_seconds = calculated_duration
+        total_frames = int(fps * duration_seconds)
+
+        # 重新设置序列的播放范围
+        try:
+            movie_scene.set_playback_range(0, total_frames)
+            logger.info(f"Updated playback range: 0-{total_frames} ({duration_seconds:.2f}s)")
+        except Exception as e:
+            logger.warning(f"Could not update playback range: {e}")
+
+        return FixedSpeedResult(nav_points=nav_points, duration_seconds=duration_seconds, total_frames=total_frames)
+
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Invalid fixed_speed value: {e}")
+        return FixedSpeedResult(nav_points=nav_points, duration_seconds=duration_seconds, total_frames=total_frames)
+
+
+def _resample_nav_points(
+    *,
+    nav_points: list,
+    fps: int,
+    total_frames: int,
+    z_offset_cm: float,
+) -> SampleResult:
+    key_interval_seconds = 1.0 / float(fps)
+    key_interval_frames = max(1, int(round(float(fps) * key_interval_seconds)))
+    key_count = max(2, int(math.floor(float(total_frames) / float(key_interval_frames))) + 1)
+    samples = resample_by_distance(nav_points, key_count)
+
+    if abs(z_offset_cm) > 0.001:
+        samples = [unreal.Vector(p.x, p.y, p.z + z_offset_cm) for p in samples]
+
+    return SampleResult(samples=samples, key_interval_frames=key_interval_frames)
+
+
+def _build_transform_keys_from_samples(
+    *,
+    samples: list,
+    fps: int,
+    total_frames: int,
+    key_interval_frames: int,
+    camera_pitch_from_slope: bool,
+    max_camera_pitch: float,
+) -> KeyGenResult:
+    keys = []
+    for i, p in enumerate(samples):
+        frame = i * key_interval_frames
+        if frame > total_frames:
+            frame = total_frames
+        t = float(frame) / float(fps)
+
+        # 计算yaw（水平朝向）
+        if i < len(samples) - 1:
+            yaw = _yaw_degrees_xy(p, samples[i + 1])
+        else:
+            yaw = _yaw_degrees_xy(samples[i - 1], p) if i > 0 else 0.0
+
+        # 计算pitch（相机俯仰角，根据坡度）
+        pitch = 0.0
+        if camera_pitch_from_slope:
+            if i < len(samples) - 1:
+                # 前向坡度（看向前方）
+                pitch = _calculate_pitch_from_slope(p, samples[i + 1], max_camera_pitch)
+            elif i > 0:
+                # 最后一个点使用前一段的坡度
+                pitch = _calculate_pitch_from_slope(samples[i - 1], p, max_camera_pitch)
+
+        keys.append(
+            {
+                "time_seconds": t,
+                "location": {"x": float(p.x), "y": float(p.y), "z": float(p.z)},
+                "rotation": {"pitch": float(pitch), "yaw": float(yaw), "roll": 0.0},
+            }
+        )
+
+        # 打印前3个关键帧的位置用于调试
+        if i < 3:
+            logger.info(
+                f"  Key {i}: time={t:.2f}s, pos=({p.x:.2f}, {p.y:.2f}, {p.z:.2f}), yaw={yaw:.2f}"
+            )
+
+    return KeyGenResult(transform_keys=keys)
+
+
+def _add_camera_cuts_if_enabled(
+    *,
+    add_camera: bool,
+    sequence: Any,
+    movie_scene: Any,
+    actor_binding: Any,
+    total_frames: int,
+) -> None:
+    if not add_camera:
+        return
+
+    logger.info("Adding camera cuts bound to spawnable actor...")
+    try:
+        # Add Camera Cuts Track
+        logger.info("  Adding Camera Cuts Track...")
+        camera_cut_track = create_camera_cuts_track(sequence, movie_scene)
+        logger.info("Created Camera Cuts Track")
+
+        # Add a section to the camera cut track
+        logger.info("  Adding Camera Cut Section...")
+        camera_cut_section = camera_cut_track.add_section()
+        if not camera_cut_section:
+            raise RuntimeError("Failed to create camera cut section")
+
+        # Set the section range to cover the entire sequence
+        try:
+            camera_cut_section.set_range(0, total_frames)
+            logger.info(f"Set section range: 0-{total_frames}")
+        except Exception as e:
+            logger.warning(f"Could not set section range: {e}")
+
+        # Bind the camera to the section
+        # Note: We bind to the actor binding; UE will use its camera component.
+        bind_camera_to_cut_section(camera_cut_section, sequence, movie_scene, actor_binding)
+
+    except Exception as e:
+        logger.warning(f"Failed to add camera cuts: {e}")
+        traceback.print_exc()
+
+
+def _write_transform_keys_to_binding(
+    *,
+    actor_binding: Any,
+    fps: int,
+    total_frames: int,
+    transform_keys_cfg: Any,
+    transform_key_interp: str,
+    force_zero_pitch_roll: bool,
+    max_yaw_rate_deg_per_sec: Optional[float],
+    camera_pitch_from_slope: bool,
+    max_pitch_rate: float,
+) -> None:
+    # Write Transform Keys (always enabled)
+    if not actor_binding:
+        logger.warning("No actor binding was created")
+        return
+
+    logger.info("Adding transform keys to actor binding...")
+    try:
+        # 如果启用了camera_pitch_from_slope，保留pitch值
+        sanitize_rotation_keys(
+            transform_keys_cfg,
+            force_zero_pitch_roll,
+            max_yaw_rate_deg_per_sec,
+            preserve_pitch=camera_pitch_from_slope,
+            max_pitch_rate_deg_per_sec=max_pitch_rate,
+        )
+        write_transform_keys(actor_binding, int(fps), int(total_frames), transform_keys_cfg, transform_key_interp)
+    except Exception as e:
+        logger.warning(f"Failed to write transform keys: {e}")
+        traceback.print_exc()
+
+
 def generate_all_sequences(
     *,
     batch_count: int,
@@ -250,10 +526,35 @@ def generate_all_sequences(
     sequence_config: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
     completed_sequences = []
-    
+
     import time
     run_id = int(time.time())
-    
+
+    world, nav = _prepare_sequence_generation_run(
+        map_path=map_path,
+        actor_blueprint_class_path=actor_blueprint_class_path,
+        output_dir=output_dir,
+        nav_roam_cfg=nav_roam_cfg,
+    )
+
+    # Normalize config once (invariant across batches)
+    seq_cfg = sequence_config or {}
+    roam_cfg = nav_roam_cfg or {}
+
+    fps = int(seq_cfg.get("fps", 30))
+    base_duration_seconds = float(seq_cfg.get("duration_seconds", 60.0))
+    add_camera = bool(seq_cfg.get("add_camera", False))
+    fixed_speed_cfg = seq_cfg.get("fixed_speed_cm_per_sec", None)
+    strict_duration = bool(seq_cfg.get("strict_duration", False))
+
+    camera_pitch_from_slope = bool(seq_cfg.get("camera_pitch_from_slope", False))
+    max_camera_pitch = float(seq_cfg.get("max_camera_pitch_deg", 25.0))
+    max_pitch_rate = float(seq_cfg.get("max_pitch_rate_deg_per_sec", 20.0))
+
+    z_offset_cm = float(roam_cfg.get("z_offset_cm", 0.0))
+    interp_override = roam_cfg.get("interpolation", None)
+    num_legs = int(roam_cfg.get("num_legs", 6))
+
     for batch_idx in range(batch_count):
         try:
             logger.info("========================================")
@@ -264,22 +565,8 @@ def generate_all_sequences(
             sequence_number = start_index + batch_idx + 1
             sequence_name = f"{map_name}_{sequence_number:03d}"
             logger.info(f"Sequence name: {sequence_name}")
-            
-            # 预检查：地图、蓝图、NavMesh必须都存在
-            if batch_idx == 0:
-                validate_prerequisites(map_path, actor_blueprint_class_path, True, "[WorkerCreateSequence]")
-            
-            # Load map first (important for level possessables, and avoids world switching mid-script)
-            if map_path and batch_idx == 0:
-                try:
-                    load_map(map_path)
-                except Exception as e:
-                    logger.error(f"Map load failed: {e}")
-                    raise
 
             # NavRoam模式：完全依赖NavMesh连通性分析生成起始点，忽略PlayerStart和spawn_location
-        
-            ensure_directory_exists(output_dir)
 
             sequence = create_level_sequence(sequence_name, output_dir)
             if not sequence:
@@ -287,282 +574,92 @@ def generate_all_sequences(
                 raise RuntimeError("Failed to create LevelSequence asset")
             
             asset_path = sequence.get_path_name()
-            
-            # Set basic properties
-            fps = sequence_config.get("fps", 30)
-            duration_seconds = sequence_config.get("duration_seconds", 60.0)
+
+            # Per-batch derived values
+            duration_seconds = base_duration_seconds
             total_frames = int(fps * duration_seconds)
             
             movie_scene = sequence.get_movie_scene()
-            
-            add_camera = bool(sequence_config.get("add_camera", False))
-            transform_keys_cfg = base_transform_keys_cfg
+
             transform_key_interp = str(base_transform_key_interp or "auto").lower()
-            actor_binding = None
-            actual_seed = None
 
-            # Generate keys from NavMesh using NavRoam (always enabled)
-            world = _get_world()
-            nav = get_nav_system(world)
-            wait_for_navigation_ready(nav, world, float(nav_roam_cfg.get("nav_build_wait_seconds", 10.0)))
-            seed_cfg = nav_roam_cfg.get("seed", None)
-            actual_seed = None
-            if seed_cfg is not None:
-                try:
-                    seed_val = int(seed_cfg)
-                    if seed_val == -1:
-                        # -1表示使用随机种子
-                        actual_seed = random.randint(0, 999999)
-                        random.seed(actual_seed)
-                        logger.info(f"✓ NavRoam seed: {actual_seed} (random)")
-                    else:
-                        actual_seed = seed_val
-                        random.seed(actual_seed)
-                        logger.info(f"✓ NavRoam seed: {actual_seed}")
-                except Exception as e:
-                    logger.warning(f"Failed to set seed: {e}")
+            nav_result = _build_nav_points_with_retry(
+                nav=nav,
+                world=world,
+                roam_cfg=roam_cfg,
+                map_path=map_path,
+                run_id=run_id,
+            )
 
-            # IMPORTANT: build_multi_leg_nav_path() uses cfg['seed'] to select the NavMesh start point.
-            # If config seed is -1 (random), we must pass the resolved actual_seed, otherwise the
-            # start point can become effectively fixed across runs.
-            # Each batch gets its own connectivity analysis cache to ensure fresh NavMesh sampling.
-            nav_roam_cfg_for_path = dict(nav_roam_cfg or {})
-            if actual_seed is not None:
-                nav_roam_cfg_for_path["seed"] = int(actual_seed)
-            
-            # 尝试生成路径，如果失败则重新生成种子重试一次
-            nav_points = None
-            for path_attempt in range(2):  # 最多尝试2次
-                try:
-                    if path_attempt == 1:
-                        # 第二次尝试：重新生成随机种子
-                        actual_seed = random.randint(0, 999999)
-                        random.seed(actual_seed)
-                        logger.warning(f"Retry with new seed: {actual_seed}")
-
-                        nav_roam_cfg_for_path = dict(nav_roam_cfg or {})
-                        nav_roam_cfg_for_path["seed"] = int(actual_seed)
-                    
-                    # Pass run_id for cache: all sequences in this run share the same connectivity analysis
-                    # Retry attempts will also reuse the same cached analysis
-                    nav_points = build_multi_leg_nav_path(nav, world, nav_roam_cfg_for_path, map_path, run_id=run_id)
-                    logger.info(f"NavRoam generated {len(nav_points)} raw points")
-                    break  # 成功则跳出循环
-                    
-                except RuntimeError as e:
-                    error_msg = str(e)
-                    if "Failed to find connected NavMesh point" in error_msg:
-                        if path_attempt == 0:
-                            logger.warning(f"NavMesh connection failed on first attempt: {e}")
-                            logger.warning("Retrying with new random seed...")
-                            continue
-                        else:
-                            logger.error("NavMesh connection failed after 2 attempts")
-                            raise
-                    else:
-                        # 其他类型的错误直接抛出
-                        raise
-            
-            if nav_points is None:
-                raise RuntimeError("Failed to generate nav path after retries")
-            
-            if len(nav_points) < 2:
-                error_msg = f"NavRoam produced too few points ({len(nav_points)}). "
+            if len(nav_result.nav_points) < 2:
+                error_msg = f"NavRoam produced too few points ({len(nav_result.nav_points)}). "
                 error_msg += "Possible causes: "
                 error_msg += "(1) NavMesh coverage too small, "
                 error_msg += "(2) random_point_radius_cm too small, "
                 error_msg += "(3) NavMesh disconnected/fragmented, "
-                error_msg += f"(4) All {nav_roam_cfg.get('num_legs', 6)} legs failed to find valid paths."
+                error_msg += f"(4) All {num_legs} legs failed to find valid paths."
                 raise RuntimeError(error_msg)
 
-            # 如果设置了固定速度，计算路径总长度并调整 duration_seconds
-            fixed_speed = sequence_config.get("fixed_speed_cm_per_sec", None)
-            strict_duration = bool(sequence_config.get("strict_duration", False))
-            
-            if fixed_speed is not None:
-                try:
-                    fixed_speed = float(fixed_speed)
-                    if fixed_speed > 0:
-                        # 计算路径总长度
-                        total_path_length_cm = 0.0
-                        for i in range(1, len(nav_points)):
-                            total_path_length_cm += distance_cm(nav_points[i - 1], nav_points[i])
-                        
-                        # 根据固定速度计算需要的时间
-                        calculated_duration = total_path_length_cm / fixed_speed
-                        logger.info("Fixed speed mode enabled:")
-                        logger.info(f"  Path length: {total_path_length_cm:.2f} cm")
-                        logger.info(f"  Fixed speed: {fixed_speed:.2f} cm/s")
-                        logger.info(f"  Original duration: {duration_seconds:.2f}s")
-                        logger.info(f"  Calculated duration (full path): {calculated_duration:.2f}s")
-                        
-                        if strict_duration:
-                            # 严格模式：保持duration_seconds不变，可能不会走完全程
-                            max_distance_cm = fixed_speed * duration_seconds
-                            logger.info(f"  Strict duration mode: will travel max {max_distance_cm:.2f} cm in {duration_seconds:.2f}s")
-                            
-                            if max_distance_cm < total_path_length_cm:                                
-                                # 沿着路径行进，找到在max_distance_cm处的点
-                                accumulated_dist = 0.0
-                                truncated_points = [nav_points[0]]
-                                
-                                for i in range(1, len(nav_points)):
-                                    seg_dist = distance_cm(nav_points[i-1], nav_points[i])
-                                    
-                                    if accumulated_dist + seg_dist <= max_distance_cm:
-                                        # 整个段都在范围内
-                                        truncated_points.append(nav_points[i])
-                                        accumulated_dist += seg_dist
-                                    else:
-                                        # 这个段需要部分截取
-                                        remaining = max_distance_cm - accumulated_dist
-                                        if remaining > 0.01:  # 至少1mm
-                                            # 在这个段上插值
-                                            ratio = remaining / seg_dist
-                                            a = nav_points[i-1]
-                                            b = nav_points[i]
-                                            final_point = unreal.Vector(
-                                                a.x + (b.x - a.x) * ratio,
-                                                a.y + (b.y - a.y) * ratio,
-                                                a.z + (b.z - a.z) * ratio
-                                            )
-                                            truncated_points.append(final_point)
-                                        break
-                                
-                                nav_points = truncated_points
-                                logger.info(f"  Truncated to {len(nav_points)} points")
-                            else:
-                                logger.info("  Full path can be completed within duration")
-                        else:
-                            # 非严格模式：调整duration_seconds以走完全程
-                            duration_seconds = calculated_duration
-                            total_frames = int(fps * duration_seconds)
-                            
-                            # 重新设置序列的播放范围
-                            try:
-                                movie_scene.set_playback_range(0, total_frames)
-                                logger.info(f"Updated playback range: 0-{total_frames} ({duration_seconds:.2f}s)")
-                            except Exception as e:
-                                logger.warning(f"Could not update playback range: {e}")
-                except (ValueError, TypeError) as e:
-                    logger.warning(f"Invalid fixed_speed value: {e}")
+            fixed_result = _apply_fixed_speed_if_configured(
+                nav_points=nav_result.nav_points,
+                fps=fps,
+                duration_seconds=duration_seconds,
+                total_frames=total_frames,
+                movie_scene=movie_scene,
+                fixed_speed_cfg=fixed_speed_cfg,
+                strict_duration=strict_duration,
+            )
 
-            key_interval_seconds = 1.0 / float(fps)
-            key_interval_frames = max(1, int(round(float(fps) * key_interval_seconds)))
-            key_count = max(2, int(math.floor(float(total_frames) / float(key_interval_frames))) + 1)
-            samples = resample_by_distance(nav_points, key_count)
-
-            z_offset_cm = float(nav_roam_cfg.get("z_offset_cm", 0.0))
-            if abs(z_offset_cm) > 0.001:
-                samples = [unreal.Vector(p.x, p.y, p.z + z_offset_cm) for p in samples]
+            sample_result = _resample_nav_points(
+                nav_points=fixed_result.nav_points,
+                fps=fps,
+                total_frames=fixed_result.total_frames,
+                z_offset_cm=z_offset_cm,
+            )
 
             # Prefer linear interpolation for safety (avoid cubic overshoot through walls)
-            interp_override = nav_roam_cfg.get("interpolation", None)
             if interp_override:
                 transform_key_interp = (str(interp_override) or transform_key_interp).lower()
-            
-            # 是否根据坡度调整相机pitch
-            camera_pitch_from_slope = bool(sequence_config.get("camera_pitch_from_slope", False))
-            max_camera_pitch = float(sequence_config.get("max_camera_pitch_deg", 25.0))
             
             if camera_pitch_from_slope:
                 logger.info(f"Camera pitch from slope enabled (max pitch: {max_camera_pitch:.1f}°)")
 
-            keys = []
-            for i, p in enumerate(samples):
-                frame = i * key_interval_frames
-                if frame > total_frames:
-                    frame = total_frames
-                t = float(frame) / float(fps)
-                
-                # 计算yaw（水平朝向）
-                if i < len(samples) - 1:
-                    yaw = _yaw_degrees_xy(p, samples[i + 1])
-                else:
-                    yaw = _yaw_degrees_xy(samples[i - 1], p) if i > 0 else 0.0
-                
-                # 计算pitch（相机俯仰角，根据坡度）
-                pitch = 0.0
-                if camera_pitch_from_slope:
-                    if i < len(samples) - 1:
-                        # 前向坡度（看向前方）
-                        pitch = _calculate_pitch_from_slope(p, samples[i + 1], max_camera_pitch)
-                    elif i > 0:
-                        # 最后一个点使用前一段的坡度
-                        pitch = _calculate_pitch_from_slope(samples[i - 1], p, max_camera_pitch)
+            key_result = _build_transform_keys_from_samples(
+                samples=sample_result.samples,
+                fps=fps,
+                total_frames=fixed_result.total_frames,
+                key_interval_frames=sample_result.key_interval_frames,
+                camera_pitch_from_slope=camera_pitch_from_slope,
+                max_camera_pitch=max_camera_pitch,
+            )
+            logger.info(f"NavRoam generated {len(key_result.transform_keys)} keys")
 
-                keys.append(
-                    {
-                        "time_seconds": t,
-                        "location": {"x": float(p.x), "y": float(p.y), "z": float(p.z)},
-                        "rotation": {"pitch": float(pitch), "yaw": float(yaw), "roll": 0.0},
-                    }
-                )
-                
-                # 打印前3个关键帧的位置用于调试
-                if i < 3:
-                    logger.info(
-                        f"  Key {i}: time={t:.2f}s, pos=({p.x:.2f}, {p.y:.2f}, {p.z:.2f}), yaw={yaw:.2f}"
-                    )
+            # Always need an actor binding (transform keys are always enabled)
+            actor_binding = ensure_actor_binding(
+                sequence=sequence,
+                actor_blueprint_class_path=actor_blueprint_class_path,
+                load_blueprint_class_fn=load_blueprint_class,
+            )
 
-            transform_keys_cfg = keys
-            logger.info(f"✓ NavRoam generated {len(keys)} keys")
+            _add_camera_cuts_if_enabled(
+                add_camera=add_camera,
+                sequence=sequence,
+                movie_scene=movie_scene,
+                actor_binding=actor_binding,
+                total_frames=fixed_result.total_frames,
+            )
 
-            # Add camera cuts / transform tracks need a binding (always needed for transform keys)
-            needs_actor_binding = True
-            if needs_actor_binding:
-                actor_binding = ensure_actor_binding(
-                    sequence=sequence,
-                    actor_blueprint_class_path=actor_blueprint_class_path,
-                    load_blueprint_class_fn=load_blueprint_class,
-                )
-
-            if add_camera:
-                logger.info("Adding camera cuts bound to spawnable actor...")
-
-                try:
-                    camera_binding = actor_binding
-
-                    # Add Camera Cuts Track
-                    logger.info("  Adding Camera Cuts Track...")
-                    camera_cut_track = create_camera_cuts_track(sequence, movie_scene)
-                    logger.info("Created Camera Cuts Track")
-
-                    # Add a section to the camera cut track
-                    logger.info("  Adding Camera Cut Section...")
-                    camera_cut_section = camera_cut_track.add_section()
-                    if not camera_cut_section:
-                        raise RuntimeError("Failed to create camera cut section")
-
-                    # Set the section range to cover the entire sequence
-                    try:
-                        camera_cut_section.set_range(0, total_frames)
-                        logger.info(f"Set section range: 0-{total_frames}")
-                    except Exception as e:
-                        logger.warning(f"Could not set section range: {e}")
-
-                    # Bind the camera to the section
-                    # Note: We bind to the actor binding; UE will use its camera component.
-                    bind_camera_to_cut_section(camera_cut_section, sequence, movie_scene, camera_binding)
-
-                except Exception as e:
-                    logger.warning(f"Failed to add camera cuts: {e}")
-                    traceback.print_exc()
-
-            # Write Transform Keys (always enabled)
-            if not actor_binding:
-                logger.warning("No actor binding was created")
-            else:
-                logger.info("Adding transform keys to actor binding...")
-                try:
-                    # 如果启用了camera_pitch_from_slope，保留pitch值
-                    camera_pitch_from_slope = bool(sequence_config.get("camera_pitch_from_slope", False))
-                    max_pitch_rate = float(sequence_config.get("max_pitch_rate_deg_per_sec", 20.0))
-                    sanitize_rotation_keys(transform_keys_cfg, force_zero_pitch_roll, max_yaw_rate_deg_per_sec, preserve_pitch=camera_pitch_from_slope, max_pitch_rate_deg_per_sec=max_pitch_rate)
-                    write_transform_keys(actor_binding, int(fps), int(total_frames), transform_keys_cfg, transform_key_interp)
-                except Exception as e:
-                    logger.warning(f"Failed to write transform keys: {e}")
-                    traceback.print_exc()
+            _write_transform_keys_to_binding(
+                actor_binding=actor_binding,
+                fps=fps,
+                total_frames=fixed_result.total_frames,
+                transform_keys_cfg=key_result.transform_keys,
+                transform_key_interp=transform_key_interp,
+                force_zero_pitch_roll=force_zero_pitch_roll,
+                max_yaw_rate_deg_per_sec=max_yaw_rate_deg_per_sec,
+                camera_pitch_from_slope=camera_pitch_from_slope,
+                max_pitch_rate=max_pitch_rate,
+            )
             
             save_asset(sequence)
 
@@ -570,7 +667,7 @@ def generate_all_sequences(
                 {
                     "name": sequence_name,
                     "path": asset_path,
-                    "seed": actual_seed,
+                    "seed": nav_result.actual_seed,
                 }
             )
             

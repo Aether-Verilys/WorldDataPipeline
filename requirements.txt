@@ -1,0 +1,4 @@
+psutil>=5.9.0
+ffmpeg-python>=0.2.0
+bce-python-sdk>=0.8.74
+bcecmd

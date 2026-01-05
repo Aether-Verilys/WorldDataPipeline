@@ -2,141 +2,18 @@ import os
 import json
 import random
 from datetime import datetime
+
 try:
     import unreal
 except ImportError:
     unreal = None
 
-
-def _distance_cm(a, b) -> float:
-    """Calculate Euclidean distance between two Vector points in cm."""
-    dx = a.x - b.x
-    dy = a.y - b.y
-    dz = a.z - b.z
-    return float((dx * dx + dy * dy + dz * dz) ** 0.5)
-
-
-def _project_to_nav(nav, world, point):
-    """Project a point onto NavMesh surface."""
-    if not unreal:
-        return point
-    
-    # Try classmethod approach first (UE 5.x)
-    try:
-        nav_cls = getattr(unreal, "NavigationSystemV1", None)
-        if nav_cls:
-            projected = nav_cls.project_point_to_navigation(
-                world, point, None, None, unreal.Vector(0, 0, 0)
-            )
-            if projected:
-                return projected
-    except Exception:
-        pass
-    
-    # Fallback to instance method
-    try:
-        for method_name in ["project_point_to_navigation", "k2_project_point_to_navigation"]:
-            fn = getattr(nav, method_name, None)
-            if callable(fn):
-                projected = fn(world, point)
-                if projected:
-                    return projected
-    except Exception:
-        pass
-    
-    return point
-
-
-def _find_path_points(nav, world, start, end):
-    """Find path between two points, returns empty list if no path exists."""
-    if not unreal:
-        return []
-    
-    # Try classmethod approach first (UE 5.x)
-    try:
-        nav_cls = getattr(unreal, "NavigationSystemV1", None)
-        if nav_cls:
-            nav_path = nav_cls.find_path_to_location_synchronously(world, start, end)
-            if nav_path and hasattr(nav_path, "path_points"):
-                pts = list(getattr(nav_path, "path_points"))
-                if pts:
-                    return pts
-    except Exception:
-        pass
-    
-    # Fallback to instance method
-    try:
-        for method_name in ["find_path_to_location_synchronously"]:
-            fn = getattr(nav, method_name, None)
-            if callable(fn):
-                nav_path = fn(world, start, end)
-                if nav_path:
-                    if hasattr(nav_path, "path_points"):
-                        pts = list(getattr(nav_path, "path_points"))
-                        if pts:
-                            return pts
-                    getter = getattr(nav_path, "get_path_points", None)
-                    if callable(getter):
-                        pts = list(getter())
-                        if pts:
-                            return pts
-    except Exception:
-        pass
-    
-    return []
-
-
-def _get_navmesh_bounds(world):
-    """Get the bounds of NavMeshBoundsVolume actors.
-    Returns (center, extent) as (Vector, Vector) or None if no bounds found.
-    """
-    if not unreal:
-        return None
-    
-    try:
-        actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
-        actors = actor_subsystem.get_all_level_actors()
-        navmesh_bounds_cls = getattr(unreal, "NavMeshBoundsVolume", None)
-        if not navmesh_bounds_cls:
-            return None
-        
-        bounds_actors = [a for a in actors if isinstance(a, navmesh_bounds_cls)]
-        if not bounds_actors:
-            return None
-        
-        bounds_actor = bounds_actors[0]
-        
-        # Try to get bounds from brush component
-        brush_comp = getattr(bounds_actor, "brush_component", None)
-        if brush_comp:
-            try:
-                bounds = getattr(brush_comp, "bounds", None)
-                if bounds:
-                    origin = getattr(bounds, "origin", None)
-                    box_extent = getattr(bounds, "box_extent", None)
-                    if origin and box_extent:
-                        return (origin, box_extent)
-            except Exception:
-                pass
-        
-        # Fallback: calculate from actor location and scale
-        try:
-            location = bounds_actor.get_actor_location()
-            scale = bounds_actor.get_actor_scale3d()
-            # Typical NavMeshBoundsVolume default size is 200x200x200 units
-            default_size = 200.0
-            extent = unreal.Vector(
-                default_size * scale.x,
-                default_size * scale.y,
-                default_size * scale.z
-            )
-            return (location, extent)
-        except Exception:
-            pass
-        
-        return None
-    except Exception:
-        return None
+from .nav_utils import (
+    distance_cm,
+    project_to_nav,
+    find_path_points,
+    get_navmesh_bounds,
+)
 
 
 def find_largest_connected_region(nav, world, map_name, cache_dir, sample_count=None, sample_density=None, k_nearest=8, force_recompute=False):
@@ -173,7 +50,7 @@ def find_largest_connected_region(nav, world, map_name, cache_dir, sample_count=
     
     # Auto-calculate sample_count from NavMesh area if not specified
     if sample_count is None:
-        bounds = _get_navmesh_bounds(world)
+        bounds = get_navmesh_bounds(world)
         if bounds:
             center, extent = bounds
             # Calculate area in cm² (XY plane)
@@ -209,7 +86,7 @@ def find_largest_connected_region(nav, world, map_name, cache_dir, sample_count=
     print(f"[NavMesh] Starting connectivity analysis (sample_count={sample_count}, k_nearest={k_nearest})...")
     
     # 1. Get NavMesh bounds and generate sample points
-    bounds = _get_navmesh_bounds(world)
+    bounds = get_navmesh_bounds(world)
     if not bounds:
         raise RuntimeError("No NavMeshBoundsVolume found in scene")
     
@@ -236,10 +113,10 @@ def find_largest_connected_region(nav, world, map_name, cache_dir, sample_count=
         )
         
         # Project to NavMesh
-        projected = _project_to_nav(nav, world, point)
+        projected = project_to_nav(nav, world, point)
         if projected:
             # Check if it's actually different from the input (successful projection)
-            dist = _distance_cm(point, projected)
+            dist = distance_cm(point, projected)
             if dist < extent.z * 2:  # Reasonable projection distance
                 samples.append(projected)
     
@@ -259,7 +136,7 @@ def find_largest_connected_region(nav, world, map_name, cache_dir, sample_count=
         distances = []
         for j in range(len(samples)):
             if i != j:
-                dist = _distance_cm(samples[i], samples[j])
+                dist = distance_cm(samples[i], samples[j])
                 distances.append((dist, j))
         
         distances.sort()
@@ -272,7 +149,7 @@ def find_largest_connected_region(nav, world, map_name, cache_dir, sample_count=
                 continue
             
             path_tests += 1
-            path = _find_path_points(nav, world, samples[i], samples[j])
+            path = find_path_points(nav, world, samples[i], samples[j])
             
             if path and len(path) > 0:
                 # Bidirectional edge (undirected graph)
@@ -371,7 +248,7 @@ def select_spawn_point_from_region(region_points, strategy="random", seed=None):
             sum(p.y for p in region_points) / len(region_points),
             sum(p.z for p in region_points) / len(region_points)
         )
-        spawn_point = min(region_points, key=lambda p: _distance_cm(p, center))
+        spawn_point = min(region_points, key=lambda p: distance_cm(p, center))
         print(f"[NavMesh] Selected center spawn point: ({spawn_point.x:.2f}, {spawn_point.y:.2f}, {spawn_point.z:.2f})")
     else:  # random
         if seed is not None:
@@ -383,13 +260,6 @@ def select_spawn_point_from_region(region_points, strategy="random", seed=None):
 
 
 def clear_cache(cache_dir, map_name=None):
-    """
-    Clear cached NavMesh connectivity data.
-    
-    Args:
-        cache_dir: Directory containing cache files
-        map_name: If provided, only clear cache for this map. If None, clear all.
-    """
     try:
         if map_name:
             cache_file = os.path.join(cache_dir, f"navmesh_connectivity_{map_name}.json")
@@ -408,3 +278,67 @@ def clear_cache(cache_dir, map_name=None):
             print(f"[NavMesh] Cache cleared")
     except Exception as e:
         print(f"[NavMesh] Error clearing cache: {e}")
+
+
+def get_spawn_point_with_connectivity(nav, world, map_path, cfg):
+    """
+    Get a spawn point using connectivity analysis if enabled, otherwise use legacy method.
+    
+    This is a higher-level function that combines connectivity analysis with fallback.
+    
+    Args:
+        nav: NavigationSystemV1 instance
+        world: World context
+        map_path: Map path for cache naming
+        cfg: Configuration dict with nav_roam settings
+        
+    Returns:
+        unreal.Vector: Selected spawn point
+    """
+    # Import nav_utils functions here to avoid circular dependency
+    try:
+        from .nav_utils import find_connected_navmesh_start_point
+    except ImportError:
+        raise RuntimeError("nav_utils module not available")
+    
+    use_connectivity_analysis = bool(cfg.get("use_connectivity_analysis", True))
+    connectivity_sample_count = cfg.get("connectivity_sample_count", None)
+    connectivity_sample_density = cfg.get("connectivity_sample_density", None)
+
+    if not use_connectivity_analysis:
+        print("[NavMesh] Connectivity analysis disabled in config")
+        return find_connected_navmesh_start_point(nav, world, max_attempts=10)
+
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        cache_dir = os.path.join(os.path.dirname(script_dir), "logs")
+
+        # Use map name for cache - each execution will overwrite previous cache
+        cache_name = "navmesh_connectivity"
+        if map_path and "/" in str(map_path):
+            cache_name = str(map_path).split("/")[-1]
+
+        sample_count_param = int(connectivity_sample_count) if connectivity_sample_count is not None else None
+        density_param = float(connectivity_sample_density) if connectivity_sample_density is not None else None
+
+        print(f"[NavMesh] Using connectivity analysis (cache={cache_name}, sample_count={sample_count_param or 'auto'}, density={density_param or 'default'})")
+        largest_region = find_largest_connected_region(
+            nav,
+            world,
+            cache_name,
+            cache_dir,
+            sample_count=sample_count_param,
+            sample_density=density_param,
+            k_nearest=8,
+            force_recompute=False,
+        )
+
+        seed_for_spawn = cfg.get("seed", None)
+        origin = select_spawn_point_from_region(largest_region, strategy="random", seed=seed_for_spawn)
+        print("[NavMesh] ✓ Selected spawn point from largest connected region")
+        return origin
+
+    except Exception as e:
+        print(f"[NavMesh] WARNING: Connectivity analysis failed: {e}")
+        print(f"[NavMesh] Falling back to legacy method...")
+        return find_connected_navmesh_start_point(nav, world, max_attempts=10)

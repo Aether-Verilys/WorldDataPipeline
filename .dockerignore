@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+
+# Git
+.git/
+.gitignore
+
+# OS/editor
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Outputs/artifacts
+output/
+ue_pipeline/output/
+ue_pipeline/jobs/
+ue_pipeline/logs/
+ue_pipeline/python/logs/
+ue_pipeline/python/__pycache__/
+ue_pipeline/__pycache__/
+
+# Unreal template / large assets (adjust if you need them in container)
+ue_template/
