@@ -16,13 +16,35 @@ RUN apt-get update \
         ca-certificates \
         curl \
         tzdata \
+        libatk1.0-0 \
         libnss3 \
         libnspr4 \
         ffmpeg \
         tini \
+        libx11-6 \
+        libxext6 \
+        libxrender1 \
+        libxi6 \
+        libxtst6 \
+        libgl1-mesa-glx \
+        libglu1-mesa \
+        libglib2.0-0 \
+        libfontconfig1 \
+        libfreetype6 \
+        libdbus-1-3 \
+        libasound2 \
+        libcups2 \
+        vulkan-tools \
+        libvulkan1 \
+        mesa-vulkan-drivers \
     && ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime \
     && echo ${TZ} > /etc/timezone \
     && rm -rf /var/lib/apt/lists/*
+
+# NVIDIA Vulkan ICD (if GPU nodes have NVIDIA drivers)
+RUN mkdir -p /usr/share/vulkan/icd.d && \
+    echo '{"file_format_version":"1.0.0","ICD":{"library_path":"libEGL_nvidia.so.0","api_version":"1.3.0"}}' \
+    > /usr/share/vulkan/icd.d/nvidia_icd.json
 
 # Python 3.11 (avoid Ubuntu PPA/network issues by using conda in base image)
 # NVIDIA pytorch images typically ship conda at /opt/conda.

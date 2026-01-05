@@ -47,6 +47,7 @@ spec:
                 - |
                   set -eu
 
+                  echo "=== BEGIN ==="
                   echo "=== env ==="
                   echo "PATH=$PATH"
 
@@ -56,16 +57,40 @@ spec:
 
                   echo "=== ue binary check ==="
                   UE_BIN=/usr/local/UnrealEngine/Engine/Binaries/Linux/UnrealEditor-Cmd
-                  ls -la /usr/local/UnrealEngine/Engine/Binaries/Linux || true
-                  ls -la "$UE_BIN" || true
-                  echo "=== ldd (diagnose missing libs) ==="
-                  command -v ldd && ldd "$UE_BIN" || true
+                  echo "UE_BIN=$UE_BIN"
+                  echo "CHECK_UE_BIN_EXIST"
+                  if [ ! -e "$UE_BIN" ]; then
+                    echo "UE_BIN_NOT_FOUND"
+                    ls -la /usr/local/UnrealEngine || true
+                    ls -la /usr/local/UnrealEngine/Engine || true
+                    ls -la /usr/local/UnrealEngine/Engine/Binaries || true
+                    ls -la /usr/local/UnrealEngine/Engine/Binaries/Linux || true
+                    exit 11
+                  fi
+                  echo "CHECK_UE_BIN_LS"
+                  ls -la "$UE_BIN"
+                  echo "CHECK_UE_BIN_LS_DONE"
+                  echo "=== run UnrealEditor-Cmd -help ==="
+                  # If UE cannot start, this will fail with a clear message in logs.
+                  "$UE_BIN" -help > /tmp/ue_help.txt 2>&1 || (echo "UE_FAILED"; cat /tmp/ue_help.txt; exit 12)
+                  echo "=== UnrealEditor-Cmd -help (first 80 lines) ==="
+                  sed -n '1,80p' /tmp/ue_help.txt
+                  echo "UE_OK"
 
-                  echo "=== run UnrealEditor-Cmd -help (first 80 lines) ==="
-                  "$UE_BIN" -help | sed -n '1,80p'
+                  echo "=== ldd (diagnose missing libs, timeout 30s) ==="
+                  if command -v ldd >/dev/null 2>&1; then
+                    if command -v timeout >/dev/null 2>&1; then
+                      timeout 30s ldd "$UE_BIN" | sed -n '1,200p' || true
+                    else
+                      ldd "$UE_BIN" | sed -n '1,200p' || true
+                    fi
+                  fi
+                  echo "LDD_DONE"
 
                   echo "=== app help ==="
                   python /app/app.py --help
+                  echo "APP_OK"
+                  echo "ALL_OK"
 
               volumeMounts:
                 # 只挂载允许的子目录，不挂 /mnt/pfs 根目录
