@@ -165,8 +165,6 @@ def main():
     
     script_dir = Path(__file__).parent
     worker = str(script_dir / 'python' / 'worker_create_sequence.py')
-
-    logger.header("UE Create LevelSequence Test")
     
     manifest = load_manifest(args.manifest_path)
     job_id, job_type = validate_manifest(manifest)

@@ -47,12 +47,22 @@ spec:
                   value: /app/ue_pipeline/config/linux_ue_config.json
 
               command:
-                - /bin/sh
+                - /bin/bash
                 - -c
                 - |
                   set -eu
 
                   echo "=== BEGIN ==="
+                  
+                  echo "=== Execute dev-linux.sh ==="
+                  if [ -f /app/dev-linux.sh ]; then
+                    source /app/dev-linux.sh
+                    echo "dev-linux.sh executed successfully"
+                  else
+                    echo "WARNING: dev-linux.sh not found"
+                  fi
+                  
+                  echo "=== AFTER dev-linux.sh ==="
                   echo "=== env ==="
                   echo "PATH=$PATH"
 
@@ -66,24 +76,6 @@ spec:
                   echo "=== python ==="
                   command -v python || true
                   python -V || true
-
-                  echo "=== vulkan/GPU check ==="
-                  if command -v vulkaninfo >/dev/null 2>&1; then
-                    echo "vulkaninfo found, checking GPU..."
-                    # Run vulkaninfo with timeout to avoid hanging
-                    if timeout 30s vulkaninfo --summary > /tmp/vulkan_info.txt 2>&1; then
-                      echo "=== Vulkan Info Summary ==="
-                      cat /tmp/vulkan_info.txt | head -100
-                      echo "VULKAN_OK"
-                    else
-                      echo "vulkaninfo failed or timeout"
-                      cat /tmp/vulkan_info.txt || true
-                      echo "VULKAN_FAILED"
-                    fi
-                  else
-                    echo "vulkaninfo not found - GPU rendering may not be available"
-                    echo "VULKAN_NOT_FOUND"
-                  fi
 
                   echo "=== ue binary check ==="
                   UE_BIN=/usr/local/UnrealEngine/Engine/Binaries/Linux/UnrealEditor-Cmd
@@ -154,12 +146,11 @@ spec:
                   fi
                   echo "LDD_DONE"
 
-                  echo "=== app help ==="
-                  python /app/app.py --help
-                  echo "APP_OK"
+                  echo "UE_TEST_OK"
                   echo "ALL_OK"
 
               volumeMounts:
+                # 只挂载允许的子目录，不挂 /mnt/pfs 根目录
                 - name: ue-engine
                   mountPath: /usr/local/UnrealEngine
                   readOnly: true

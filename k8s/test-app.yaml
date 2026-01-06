@@ -1,0 +1,119 @@
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: test-app-worlddatapipeline
+spec:
+  runPolicy:
+    schedulingPolicy:
+      priorityClass: normal
+      queue: default
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      restartPolicy: Never
+      template:
+        spec:
+          securityContext:
+            runAsUser: 2007
+            runAsGroup: 2007
+            fsGroup: 2007
+          imagePullSecrets:
+            - name: vast-secret
+          schedulerName: volcano
+          priorityClassName: normal
+
+          containers:
+            - name: pytorch
+              image: ccr-23gxup9u-vpc.cnc.bj.baidubce.com/model/worlddatapipeline:v1
+              imagePullPolicy: Always
+              securityContext:
+                capabilities:
+                  add: ["IPC_LOCK"]
+                allowPrivilegeEscalation: false
+              resources:
+                requests:
+                  cpu: "2"
+                  memory: "4Gi"
+                limits:
+                  cpu: "4"
+                  memory: "8Gi"
+
+              env:
+                - name: TZ
+                  value: Asia/Shanghai
+                - name: UE_SYSTEM_TYPE
+                  value: linux
+                - name: UE_CONFIG_PATH
+                  value: /app/ue_pipeline/config/linux_ue_config.json
+
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -eu
+
+                  echo "=== BEGIN APP TEST ==="
+                  
+                  echo "=== Execute dev-linux.sh ==="
+                  if [ -f /app/dev-linux.sh ]; then
+                    source /app/dev-linux.sh
+                    echo "dev-linux.sh executed successfully"
+                  else
+                    echo "WARNING: dev-linux.sh not found"
+                  fi
+                  
+                  echo "=== AFTER dev-linux.sh ==="
+                  echo "=== env ==="
+                  echo "PATH=$PATH"
+                  echo "UE_SYSTEM_TYPE=$UE_SYSTEM_TYPE"
+
+                  echo "=== user ==="
+                  id || true
+                  whoami || true
+
+                  echo "=== python ==="
+                  command -v python || true
+                  python -V || true
+
+                  echo "=== pip list ==="
+                  pip list || true
+
+                  echo "=== app.py location ==="
+                  ls -la /app/app.py || true
+
+                  echo "=== app.py help ==="
+                  python /app/app.py --help || true
+
+                  echo "=== config files check ==="
+                  ls -la /app/ue_pipeline/config/ || true
+
+                  echo "=== test bake help ==="
+                  python /app/app.py bake_navmesh --help || true
+
+                  echo "=== test export help ==="
+                  python /app/app.py export --help || true
+
+                  echo "=== test render help ==="
+                  python /app/app.py render --help || true
+
+                  echo "=== test create_sequence help ==="
+                  python /app/app.py create_sequence --help || true
+
+                  echo "=== check job directories ==="
+                  ls -la /app/ue_pipeline/jobs/ || true
+
+                  echo "=== check examples ==="
+                  ls -la /app/ue_pipeline/examples/ || true
+                  cat /app/ue_pipeline/examples/job_bake.json || true
+
+                  echo "APP_TEST_OK"
+                  echo "ALL_OK"
+
+              volumeMounts:
+                - name: devshm
+                  mountPath: /dev/shm
+
+          volumes:
+            - name: devshm
+              emptyDir:
+                medium: Memory

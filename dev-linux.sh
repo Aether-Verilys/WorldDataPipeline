@@ -25,11 +25,6 @@ echo "Setting environment variables..."
 export UE_SYSTEM_TYPE="linux"
 echo "  OK UE_SYSTEM_TYPE = linux"
 
-# 3. Change to ue_pipeline directory
-echo "Changing working directory..."
-cd "$UE_PIPELINE_DIR" || exit
-echo "  OK Current directory: $UE_PIPELINE_DIR"
-
 echo ""
 echo "========================================"
 echo "  Environment Ready!"
@@ -39,46 +34,46 @@ echo ""
 # Define shortcut functions
 ue-bake() {
     if [ $# -eq 0 ]; then
-        python3 app.py bake_navmesh --manifest examples/job_bake.json
+        python app.py bake_navmesh --manifest ue_pipeline/examples/job_bake.json
     elif [ "$1" = "--manifest" ]; then
-        python3 app.py bake_navmesh --manifest "$2"
+        python app.py bake_navmesh --manifest "$2"
     else
-        python3 app.py bake_navmesh --manifest "$1"
+        python app.py bake_navmesh --manifest "$1"
     fi
 }
 
 ue-sequence() {
     if [ $# -eq 0 ]; then
-        python3 app.py create_sequence --manifest examples/job_sequence_analysis.json
+        python app.py create_sequence --manifest ue_pipeline/examples/job_sequence.json
     elif [ "$1" = "--manifest" ]; then
-        python3 app.py create_sequence --manifest "$2"
+        python app.py create_sequence --manifest "$2"
     else
-        python3 app.py create_sequence --manifest "$1"
+        python app.py create_sequence --manifest "$1"
     fi
 }
 
 ue-render() {
     if [ $# -eq 0 ]; then
-        python3 app.py render --manifest examples/job_render.json
+        python app.py render --manifest ue_pipeline/examples/job_render.json
     elif [ "$1" = "--manifest" ]; then
-        python3 app.py render --manifest "$2"
+        python app.py render --manifest "$2"
     else
-        python3 app.py render --manifest "$1"
+        python app.py render --manifest "$1"
     fi
 }
 
 ue-export() {
     if [ $# -eq 0 ]; then
-        python3 app.py export --manifest examples/job_export.json
+        python app.py export --manifest ue_pipeline/examples/job_export.json
     elif [ "$1" = "--manifest" ]; then
-        python3 app.py export --manifest "$2"
+        python app.py export --manifest "$2"
     else
-        python3 app.py export --manifest "$1"
+        python app.py export --manifest "$1"
     fi
 }
 
 ue-upload() {
-    python3 app.py upload_scenes
+    python app.py upload_scenes
 }
 
 ue-help() {
@@ -92,13 +87,13 @@ ue-help() {
     echo "  ue-help       - Show this help"
     echo ""
     echo "Examples:"
-    echo "  ue-sequence                                   # Use default config"
-    echo "  ue-sequence examples/job_sequence_cameraman.json  # Specify config file"
-    echo "  ue-sequence --manifest examples/job_sequence_cameraman.json  # Also works"
+    echo "  ue-sequence                                            # Use default config"
+    echo "  ue-sequence ue_pipeline/examples/job_sequence.json     # Specify config file"
+    echo "  ue-sequence --manifest ue_pipeline/examples/job_sequence.json  # Also works"
     echo ""
     echo "Or use app.py directly:"
-    echo "  python3 app.py --help"
-    echo "  python3 app.py create_sequence --manifest examples/job_sequence_analysis.json"
+    echo "  python app.py --help"
+    echo "  python app.py create_sequence --manifest ue_pipeline/examples/job_sequence.json"
     echo ""
 }
 

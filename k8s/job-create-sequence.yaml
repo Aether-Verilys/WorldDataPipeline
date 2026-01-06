@@ -1,0 +1,129 @@
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: create-sequence-worlddatapipeline
+spec:
+  runPolicy:
+    schedulingPolicy:
+      priorityClass: normal
+      queue: default
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      restartPolicy: Never
+      template:
+        spec:
+          securityContext:
+            runAsUser: 2007
+            runAsGroup: 2007
+            fsGroup: 2007
+          imagePullSecrets:
+            - name: vast-secret
+          schedulerName: volcano
+          priorityClassName: normal
+
+          containers:
+            - name: pytorch
+              image: ccr-23gxup9u-vpc.cnc.bj.baidubce.com/model/worlddatapipeline:v1
+              imagePullPolicy: Always
+              securityContext:
+                capabilities:
+                  add: ["IPC_LOCK"]
+                allowPrivilegeEscalation: false
+              resources:
+                requests:
+                  cpu: "4"
+                  memory: "8Gi"
+                limits:
+                  cpu: "8"
+                  memory: "16Gi"
+
+              env:
+                - name: TZ
+                  value: Asia/Shanghai
+                - name: UE_SYSTEM_TYPE
+                  value: linux
+                - name: UE_CONFIG_PATH
+                  value: /app/ue_pipeline/config/linux_ue_config.json
+
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -eu
+
+                  echo "=== BEGIN CREATE SEQUENCE JOB ==="
+                  
+                  echo "=== Execute dev-linux.sh ==="
+                  if [ -f /app/dev-linux.sh ]; then
+                    source /app/dev-linux.sh
+                    echo "dev-linux.sh executed successfully"
+                  else
+                    echo "WARNING: dev-linux.sh not found"
+                  fi
+                  
+                  echo "=== Environment Info ==="
+                  echo "User: $(whoami)"
+                  echo "UE_SYSTEM_TYPE: $UE_SYSTEM_TYPE"
+                  echo "UE_CONFIG_PATH: $UE_CONFIG_PATH"
+                  echo "Working Directory: $(pwd)"
+                  
+                  echo "=== SDL Configuration (headless mode) ==="
+                  export SDL_VIDEODRIVER=dummy
+                  export SDL_AUDIODRIVER=dummy
+                  export XDG_RUNTIME_DIR=/tmp/xdg-runtime
+                  mkdir -p "$XDG_RUNTIME_DIR" || true
+                  chmod 700 "$XDG_RUNTIME_DIR" || true
+                  export DISPLAY=
+                  export WAYLAND_DISPLAY=
+
+                  echo "=== Check job manifest ==="
+                  JOB_MANIFEST="/app/ue_pipeline/examples/job_sequence.json"
+                  if [ ! -f "$JOB_MANIFEST" ]; then
+                    echo "ERROR: Job manifest not found: $JOB_MANIFEST"
+                    exit 1
+                  fi
+                  echo "Job manifest found: $JOB_MANIFEST"
+                  cat "$JOB_MANIFEST"
+
+                  echo "=== Create job in inbox ==="
+                  JOB_ID="job-create-seq-$(date +%Y%m%d-%H%M%S)"
+                  INBOX_DIR="/app/ue_pipeline/jobs/inbox"
+                  mkdir -p "$INBOX_DIR"
+                  cp "$JOB_MANIFEST" "$INBOX_DIR/${JOB_ID}.json"
+                  echo "Job submitted: $INBOX_DIR/${JOB_ID}.json"
+
+                  echo "=== Run create_sequence command ==="
+                  cd /app
+                  python app.py create_sequence --manifest "$INBOX_DIR/${JOB_ID}.json"
+                  
+                  EXIT_CODE=$?
+                  if [ $EXIT_CODE -eq 0 ]; then
+                    echo "=== CREATE SEQUENCE SUCCESS ==="
+                  else
+                    echo "=== CREATE SEQUENCE FAILED (exit code: $EXIT_CODE) ==="
+                    exit $EXIT_CODE
+                  fi
+
+                  echo "=== Check results ==="
+                  ls -la /app/ue_pipeline/jobs/completed/ || true
+                  ls -la /app/ue_pipeline/jobs/failed/ || true
+                  
+                  echo "JOB_COMPLETE"
+                  echo "ALL_OK"
+
+              volumeMounts:
+                - name: ue-engine
+                  mountPath: /usr/local/UnrealEngine
+                  readOnly: true
+                - name: devshm
+                  mountPath: /dev/shm
+
+          volumes:
+            - name: ue-engine
+              hostPath:
+                path: /mnt/pfs/users/wuyibo/UE5.7
+                type: Directory
+            - name: devshm
+              emptyDir:
+                medium: Memory
