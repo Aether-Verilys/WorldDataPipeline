@@ -1,0 +1,13 @@
+# Force LF line endings for shell scripts (prevent CRLF issues in Linux containers)
+*.sh text eol=lf
+
+# Force LF for YAML/JSON configs
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+
+# Force LF for Python files
+*.py text eol=lf
+
+# Default to auto for text files
+* text=auto

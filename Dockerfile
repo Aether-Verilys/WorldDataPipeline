@@ -17,6 +17,7 @@ RUN apt-get update \
         curl \
         tzdata \
         xdg-user-dirs \
+        dos2unix \
         libatk1.0-0 \
         libatk-bridge2.0-0 \
         libatspi2.0-0 \
@@ -83,6 +84,8 @@ RUN python -m pip install --no-cache-dir -U pip \
 
 # Copy project code
 COPY . /app
+
+RUN find /app -type f -name "*.sh" -exec dos2unix {} \;
 
 # UnrealEditor-Cmd refuses to run as root; run as an unprivileged user.
 # Use a fixed UID/GID (2007) so it also plays nicely with K8s securityContext.

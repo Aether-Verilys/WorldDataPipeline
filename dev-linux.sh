@@ -97,7 +97,6 @@ ue-help() {
     echo ""
 }
 
-# Show help
 ue-help
 
 echo ""
