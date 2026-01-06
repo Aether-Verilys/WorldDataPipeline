@@ -176,15 +176,6 @@ def main():
     # Merge complete ue_config back into manifest for worker
     manifest['ue_config'] = ue_config
     
-    logger.info("========================================")
-    logger.info("UE_CONFIG MERGE VERIFICATION")
-    logger.info("========================================")
-    logger.info(f"ue_config keys in manifest: {list(manifest.get('ue_config', {}).keys())}")
-    logger.info(f"  editor_path: {ue_config.get('editor_path', 'NOT SET')}")
-    logger.info(f"  project_path: {ue_config.get('project_path', 'NOT SET')}")
-    logger.info(f"  output_base_dir: {ue_config.get('output_base_dir', 'NOT SET')}")
-    logger.info("========================================")
-    
     # Save updated manifest with merged ue_config
     try:
         with open(args.manifest_path, 'w', encoding='utf-8') as f:

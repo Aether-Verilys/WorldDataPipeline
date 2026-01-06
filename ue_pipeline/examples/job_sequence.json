@@ -42,7 +42,7 @@
   "ue_config": {
     "editor_path": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
     "project_path": "D:/UE_Projects/WorldProject/WorldProject.uproject",
-    "output_base_dir": "D:/WorldDataPipeline/output",
+    "output_base_dir": "default",
     "exclude_map_names": [
       "Overview"
     ],

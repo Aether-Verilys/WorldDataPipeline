@@ -224,7 +224,6 @@ class SceneRegistry:
             conn.execute("""
                 INSERT INTO scenes (scene_name, bos_baked_path, local_path, content_hash, 
                                    bos_exists, bos_last_verified, downloaded_at, last_updated, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(scene_name) DO UPDATE SET
                     bos_baked_path = excluded.bos_baked_path,
                     local_path = excluded.local_path,
@@ -240,7 +239,6 @@ class SceneRegistry:
             return True
     
     def get_scene(self, scene_name: str) -> Optional[Dict]:
-        """获取场景信息"""
         with self._get_connection() as conn:
             row = conn.execute(
                 "SELECT * FROM scenes WHERE scene_name = ?", 
@@ -254,16 +252,6 @@ class SceneRegistry:
             return None
     
     def is_scene_downloaded(self, scene_name: str, expected_hash: Optional[str] = None) -> bool:
-        """
-        检查场景是否已下载（且哈希匹配）
-        
-        Args:
-            scene_name: 场景名称
-            expected_hash: 期望的哈希值，如果提供则必须匹配
-        
-        Returns:
-            是否已下载（且哈希匹配）
-        """
         scene = self.get_scene(scene_name)
         if not scene or not scene['downloaded_at']:
             return False
@@ -274,7 +262,6 @@ class SceneRegistry:
         return True
     
     def update_scene_stats(self, scene_name: str, file_count: int, total_size_bytes: int):
-        """更新场景统计信息"""
         with self._get_connection() as conn:
             conn.execute("""
                 UPDATE scenes 
@@ -284,7 +271,6 @@ class SceneRegistry:
             conn.commit()
     
     def list_scenes(self, downloaded_only: bool = False) -> List[Dict]:
-        """列出所有场景"""
         with self._get_connection() as conn:
             query = "SELECT * FROM scenes"
             if downloaded_only:
@@ -301,15 +287,6 @@ class SceneRegistry:
             return results
     
     def delete_scene(self, scene_name: str) -> bool:
-        """
-        删除场景及其关联的地图和序列
-        
-        Args:
-            scene_name: 场景名称
-        
-        Returns:
-            是否成功删除
-        """
         with self._get_connection() as conn:
             # 删除关联的序列
             conn.execute("DELETE FROM sequences WHERE scene_name = ?", (scene_name,))

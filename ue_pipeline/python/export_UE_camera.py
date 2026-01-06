@@ -297,7 +297,13 @@ def export_camera_from_manifest(manifest: dict) -> dict:
         # 从manifest读取ue_config
         ue_config = manifest.get("ue_config", {})
         output_base = ue_config.get("output_base_dir", "output")
-        if not output_base or output_base == "output":
+        
+        # Handle "default" value - use project root's output folder
+        if output_base == "default":
+            script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            output_base = os.path.join(script_dir, "output")
+            logger.info(f"[ExportCamera] Using default output directory: {output_base}")
+        elif not output_base or output_base == "output":
             logger.warning("[ExportCamera] No output_base_dir in manifest.ue_config, using default 'output'")
         
         # 从sequence路径提取场景名（倒数第三个部分）
