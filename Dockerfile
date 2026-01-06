@@ -85,12 +85,12 @@ RUN python -m pip install --no-cache-dir -U pip \
 COPY . /app
 
 # UnrealEditor-Cmd refuses to run as root; run as an unprivileged user.
-# Use a fixed UID/GID (1000) so it also plays nicely with K8s securityContext.
-RUN groupadd -g 1000 appuser \
-    && useradd -m -u 1000 -g 1000 -s /bin/bash appuser \
-    && chown -R 1000:1000 /app
+# Use a fixed UID/GID (2007) so it also plays nicely with K8s securityContext.
+RUN groupadd -g 2007 appuser \
+    && useradd -m -u 2007 -g 2007 -s /bin/bash appuser \
+    && chown -R 2007:2007 /app
 
-USER 1000:1000
+USER 2007:2007
 
 EXPOSE 5000
 

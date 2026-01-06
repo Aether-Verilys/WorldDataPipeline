@@ -1,7 +1,7 @@
 {
   "job_type": "create_sequence",
   "job_id": "job-create-seq-001",
-  "map": "/Game/SecretBase/Map/SecretBase",
+  "map": "/Game/LevelPrototyping/Lvl_FirstPerson",
   "sequence_config": {
     "output_dir": "",
     "sequence_count": 2,
