@@ -25,9 +25,7 @@
       "interpolation": "linear",
       "project_to_nav": true,
       "z_offset_cm": 170.0,
-      "_comment_connectivity": "NavMesh connectivity analysis settings",
       "use_connectivity_analysis": true,
-      "_comment_sample": "Use 'connectivity_sample_count' for fixed count OR 'connectivity_sample_density' for area-based auto-calculation",
       "connectivity_sample_density": 1.0
     },
     "force_zero_pitch_roll": true,
@@ -49,22 +47,13 @@
       "Overview"
     ],
     "scenes": {
-      "CanyonScans": {
-        "maps": [
-          {
-            "name": "Canyon_DemoScene",
-            "path": "/Game/CanyonScans/Maps/Canyon_DemoScene",
-            "navmesh_baked": true,
-            "low_mesh": false
-          }
-        ]
-      },
       "LevelPrototyping": {
         "maps": [
           {
             "name": "Lvl_FirstPerson",
             "path": "/Game/LevelPrototyping/Lvl_FirstPerson",
-            "low_mesh": false
+            "low_mesh": false,
+            "bake_navmesh": true
           }
         ]
       }

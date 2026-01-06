@@ -45,6 +45,13 @@ class BosSceneDownloader:
         if ue_config_path and not self.local_content_path:
             ue_config = self.load_config(ue_config_path)
             project_path = ue_config.get('project_path')
+            
+            # Handle "default" value - use ue_template project
+            if project_path == "default":
+                script_dir = Path(__file__).parent.parent
+                project_path = str(script_dir / "ue_template" / "project" / "WorldData.uproject")
+                print(f"✓ 使用默认项目路径: {project_path}")
+            
             if project_path:
                 # 从.uproject路径推导Content目录
                 project_dir = Path(project_path).parent
@@ -59,6 +66,13 @@ class BosSceneDownloader:
             if default_ue_config.exists():
                 ue_config = self.load_config(str(default_ue_config))
                 project_path = ue_config.get('project_path')
+                
+                # Handle "default" value - use ue_template project
+                if project_path == "default":
+                    script_dir = Path(__file__).parent.parent
+                    project_path = str(script_dir / "ue_template" / "project" / "WorldData.uproject")
+                    print(f"✓ 使用默认项目路径: {project_path}")
+                
                 if project_path:
                     project_dir = Path(project_path).parent
                     content_dir = project_dir / 'Content'

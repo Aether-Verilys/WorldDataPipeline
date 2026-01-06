@@ -68,6 +68,12 @@ def get_ue_config(manifest: dict) -> tuple[str, str]:
         logger.error("Missing 'project_path' in ue_config")
         sys.exit(1)
     
+    # Handle "default" value - use ue_template project
+    if project == "default":
+        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        project = os.path.join(script_dir, "ue_template", "project", "WorldData.uproject")
+        logger.info(f"Using default project: {project}")
+    
     return ue_editor, project
 
 
@@ -102,9 +108,11 @@ def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str, jo
         
         os.environ['UE_NAVMESH_MANIFEST'] = temp_manifest_path
         
+        abs_project = os.path.abspath(project)
+        
         ue_args = [
             ue_editor,
-            project,
+            abs_project,
             f'-ExecutePythonScript={abs_worker}',
             '-RenderOffscreen',
             '-ResX=1920',

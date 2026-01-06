@@ -122,31 +122,25 @@ def get_navmesh_bounds(world) -> tuple:
         bounds_actor = bounds_actors[0]
         print(f"[WorkerCreateSequence] Using NavMeshBoundsVolume: {bounds_actor.get_name()}")
 
-        brush_comp = getattr(bounds_actor, "brush_component", None)
-        if brush_comp:
-            try:
-                bounds_box = brush_comp.bounds
-                if bounds_box:
-                    origin = bounds_box.origin
-                    extent = bounds_box.box_extent
-                    print(f"[WorkerCreateSequence] ✓ NavMesh bounds (from BrushComponent.Bounds): center=({origin.x:.2f}, {origin.y:.2f}, {origin.z:.2f}), extent=({extent.x:.2f}, {extent.y:.2f}, {extent.z:.2f})")
-                    return (origin, extent)
-            except Exception as e:
-                print(f"[WorkerCreateSequence]   BrushComponent.Bounds failed: {e}")
-
+        # NavMeshBoundsVolume 的大小由中心位置和缩放决定
+        # 默认基础 extent 是 100cm，实际 extent = scale * 100
+        # 总大小 = extent * 2
+        # 例如: scale=(5,5,10) -> extent=(500,500,1000) -> 总大小=1000x1000x2000 cm
         try:
             location = bounds_actor.get_actor_location()
             scale = bounds_actor.get_actor_scale3d()
-            base_extent = 200.0
+            # NavMeshBoundsVolume 默认基础 extent = 100cm
+            default_extent = 100.0
             extent = unreal.Vector(
-                scale.x * base_extent,
-                scale.y * base_extent,
-                scale.z * base_extent,
+                scale.x * default_extent,
+                scale.y * default_extent,
+                scale.z * default_extent,
             )
-            print(f"[WorkerCreateSequence] ✓ NavMesh bounds (from Actor transform): center=({location.x:.2f}, {location.y:.2f}, {location.z:.2f}), extent=({extent.x:.2f}, {extent.y:.2f}, {extent.z:.2f})")
+            print(f"[WorkerCreateSequence] ✓ NavMesh bounds: center=({location.x:.2f}, {location.y:.2f}, {location.z:.2f}), scale=({scale.x:.2f}, {scale.y:.2f}, {scale.z:.2f})")
+            print(f"[WorkerCreateSequence]   Extent: ({extent.x:.2f}, {extent.y:.2f}, {extent.z:.2f}) cm, Size: ({extent.x*2:.2f}, {extent.y*2:.2f}, {extent.z*2:.2f}) cm")
             return (location, extent)
         except Exception as e:
-            print(f"[WorkerCreateSequence]   Actor transform failed: {e}")
+            print(f"[WorkerCreateSequence]   Failed to get NavMesh bounds: {e}")
 
         return None
     except Exception as e:

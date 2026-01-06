@@ -1,10 +1,6 @@
 {
   "job_id": "bake_navmesh_auto_001",
   "job_type": "bake_navmesh",
-  "ue_config": {
-    "editor_path": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
-    "project_path": "D:/UE_Projects/WorldProject/WorldProject.uproject"
-  },
   "navmesh_config": {
     "auto_scale": true,
     "scale_margin": 1.2,

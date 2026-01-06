@@ -16,7 +16,15 @@ RUN apt-get update \
         ca-certificates \
         curl \
         tzdata \
+        xdg-user-dirs \
         libatk1.0-0 \
+        libatk-bridge2.0-0 \
+        libatspi2.0-0 \
+        libgtk-3-0 \
+        libgdk-pixbuf2.0-0 \
+        libpango-1.0-0 \
+        libpangocairo-1.0-0 \
+        libcairo2 \
         libnss3 \
         libnspr4 \
         ffmpeg \
@@ -26,14 +34,27 @@ RUN apt-get update \
         libxrender1 \
         libxi6 \
         libxtst6 \
+        libxcomposite1 \
+        libxcursor1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxrandr2 \
+        libxss1 \
+        libxkbcommon0 \
+        libxkbcommon-x11-0 \
+        libxcb1 \
         libgl1-mesa-glx \
         libglu1-mesa \
+        libdrm2 \
+        libgbm1 \
+        libwayland-client0 \
         libglib2.0-0 \
         libfontconfig1 \
         libfreetype6 \
         libdbus-1-3 \
         libasound2 \
         libcups2 \
+        libsdl2-2.0-0 \
         vulkan-tools \
         libvulkan1 \
         mesa-vulkan-drivers \
@@ -62,6 +83,14 @@ RUN python -m pip install --no-cache-dir -U pip \
 
 # Copy project code
 COPY . /app
+
+# UnrealEditor-Cmd refuses to run as root; run as an unprivileged user.
+# Use a fixed UID/GID (1000) so it also plays nicely with K8s securityContext.
+RUN groupadd -g 1000 appuser \
+    && useradd -m -u 1000 -g 1000 -s /bin/bash appuser \
+    && chown -R 1000:1000 /app
+
+USER 1000:1000
 
 EXPOSE 5000
 

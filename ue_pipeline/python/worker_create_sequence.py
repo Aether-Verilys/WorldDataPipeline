@@ -788,6 +788,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     ue_config = manifest.get("ue_config", {})
     
     logger.info("========================================")
+    logger.info("MANIFEST UE_CONFIG VERIFICATION")
+    logger.info("========================================")
+    logger.info(f"ue_config present in manifest: {bool(ue_config)}")
+    if ue_config:
+        logger.info(f"  editor_path: {ue_config.get('editor_path', 'NOT SET')}")
+        logger.info(f"  project_path: {ue_config.get('project_path', 'NOT SET')}")
+        logger.info(f"  output_base_dir: {ue_config.get('output_base_dir', 'NOT SET')}")
+        logger.info(f"  scenes: {bool(ue_config.get('scenes'))}")
+    else:
+        logger.warning("ue_config is MISSING or EMPTY in manifest!")
+    logger.info("========================================")
     logger.info("CAMERA EXPORT CONFIGURATION")
     logger.info("========================================")
     if camera_export_cfg:
@@ -795,7 +806,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         logger.info(f"Binding camera: {camera_export_cfg.get('binding_camera', 'N/A')}")
     else:
         logger.info("Camera export config: NOT FOUND")
-    logger.info(f"UE Config has output_base_dir: {ue_config.get('output_base_dir', 'NOT SET')}")
     logger.info("========================================")
 
     # 如果配置中没有指定 output_dir 或为空，则从 map 路径自动推导

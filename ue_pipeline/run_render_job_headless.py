@@ -87,10 +87,22 @@ def get_ue_config(manifest: dict) -> tuple[str, str, str]:
         logger.error("Missing 'project_path' in ue_config")
         sys.exit(1)
     
+    # Handle "default" value - use ue_template project
+    if project == "default":
+        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        project = os.path.join(script_dir, "ue_template", "project", "WorldData.uproject")
+        logger.info(f"Using default project: {project}")
+    
     output_base_dir = ue_config.get('output_base_dir', '')
     if not output_base_dir:
         logger.error("Missing 'output_base_dir' in ue_config")
         sys.exit(1)
+    
+    # Handle "default" value - use project directory's output folder
+    if output_base_dir == "default":
+        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        output_base_dir = os.path.join(script_dir, "output")
+        logger.info(f"Using default output directory: {output_base_dir}")
     
     return ue_editor, project, output_base_dir
 
@@ -404,10 +416,12 @@ def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str, jo
         # Set manifest path as environment variable for Python script to read
         os.environ['UE_RENDER_MANIFEST'] = temp_manifest_path
         
+        abs_project = os.path.abspath(project)
+        
         # Build UE command-line arguments
         ue_args = [
             ue_editor,
-            project,
+            abs_project,
             f'-ExecutePythonScript={abs_worker}',
             '-RenderOffscreen',
             '-ResX=1920',

@@ -77,7 +77,19 @@ def extract_config_data(config: dict, framerate: int):
         ue_cfg = config.get('ue_config', {})
 
         base_output_path = rendering_cfg.get('output_path') or ue_cfg.get('output_base_dir')
+        
+        # Handle "default" value - use project directory's output folder
+        if base_output_path == "default":
+            script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            base_output_path = os.path.join(script_dir, "output")
+        
         project_path = ue_cfg.get('project_path')
+        
+        # Handle "default" value - use ue_template project
+        if project_path == "default":
+            script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            project_path = os.path.join(script_dir, "ue_template", "project", "WorldData.uproject")
+        
         map_path = config['map']
         sequence_path = config['sequence']
         

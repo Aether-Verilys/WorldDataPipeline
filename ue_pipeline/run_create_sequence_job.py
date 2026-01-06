@@ -83,6 +83,12 @@ def get_ue_config(manifest: dict) -> tuple[str, str, dict]:
         logger.error("Missing 'project_path' in ue_config")
         sys.exit(1)
     
+    # Handle "default" value - use ue_template project
+    if project == "default":
+        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        project = os.path.join(script_dir, "ue_template", "project", "WorldData.uproject")
+        logger.info(f"Using default project: {project}")
+    
     return ue_editor, project, ue_config
 
 
@@ -103,13 +109,14 @@ def validate_paths(ue_editor: str, project: str, worker: str):
 def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str) -> int:
     abs_manifest_path = os.path.abspath(manifest_path)
     abs_worker = os.path.abspath(worker)
+    abs_project = os.path.abspath(project)
     
     # UE-CMD mode: Use -ExecutePythonScript with manifest passed as environment variable
     os.environ['UE_MANIFEST_PATH'] = abs_manifest_path
     
     ue_args = [
         ue_editor,
-        project,
+        abs_project,
         f'-ExecutePythonScript={abs_worker}',
         '-unattended',
         '-nopause',
@@ -169,11 +176,20 @@ def main():
     # Merge complete ue_config back into manifest for worker
     manifest['ue_config'] = ue_config
     
+    logger.info("========================================")
+    logger.info("UE_CONFIG MERGE VERIFICATION")
+    logger.info("========================================")
+    logger.info(f"ue_config keys in manifest: {list(manifest.get('ue_config', {}).keys())}")
+    logger.info(f"  editor_path: {ue_config.get('editor_path', 'NOT SET')}")
+    logger.info(f"  project_path: {ue_config.get('project_path', 'NOT SET')}")
+    logger.info(f"  output_base_dir: {ue_config.get('output_base_dir', 'NOT SET')}")
+    logger.info("========================================")
+    
     # Save updated manifest with merged ue_config
     try:
         with open(args.manifest_path, 'w', encoding='utf-8') as f:
             json.dump(manifest, f, indent=2, ensure_ascii=False)
-        logger.info(f"Updated manifest with merged ue_config (output_base_dir: {ue_config.get('output_base_dir', 'N/A')})")
+        logger.info(f"Manifest file updated: {args.manifest_path}")
     except Exception as e:
         logger.warning(f"Failed to update manifest file: {e}")
     

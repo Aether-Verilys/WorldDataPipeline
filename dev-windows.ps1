@@ -25,11 +25,6 @@ Write-Host "Setting environment variables..." -ForegroundColor Yellow
 $env:UE_SYSTEM_TYPE = "windows"
 Write-Host "  OK UE_SYSTEM_TYPE = windows" -ForegroundColor Green
 
-# 3. Change to ue_pipeline directory
-Write-Host "Changing working directory..." -ForegroundColor Yellow
-Set-Location $UE_PIPELINE_DIR
-Write-Host "  OK Current directory: $UE_PIPELINE_DIR" -ForegroundColor Green
-
 Write-Host ""
 Write-Host "  Environment Ready!" -ForegroundColor Green
 Write-Host ""
@@ -37,19 +32,17 @@ Write-Host ""
 # Define shortcut functions
 function ue-bake {
     if ($args.Count -eq 0) {
-        python app.py bake_navmesh --manifest examples/job_bake.json
+        python app.py bake_navmesh --manifest ue_pipeline/examples/job_bake.json
     } elseif ($args[0] -eq "--manifest") {
-        # Remove --manifest flag, app.py will add it
         python app.py bake_navmesh --manifest $args[1]
     } else {
-        # Assume it's a path, add --manifest
         python app.py bake_navmesh --manifest $args[0]
     }
 }
 
 function ue-sequence {
     if ($args.Count -eq 0) {
-        python app.py create_sequence --manifest examples/job_sequence_analysis.json
+        python app.py create_sequence --manifest ue_pipeline/examples/job_sequence.json
     } elseif ($args[0] -eq "--manifest") {
         python app.py create_sequence --manifest $args[1]
     } else {
@@ -59,7 +52,7 @@ function ue-sequence {
 
 function ue-render {
     if ($args.Count -eq 0) {
-        python app.py render --manifest examples/job_render.json
+        python app.py render --manifest ue_pipeline/examples/job_render.json
     } elseif ($args[0] -eq "--manifest") {
         python app.py render --manifest $args[1]
     } else {
@@ -69,7 +62,7 @@ function ue-render {
 
 function ue-export {
     if ($args.Count -eq 0) {
-        python app.py export --manifest examples/job_export.json
+        python app.py export --manifest ue_pipeline/examples/job_export.json
     } elseif ($args[0] -eq "--manifest") {
         python app.py export --manifest $args[1]
     } else {
@@ -92,13 +85,13 @@ function ue-help {
     Write-Host "  ue-help       - Show this help" -ForegroundColor White
     Write-Host ""
     Write-Host "Examples:" -ForegroundColor Yellow
-    Write-Host "  ue-sequence                                   # Use default config" -ForegroundColor Gray
-    Write-Host "  ue-sequence examples/job_sequence_cameraman.json  # Specify config file" -ForegroundColor Gray
-    Write-Host "  ue-sequence --manifest examples/job_sequence_cameraman.json  # Also works" -ForegroundColor Gray
+    Write-Host "  ue-sequence                                            # Use default config" -ForegroundColor Gray
+    Write-Host "  ue-sequence ue_pipeline/examples/job_sequence.json     # Specify config file" -ForegroundColor Gray
+    Write-Host "  ue-sequence --manifest ue_pipeline/examples/job_sequence.json  # Also works" -ForegroundColor Gray
     Write-Host ""
     Write-Host "Or use app.py directly:" -ForegroundColor Yellow
     Write-Host "  python app.py --help" -ForegroundColor Gray
-    Write-Host "  python app.py create_sequence --manifest examples/job_sequence_analysis.json" -ForegroundColor Gray
+    Write-Host "  python app.py create_sequence --manifest ue_pipeline/examples/job_sequence.json" -ForegroundColor Gray
     Write-Host ""
 }
 

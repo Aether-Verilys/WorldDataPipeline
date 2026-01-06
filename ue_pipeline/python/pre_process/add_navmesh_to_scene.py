@@ -855,16 +855,14 @@ class NavMeshManager:
         if not bounds_extent:
             return None
         
-        # NavMeshBoundsVolume默认的BrushComponent extent是 (100, 100, 100) cm
-        # 当scale=1.0时，覆盖范围是 200x200x200 cm (extent*2)
-        # 所以：required_scale = (scene_extent * 2 * margin) / 200
-        # 简化：required_scale = (scene_extent * margin) / 100
-        default_brush_extent = 100.0  # NavMeshBoundsVolume default brush extent in cm
+        # NavMeshBoundsVolume 默认基础 extent = 100cm
+        # 实际 extent = scale * 100, 总大小 = extent * 2
+        default_extent = 100.0 
         
         # Calculate raw scale before constraints
-        raw_scale_x = (bounds_extent.x * margin) / default_brush_extent
-        raw_scale_y = (bounds_extent.y * margin) / default_brush_extent
-        raw_scale_z = (bounds_extent.z * margin) / default_brush_extent
+        raw_scale_x = (bounds_extent.x * margin) / default_extent
+        raw_scale_y = (bounds_extent.y * margin) / default_extent
+        raw_scale_z = (bounds_extent.z * margin) / default_extent
         
         unreal.log(f"Scene extent (cm): X={bounds_extent.x:.1f}, Y={bounds_extent.y:.1f}, Z={bounds_extent.z:.1f}")
         unreal.log(f"Raw calculated scale (before constraints): X={raw_scale_x:.2f}, Y={raw_scale_y:.2f}, Z={raw_scale_z:.2f}")

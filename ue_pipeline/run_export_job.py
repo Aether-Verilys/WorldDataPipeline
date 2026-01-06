@@ -71,6 +71,12 @@ def main():
         ue_config = manifest.get('ue_config', {})
         ue_editor = ue_config.get('editor_path', ue_config_global.get('editor_path'))
         project = ue_config.get('project_path', ue_config_global.get('project_path'))
+        
+        # Handle "default" value - use ue_template project
+        if project == "default":
+            script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            project = os.path.join(script_dir, "ue_template", "project", "WorldData.uproject")
+            logger.info(f"Using default project: {project}")
 
         # Merge ue_config into manifest if not present
         if not manifest.get('ue_config'):
@@ -117,13 +123,14 @@ def main():
 
     # Resolve absolute path for manifest
     abs_manifest_path = os.path.abspath(manifest_path)
+    abs_project = os.path.abspath(project)
 
     # Pass manifest path via environment variable (for headless mode)
     os.environ['UE_MANIFEST_PATH'] = abs_manifest_path
 
     # Build UE launch arguments (Headless mode)
     ue_args = [
-        str(project),
+        abs_project,
         f'-ExecutePythonScript={worker_export}',
         '-unattended',
         '-nopause',

@@ -1,7 +1,7 @@
 {
   "editor_path": "/mnt/pfs/users/wuyibo/UE5.7/Engine/Binaries/Linux/UnrealEditor-Cmd",
-  "project_path": "/mnt/pfs/users/wuyibo/WorldDataPipeline/ue_template/project/WorldData.uproject",
-  "output_base_dir": "/mnt/pfs/users/wuyibo/WorldDataPipeline/output",
+  "project_path": "default",
+  "output_base_dir": "default",
   "exclude_map_names": [
     "Overview"
   ],

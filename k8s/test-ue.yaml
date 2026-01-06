@@ -13,6 +13,10 @@ spec:
       restartPolicy: Never
       template:
         spec:
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
           imagePullSecrets:
             - name: vast-secret
           schedulerName: volcano
@@ -25,6 +29,7 @@ spec:
               securityContext:
                 capabilities:
                   add: ["IPC_LOCK"]
+                allowPrivilegeEscalation: false
               resources:
                 requests:
                   cpu: "2"
@@ -51,6 +56,13 @@ spec:
                   echo "=== env ==="
                   echo "PATH=$PATH"
 
+                  echo "=== user ==="
+                  id || true
+                  whoami || true
+
+                  echo "=== timeout ==="
+                  command -v timeout || echo "NO_TIMEOUT"
+
                   echo "=== python ==="
                   command -v python || true
                   python -V || true
@@ -71,8 +83,45 @@ spec:
                   ls -la "$UE_BIN"
                   echo "CHECK_UE_BIN_LS_DONE"
                   echo "=== run UnrealEditor-Cmd -help ==="
+                  # Headless containers often hang during SDL init unless we force dummy/offscreen drivers.
+                  export SDL_VIDEODRIVER=dummy
+                  export SDL_AUDIODRIVER=dummy
+                  export XDG_RUNTIME_DIR=/tmp/xdg-runtime
+                  mkdir -p "$XDG_RUNTIME_DIR" || true
+                  chmod 700 "$XDG_RUNTIME_DIR" || true
+
+                  echo "SDL_VIDEODRIVER=$SDL_VIDEODRIVER"
+                  echo "SDL_AUDIODRIVER=$SDL_AUDIODRIVER"
+                  echo "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
+
+                  # Avoid accidental use of real display backends in headless pods.
+                  export DISPLAY=
+                  export WAYLAND_DISPLAY=
+
                   # If UE cannot start, this will fail with a clear message in logs.
-                  "$UE_BIN" -help > /tmp/ue_help.txt 2>&1 || (echo "UE_FAILED"; cat /tmp/ue_help.txt; exit 12)
+                  # Guard with timeout to avoid hanging forever.
+                  if command -v timeout >/dev/null 2>&1; then
+                    set +e
+                    # Use SIGINT first to encourage graceful shutdown (avoids crash dumps on timeout).
+                    timeout -s INT --kill-after=10s 180s "$UE_BIN" -help \
+                      -Unattended -NullRHI -NoSound -NoSplash -NoPause -NoP4 \
+                      -NoCrashReports -NoAnalytics \
+                      > /tmp/ue_help.txt 2>&1
+                    UE_RC=$?
+                    set -e
+                    if [ "$UE_RC" -eq 124 ]; then
+                      echo "UE_TIMEOUT"
+                      cat /tmp/ue_help.txt || true
+                      exit 12
+                    elif [ "$UE_RC" -ne 0 ]; then
+                      echo "UE_FAILED"
+                      cat /tmp/ue_help.txt || true
+                      exit 12
+                    fi
+                  else
+                    "$UE_BIN" -help -Unattended -NullRHI -NoSound -NoSplash -NoPause -NoP4 -NoCrashReports -NoAnalytics > /tmp/ue_help.txt 2>&1 \
+                      || (echo "UE_FAILED"; cat /tmp/ue_help.txt || true; exit 12)
+                  fi
                   echo "=== UnrealEditor-Cmd -help (first 80 lines) ==="
                   sed -n '1,80p' /tmp/ue_help.txt
                   echo "UE_OK"
