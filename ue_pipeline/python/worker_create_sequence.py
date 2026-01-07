@@ -225,6 +225,7 @@ def _build_nav_points_with_retry(
     roam_cfg: Dict[str, Any],
     map_path: str,
     run_id: int,
+    parent_config: Dict[str, Any] = None,
 ) -> NavPathResult:
     seed_cfg = roam_cfg.get("seed", None)
     actual_seed: Optional[int] = None
@@ -247,6 +248,9 @@ def _build_nav_points_with_retry(
         cfg = dict(roam_cfg)
         if seed is not None:
             cfg["seed"] = int(seed)
+        # Inject parent config for duration-based path generation
+        if parent_config:
+            cfg["_parent_config"] = parent_config
         return cfg
 
     nav_roam_cfg_for_path = _cfg_for_seed(actual_seed)
@@ -429,12 +433,6 @@ def _build_transform_keys_from_samples(
             }
         )
 
-        # 打印前3个关键帧的位置用于调试
-        if i < 3:
-            logger.info(
-                f"  Key {i}: time={t:.2f}s, pos=({p.x:.2f}, {p.y:.2f}, {p.z:.2f}), yaw={yaw:.2f}"
-            )
-
     return KeyGenResult(transform_keys=keys)
 
 
@@ -606,7 +604,6 @@ def generate_all_sequences(
 
     z_offset_cm = float(roam_cfg.get("z_offset_cm", 0.0))
     interp_override = roam_cfg.get("interpolation", None)
-    num_legs = int(roam_cfg.get("num_legs", 6))
 
     for batch_idx in range(batch_count):
         try:
@@ -617,9 +614,6 @@ def generate_all_sequences(
             # 生成当前批次的sequence名称（从已存在的最大编号+1开始）
             sequence_number = start_index + batch_idx + 1
             sequence_name = f"{map_name}_{sequence_number:03d}"
-            logger.info(f"Sequence name: {sequence_name}")
-
-            # NavRoam模式：完全依赖NavMesh连通性分析生成起始点，忽略PlayerStart和spawn_location
 
             sequence = create_level_sequence(sequence_name, output_dir)
             if not sequence:
@@ -642,6 +636,7 @@ def generate_all_sequences(
                 roam_cfg=roam_cfg,
                 map_path=map_path,
                 run_id=run_id,
+                parent_config=seq_cfg,
             )
 
             if len(nav_result.nav_points) < 2:
@@ -650,7 +645,6 @@ def generate_all_sequences(
                 error_msg += "(1) NavMesh coverage too small, "
                 error_msg += "(2) random_point_radius_cm too small, "
                 error_msg += "(3) NavMesh disconnected/fragmented, "
-                error_msg += f"(4) All {num_legs} legs failed to find valid paths."
                 raise RuntimeError(error_msg)
 
             fixed_result = _apply_fixed_speed_if_configured(

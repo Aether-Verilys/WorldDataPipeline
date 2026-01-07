@@ -125,8 +125,8 @@ BOS下载场景 ──→ NavMesh烘焙          Docker容器(UE 5.7)
    - 确保起点不在墙内或封闭空间
 
 **轨迹生成逻辑：**
-- 使用 `nav_roam` 配置进行多段随机漫游（`num_legs=6`）
-- 每段在NavMesh上生成随机目标点（半径8000cm）
+- 使用 `nav_roam` 配置进行多段随机漫游
+- 每段在NavMesh上生成随机目标点
 - PathFollowing生成平滑路径，插值关键帧（0.25秒间隔）
 - Camera yaw自动计算朝向运动方向（`max_yaw_rate=60°/s`）
 

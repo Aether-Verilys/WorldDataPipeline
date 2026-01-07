@@ -1,7 +1,7 @@
 {
   "job_type": "create_sequence",
   "job_id": "job-create-seq-001",
-  "map": "/Game/LevelPrototyping/Lvl_FirstPerson",
+  "map": "/Game/LevelPrototyping/test",
   "sequence_config": {
     "output_dir": "",
     "sequence_count": 2,
@@ -18,14 +18,12 @@
     "nav_roam": {
       "seed": -1,
       "nav_build_wait_seconds": 10.0,
-      "random_point_radius_cm": 8000.0,
-      "num_legs": 6,
       "max_random_point_tries": 40,
       "min_segment_step_cm": 75.0,
       "interpolation": "linear",
       "project_to_nav": true,
       "z_offset_cm": 170.0,
-      "use_connectivity_analysis": true,
+      "use_connectivity_analysis": false,
       "connectivity_sample_density": 1.0
     },
     "force_zero_pitch_roll": true,
@@ -38,5 +36,14 @@
     "camera_component_name": "Camera",
     "actor_blueprint_class_path": "/Game/FirstPerson/Blueprints/BP_Cameraman",
     "actor_binding_mode": "sequence_spawnable"
+  },
+  "ue_config": {
+    "editor_path": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
+    "project_path": "F:/UE_Projects/OLD_OFFICE/OLD_OFFICE.uproject",
+    "output_base_dir": "default",
+    "exclude_map_names": [
+      "Overview"
+    ],
+    "scenes": {}
   }
 }

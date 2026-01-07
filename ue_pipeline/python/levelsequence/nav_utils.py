@@ -71,93 +71,20 @@ def project_to_nav(nav, world, point: unreal.Vector) -> unreal.Vector:
 
 
 def random_reachable_point(nav, world, origin: unreal.Vector, radius_cm: float) -> unreal.Vector:
-    candidates = [
-        (nav, ["get_random_reachable_point_in_radius", "k2_get_random_reachable_point_in_radius"]),
-        (getattr(unreal, "NavigationSystemV1", object), ["get_random_reachable_point_in_radius", "k2_get_random_reachable_point_in_radius"]),
-    ]
-
-    arg_variants = [
-        (world, origin, radius_cm),
-        (world, origin, radius_cm, None),
-        (world, origin, radius_cm, None, None),
-    ]
-
-    last_error = None
-    for target, method_names in candidates:
-        for args in arg_variants:
-            try:
-                result = call_maybe(target, method_names, *args)
-            except Exception as e:
-                last_error = e
-                continue
-            if isinstance(result, tuple) and len(result) >= 2:
-                success, point = result[0], result[1]
-                if success and isinstance(point, unreal.Vector):
-                    return point
-            if isinstance(result, unreal.Vector):
-                return result
-
-    error_msg = f"Failed to get random reachable point from ({origin.x:.2f}, {origin.y:.2f}, {origin.z:.2f}) radius={radius_cm:.0f}cm"
-    if last_error:
-        error_msg += f". Last error: {last_error}"
-    raise RuntimeError(error_msg)
-
-
-def random_navigable_point(nav, world, origin: unreal.Vector, radius_cm: float) -> unreal.Vector | None:
-    """Return a random point on the NavMesh within a radius.
-
-    Unlike `random_reachable_point`, this does not require the result to be reachable
-    from `origin` (it samples navigable space), which helps discover disconnected islands.
-
-    Returns None if the underlying API is unavailable or sampling fails.
     """
-    candidates = [
-        (nav, [
-            "get_random_location_in_navigable_radius",
-            "get_random_point_in_navigable_radius",
-            "k2_get_random_location_in_navigable_radius",
-            "k2_get_random_point_in_navigable_radius",
-        ]),
-        (getattr(unreal, "NavigationSystemV1", object), [
-            "get_random_location_in_navigable_radius",
-            "get_random_point_in_navigable_radius",
-            "k2_get_random_location_in_navigable_radius",
-            "k2_get_random_point_in_navigable_radius",
-        ]),
-    ]
-
-    # UE Python bindings vary by version; try a few common signatures.
-    # Some return Vector directly; some return (success, Vector).
-    arg_variants = [
-        (world, origin, float(radius_cm)),
-        (world, origin, float(radius_cm), None),
-        (world, origin, float(radius_cm), None, None),
-    ]
-
-    for target, method_names in candidates:
-        for args in arg_variants:
-            try:
-                result = call_maybe(target, method_names, *args)
-            except Exception:
-                continue
-
-            if isinstance(result, tuple) and len(result) >= 2:
-                success, point = result[0], result[1]
-                if success and isinstance(point, unreal.Vector):
-                    return point
-
-            if isinstance(result, unreal.Vector):
-                return result
-
-    return None
-
-
-def clamp_float(v: float, lo: float, hi: float) -> float:
-    try:
-        fv = float(v)
-    except Exception:
-        fv = float(lo)
-    return float(max(lo, min(hi, fv)))
+    Get random reachable point in NavMesh radius.
+    Returns a random navigable point within radius_cm of origin.
+    """
+    result = nav.get_random_reachable_point_in_radius(world, origin, radius_cm)
+    
+    if isinstance(result, unreal.Vector):
+        return result
+    elif isinstance(result, tuple) and len(result) >= 2:
+        success, point = result[0], result[1]
+        if success and isinstance(point, unreal.Vector):
+            return point
+    
+    raise RuntimeError(f"No reachable NavMesh point found near ({origin.x:.2f}, {origin.y:.2f}, {origin.z:.2f}) within {radius_cm:.0f}cm")
 
 
 def get_navmesh_bounds(world) -> tuple:
@@ -207,43 +134,66 @@ def get_navmesh_bounds(world) -> tuple:
 
 
 def find_connected_navmesh_start_point(nav, world, max_attempts: int = 10) -> unreal.Vector:
+    """
+    Get random points directly from NavMesh - randomly distributed across entire volume.
+    Returns 5 sample points for analysis, then selects the first one as spawn point.
+    """
     bounds = get_navmesh_bounds(world)
 
     if bounds is None:
-        print("[WorkerCreateSequence] WARNING: No NavMeshBoundsVolume found, trying common locations...")
-        test_origins = [
-            unreal.Vector(0, 0, 0),
-            unreal.Vector(0, 0, 500),
-            unreal.Vector(1000, 1000, 500),
-        ]
+        print("[NavMesh] WARNING: No NavMeshBoundsVolume found, using fallback")
+        center = unreal.Vector(0, 0, 0)
+        extent = unreal.Vector(10000.0, 10000.0, 1000.0)
     else:
         center, extent = bounds
-        test_origins = []
-        for _ in range(max_attempts):
-            rx = center.x + random.uniform(-extent.x * 0.8, extent.x * 0.8)
-            ry = center.y + random.uniform(-extent.y * 0.8, extent.y * 0.8)
-            rz = center.z
-            test_origins.append(unreal.Vector(rx, ry, rz))
+        print(f"[NavMesh] Volume: center=({center.x:.0f}, {center.y:.0f}, {center.z:.0f}), extent=({extent.x:.0f}, {extent.y:.0f}, {extent.z:.0f})cm")
 
-    for i, origin in enumerate(test_origins):
-        try:
-            projected = project_to_nav(nav, world, origin)
-            print(f"[WorkerCreateSequence]   Testing candidate {i+1}: origin=({origin.x:.2f}, {origin.y:.2f}, {origin.z:.2f}), projected=({projected.x:.2f}, {projected.y:.2f}, {projected.z:.2f})")
-
-            test_radius = 8000.0
+    # Search radius: 80% of volume extent
+    search_radius = max(extent.x, extent.y) * 0.8
+    print(f"[NavMesh] Sampling 5 random points (search radius={search_radius:.0f}cm per attempt)...")
+    
+    random_points = []
+    
+    for i in range(5):
+        found = False
+        # Try up to 5 random origins per point
+        for attempt in range(5):
             try:
-                reachable = random_reachable_point(nav, world, projected, test_radius)
-                print(f"[WorkerCreateSequence] ✓ Found connected start point (attempt {i+1}): X={projected.x:.2f}, Y={projected.y:.2f}, Z={projected.z:.2f}")
-                print(f"[WorkerCreateSequence]   Connectivity verified: can reach ({reachable.x:.2f}, {reachable.y:.2f}, {reachable.z:.2f})")
-                return projected
-            except Exception as e:
-                print(f"[WorkerCreateSequence]   Candidate {i+1} connectivity test failed: {e}")
+                # Random origin within 90% of volume bounds
+                random_origin = unreal.Vector(
+                    center.x + random.uniform(-extent.x * 0.9, extent.x * 0.9),
+                    center.y + random.uniform(-extent.y * 0.9, extent.y * 0.9),
+                    center.z + random.uniform(-extent.z * 0.5, extent.z * 0.5)
+                )
+                
+                random_point = random_reachable_point(nav, world, random_origin, search_radius)
+                random_points.append(random_point)
+                
+                distance_from_center = distance_cm(center, random_point)
+                print(f"[NavMesh] Point {i+1}: origin({random_origin.x:7.1f}, {random_origin.y:7.1f}, {random_origin.z:6.1f}) -> result({random_point.x:7.1f}, {random_point.y:7.1f}, {random_point.z:6.1f})  Distance: {distance_from_center:6.0f}cm")
+                found = True
+                break
+            except Exception:
+                if attempt == 4:
+                    # Last attempt - try fallback from center
+                    try:
+                        fallback_point = random_reachable_point(nav, world, center, search_radius * 1.5)
+                        random_points.append(fallback_point)
+                        print(f"[NavMesh] Point {i+1}: ({fallback_point.x:7.1f}, {fallback_point.y:7.1f}, {fallback_point.z:6.1f})  [FALLBACK]")
+                        found = True
+                    except Exception:
+                        pass
                 continue
-        except Exception as e:
-            print(f"[WorkerCreateSequence]   Candidate {i+1} projection failed: {e}")
-            continue
-
-    raise RuntimeError(f"Failed to find connected NavMesh point after {max_attempts} attempts. NavMesh may be too fragmented or non-existent.")
+        
+        if not found:
+            print(f"[NavMesh] Point {i+1}: Failed to find point")
+    
+    if not random_points:
+        raise RuntimeError("Failed to find any NavMesh points - NavMesh may not be baked")
+    
+    selected = random_points[0]
+    print(f"[NavMesh] ✓ Selected spawn point: ({selected.x:.1f}, {selected.y:.1f}, {selected.z:.1f})")
+    return selected
 
 
 def find_path_points(nav, world, start: unreal.Vector, end: unreal.Vector):
@@ -370,12 +320,30 @@ def build_multi_leg_nav_path(nav, world, cfg: dict, map_path: str | None = None)
     Returns:
         List of Vector points representing the navigation path
     """
-    radius_cm = float(cfg.get("random_point_radius_cm", 8000.0))
-    num_legs = int(cfg.get("num_legs", 6))
+    # Get duration-based configuration (from parent config)
+    parent_cfg = cfg.get("_parent_config", {})
+    target_duration_sec = float(parent_cfg.get("duration_seconds", 60.0))
+    actor_speed_cm_per_sec = float(parent_cfg.get("fixed_speed_cm_per_sec", 150.0))
+    
     max_tries = int(cfg.get("max_random_point_tries", 40))
     min_step_cm = float(cfg.get("min_segment_step_cm", 75.0))
+    min_radius_cm = float(cfg.get("min_radius_cm", 1000.0))
     project = bool(cfg.get("project_to_nav", True))
     min_leg_dist = float(cfg.get("min_leg_distance_cm", 300.0))
+    max_legs = int(cfg.get("max_legs", 100))  # Safety limit to prevent infinite loops
+
+    # Get NavMesh bounds to calculate appropriate search radius
+    bounds = get_navmesh_bounds(world)
+    if bounds:
+        center, extent = bounds
+        # Use 60% of average extent as search radius, with minimum of min_radius_cm
+        avg_extent = (extent.x + extent.y) / 2.0
+        radius_cm = max(min_radius_cm, avg_extent * 0.6)
+        print(f"[WorkerCreateSequence] Auto-calculated search radius: {radius_cm:.0f}cm ({radius_cm/100:.1f}m) based on NavMesh volume (avg_extent={avg_extent:.0f}cm, min_radius={min_radius_cm:.0f}cm)")
+    else:
+        # Fallback to config or default
+        radius_cm = max(min_radius_cm, float(cfg.get("random_point_radius_cm", 2000.0)))
+        print(f"[WorkerCreateSequence] Using fallback search radius: {radius_cm:.0f}cm (min_radius={min_radius_cm:.0f}cm)")
 
     # Try to use connectivity analysis if available and enabled
     use_connectivity_analysis = bool(cfg.get("use_connectivity_analysis", True))
@@ -395,15 +363,18 @@ def build_multi_leg_nav_path(nav, world, cfg: dict, map_path: str | None = None)
         origin = find_connected_navmesh_start_point(nav, world, max_attempts=10)
 
     a = project_to_nav(nav, world, origin) if project else origin
-    print(f"[WorkerCreateSequence] ✓ Final start point (projected to NavMesh): X={a.x:.2f}, Y={a.y:.2f}, Z={a.z:.2f}")
-    print(f"[WorkerCreateSequence] NavRoam config: num_legs={num_legs}, radius={radius_cm}cm, min_step={min_step_cm}cm")
+    print(f"[WorkerCreateSequence] ✓ Final start point: X={a.x:.2f}, Y={a.y:.2f}, Z={a.z:.2f}")
+    print(f"[WorkerCreateSequence] NavRoam: target_duration={target_duration_sec:.1f}s, speed={actor_speed_cm_per_sec:.0f}cm/s, radius={radius_cm:.0f}cm, min_step={min_step_cm:.0f}cm")
 
     seed = cfg.get("seed", None)
     use_python_rng = seed is not None
 
     points = [a]
     current = a
-    for leg in range(max(1, num_legs)):
+    accumulated_time_sec = 0.0
+    leg = 0
+    
+    while accumulated_time_sec < target_duration_sec and leg < max_legs:
         leg_pts = None
         for attempt in range(max_tries):
             try:
@@ -428,7 +399,10 @@ def build_multi_leg_nav_path(nav, world, cfg: dict, map_path: str | None = None)
                 pts = find_path_points(nav, world, start_on_nav, end_on_nav)
                 if pts and len(pts) >= 2:
                     leg_pts = pts
-                    print(f"[WorkerCreateSequence] NavRoam leg {leg}: found path with {len(pts)} points")
+                    # Calculate path distance and time
+                    leg_distance_cm = sum(distance_cm(pts[i], pts[i+1]) for i in range(len(pts)-1))
+                    leg_time_sec = leg_distance_cm / actor_speed_cm_per_sec
+                    print(f"[WorkerCreateSequence] NavRoam leg {leg}: path={len(pts)} points, distance={leg_distance_cm:.0f}cm ({leg_distance_cm/100:.1f}m), estimated_time={leg_time_sec:.2f}s")
                     break
 
                 if attempt < 3:
@@ -440,20 +414,37 @@ def build_multi_leg_nav_path(nav, world, cfg: dict, map_path: str | None = None)
             print(f"[WorkerCreateSequence] WARNING: NavRoam leg {leg}: could not find a valid path after {max_tries} attempts; stopping early")
             break
 
+        # Calculate this leg's contribution to total time
+        leg_distance_cm = sum(distance_cm(leg_pts[i], leg_pts[i+1]) for i in range(len(leg_pts)-1))
+        leg_time_sec = leg_distance_cm / actor_speed_cm_per_sec
+        
+        # Add the leg points
         if distance_cm(points[-1], leg_pts[0]) < 0.1:
             leg_pts = leg_pts[1:]
         points.extend(leg_pts)
         current = leg_pts[-1]
+        
+        # Update accumulated time
+        accumulated_time_sec += leg_time_sec
+        leg += 1
+        
+        print(f"[WorkerCreateSequence] NavRoam: accumulated_time={accumulated_time_sec:.2f}s / {target_duration_sec:.1f}s ({accumulated_time_sec/target_duration_sec*100:.1f}%), legs={leg}")
 
     points = subdivide_polyline(points, min_step_cm)
     if project:
         points = [project_to_nav(nav, world, p) for p in points]
 
-    print(f"[WorkerCreateSequence] NavRoam total points before subdivision: {len(points)}")
+    # Calculate final path statistics
+    total_distance_cm = sum(distance_cm(points[i], points[i+1]) for i in range(len(points)-1))
+    final_time_sec = total_distance_cm / actor_speed_cm_per_sec
+    print(f"[WorkerCreateSequence] NavRoam complete: legs={leg}, points={len(points)}, distance={total_distance_cm:.0f}cm ({total_distance_cm/100:.1f}m), estimated_time={final_time_sec:.2f}s")
     return points
 
 
 def wait_for_navigation_ready(nav, world, timeout_seconds: float) -> None:
+    """
+    Wait for NavMesh to be ready, with option to force rebuild if stuck.
+    """
     try:
         timeout = max(0.0, float(timeout_seconds))
     except Exception:
@@ -468,7 +459,9 @@ def wait_for_navigation_ready(nav, world, timeout_seconds: float) -> None:
         return
 
     start_t = time.time()
+    check_count = 0
     printed = False
+    
     while True:
         try:
             building = bool(fn(world))
@@ -483,9 +476,38 @@ def wait_for_navigation_ready(nav, world, timeout_seconds: float) -> None:
         if not printed:
             print(f"[WorkerCreateSequence] Waiting for navigation to finish building (timeout={timeout:.1f}s)...")
             printed = True
-
-        if time.time() - start_t >= timeout:
-            print("[WorkerCreateSequence] WARNING: Navigation still building/locked at timeout; continuing")
+        
+        check_count += 1
+        elapsed = time.time() - start_t
+        
+        # Every 2 seconds, print status
+        if check_count % 8 == 0:
+            print(f"[WorkerCreateSequence] Still waiting... ({elapsed:.1f}s elapsed)")
+        
+        # If timeout reached, try to force rebuild
+        if elapsed >= timeout:
+            print(f"[WorkerCreateSequence] ⚠️ WARNING: Navigation still building after {timeout:.1f}s")
+            print(f"[WorkerCreateSequence] Attempting to force rebuild...")
+            
+            # Try to rebuild navigation
+            try:
+                rebuild_fn = getattr(nav, "rebuild_all", None) or getattr(nav, "rebuild_navigation_data", None)
+                if callable(rebuild_fn):
+                    rebuild_fn()
+                    print(f"[WorkerCreateSequence] Navigation rebuild triggered, waiting additional 5s...")
+                    # Wait additional time for rebuild
+                    time.sleep(5.0)
+                    # Check one more time
+                    if not fn(world):
+                        print(f"[WorkerCreateSequence] ✓ Navigation ready after rebuild")
+                        return
+                    else:
+                        print(f"[WorkerCreateSequence] ⚠️ Navigation still building after rebuild attempt")
+            except Exception as e:
+                print(f"[WorkerCreateSequence] Failed to force rebuild: {e}")
+            
+            print(f"[WorkerCreateSequence] Continuing anyway - NavMesh may not be fully ready")
             return
 
         time.sleep(0.25)
+
