@@ -103,6 +103,63 @@ def random_reachable_point(nav, world, origin: unreal.Vector, radius_cm: float) 
     raise RuntimeError(error_msg)
 
 
+def random_navigable_point(nav, world, origin: unreal.Vector, radius_cm: float) -> unreal.Vector | None:
+    """Return a random point on the NavMesh within a radius.
+
+    Unlike `random_reachable_point`, this does not require the result to be reachable
+    from `origin` (it samples navigable space), which helps discover disconnected islands.
+
+    Returns None if the underlying API is unavailable or sampling fails.
+    """
+    candidates = [
+        (nav, [
+            "get_random_location_in_navigable_radius",
+            "get_random_point_in_navigable_radius",
+            "k2_get_random_location_in_navigable_radius",
+            "k2_get_random_point_in_navigable_radius",
+        ]),
+        (getattr(unreal, "NavigationSystemV1", object), [
+            "get_random_location_in_navigable_radius",
+            "get_random_point_in_navigable_radius",
+            "k2_get_random_location_in_navigable_radius",
+            "k2_get_random_point_in_navigable_radius",
+        ]),
+    ]
+
+    # UE Python bindings vary by version; try a few common signatures.
+    # Some return Vector directly; some return (success, Vector).
+    arg_variants = [
+        (world, origin, float(radius_cm)),
+        (world, origin, float(radius_cm), None),
+        (world, origin, float(radius_cm), None, None),
+    ]
+
+    for target, method_names in candidates:
+        for args in arg_variants:
+            try:
+                result = call_maybe(target, method_names, *args)
+            except Exception:
+                continue
+
+            if isinstance(result, tuple) and len(result) >= 2:
+                success, point = result[0], result[1]
+                if success and isinstance(point, unreal.Vector):
+                    return point
+
+            if isinstance(result, unreal.Vector):
+                return result
+
+    return None
+
+
+def clamp_float(v: float, lo: float, hi: float) -> float:
+    try:
+        fv = float(v)
+    except Exception:
+        fv = float(lo)
+    return float(max(lo, min(hi, fv)))
+
+
 def get_navmesh_bounds(world) -> tuple:
     try:
         actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
