@@ -591,6 +591,22 @@ def generate_all_sequences(
     # Normalize config once (invariant across batches)
     seq_cfg = sequence_config or {}
     roam_cfg = nav_roam_cfg or {}
+    
+    # Pre-compute connectivity analysis ONCE before batch loop
+    # Cache will be reused for all sequences in this batch run
+    use_connectivity_analysis = bool(roam_cfg.get("use_connectivity_analysis", True))
+    if use_connectivity_analysis and NAVMESH_CONNECTIVITY_AVAILABLE and get_spawn_point_with_connectivity is not None:
+        logger.info("========================================")
+        logger.info("PRE-COMPUTING CONNECTIVITY ANALYSIS")
+        logger.info("========================================")
+        try:
+            origin = get_spawn_point_with_connectivity(nav, world, map_path, roam_cfg)
+            logger.info(f"✓ Connectivity analysis completed, spawn point: ({origin.x:.2f}, {origin.y:.2f}, {origin.z:.2f})")
+            logger.info("Cache will be reused for all sequences in this batch run")
+        except Exception as e:
+            logger.warning(f"Connectivity analysis pre-computation failed: {e}")
+            logger.warning("Will fall back to legacy method in batch loop")
+        logger.info("========================================")
 
     fps = int(seq_cfg.get("fps", 30))
     base_duration_seconds = float(seq_cfg.get("duration_seconds", 60.0))

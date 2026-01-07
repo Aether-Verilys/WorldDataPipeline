@@ -16,7 +16,7 @@ from .nav_utils import (
 )
 
 
-def find_largest_connected_region(nav, world, map_name, cache_dir, sample_count=None, sample_density=None, k_nearest=8, force_recompute=False):
+def find_largest_connected_region(nav, world, map_name, cache_dir, sample_count=None, sample_density=None, k_nearest=8):
     """
     Analyze NavMesh to find the largest connected region using sampling and graph analysis.
     
@@ -24,9 +24,10 @@ def find_largest_connected_region(nav, world, map_name, cache_dir, sample_count=
     1. Sample M random points in NavMesh bounds
     2. Project all points to NavMesh surface
     3. Build connectivity graph using K-nearest neighbor pathfinding
-    4. Use BFS to find all connected components
-    5. Return the largest component's sample points
-    6. Cache results to avoid recomputation
+    4. Use BFS to find all connected components (islands)
+    5. Calculate ratio for each island and filter out small ones (<10%)
+    6. Randomly select one island from valid islands
+    7. Cache results with island ratios for this execution run
     
     Args:
         nav: NavigationSystemV1 instance
@@ -37,7 +38,6 @@ def find_largest_connected_region(nav, world, map_name, cache_dir, sample_count=
         sample_density: Sampling density in points per 10000 cm² (1 m²). Default 1.0.
                        Only used if sample_count is None. Area-based auto-calculation.
         k_nearest: Number of nearest neighbors to test for each point (default 8)
-        force_recompute: If True, ignore cache and recompute (default False)
     
     Returns:
         List of Vector points representing the largest connected region
@@ -70,20 +70,12 @@ def find_largest_connected_region(nav, world, map_name, cache_dir, sample_count=
             sample_count = 50
             print(f"[NavMesh] Using default sample_count={sample_count} (bounds not available for auto-calculation)")
     
-    # Check cache first
-    cache_file = os.path.join(cache_dir, f"navmesh_connectivity_{map_name}.json")
-    if not force_recompute and os.path.exists(cache_file):
-        try:
-            with open(cache_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                print(f"[NavMesh] Loaded cached connectivity data from {cache_file}")
-                print(f"[NavMesh] Cache date: {data.get('analysis_date', 'unknown')}")
-                print(f"[NavMesh] Cached region has {len(data['largest_region'])} points")
-                return [unreal.Vector(**p) for p in data["largest_region"]]
-        except Exception as e:
-            print(f"[NavMesh] Failed to load cache: {e}, will recompute")
-    
+    # Always recompute - no cache reading
     print(f"[NavMesh] Starting connectivity analysis (sample_count={sample_count}, k_nearest={k_nearest})...")
+    
+    # Prepare cache file path for writing results later
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_file = os.path.join(cache_dir, f"navmesh_connectivity_{map_name}.json")
     
     # 1. Get NavMesh bounds and generate sample points
     bounds = get_navmesh_bounds(world)
@@ -162,44 +154,59 @@ def find_largest_connected_region(nav, world, map_name, cache_dir, sample_count=
     
     print(f"[NavMesh] Connectivity graph complete: {successful_paths}/{path_tests} successful paths")
     
-    # 3. Find all connected components using BFS
-    print(f"[NavMesh] Finding connected components...")
+    # 3. Find all connected islands using BFS
+    print(f"[NavMesh] Finding connected islands...")
     visited = set()
-    components = []
+    islands = []
     
     for start_node in range(len(samples)):
         if start_node in visited:
             continue
         
-        # BFS to find all nodes in this component
-        component = []
+        # BFS to find all nodes in this island
+        island = []
         queue = [start_node]
         visited.add(start_node)
         
         while queue:
             node = queue.pop(0)
-            component.append(node)
+            island.append(node)
             
             for neighbor in adjacency[node]:
                 if neighbor not in visited:
                     visited.add(neighbor)
                     queue.append(neighbor)
         
-        components.append(component)
+        islands.append(island)
     
-    # 4. Find the largest component
-    largest_component = max(components, key=len)
-    largest_points = [samples[i] for i in largest_component]
+    # 4. Calculate island ratios and filter small islands
+    total_samples = len(samples)
+    island_ratios = [(island, len(island) / total_samples) for island in islands]
+    island_ratios.sort(key=lambda x: x[1], reverse=True)
     
-    print(f"[NavMesh] Found {len(components)} connected region(s)")
-    print(f"[NavMesh] Largest region: {len(largest_points)} points ({len(largest_points)*100//len(samples)}% of total)")
+    # Filter islands: keep those with ratio >= 10%
+    min_ratio_threshold = 0.10
+    valid_islands = [(island, ratio) for island, ratio in island_ratios if ratio >= min_ratio_threshold]
     
-    if len(components) > 1:
-        print(f"[NavMesh] WARNING: NavMesh has {len(components)} disconnected regions")
-        component_sizes = sorted([len(c) for c in components], reverse=True)
-        print(f"[NavMesh] Region sizes: {component_sizes[:5]}...")
+    print(f"[NavMesh] Found {len(islands)} connected island(s)")
+    print(f"[NavMesh] Island ratios: {[f'{ratio*100:.1f}%' for _, ratio in island_ratios[:5]]}...")
+    print(f"[NavMesh] Valid islands (>={min_ratio_threshold*100:.0f}%): {len(valid_islands)}")
     
-    # 5. Cache results
+    if len(islands) > 1:
+        print(f"[NavMesh] WARNING: NavMesh has {len(islands)} disconnected islands")
+    
+    if not valid_islands:
+        # Fallback: use the largest island even if below threshold
+        print(f"[NavMesh] WARNING: No islands meet {min_ratio_threshold*100:.0f}% threshold, using largest island")
+        valid_islands = [island_ratios[0]]
+    
+    # 5. Randomly select one island from valid islands
+    selected_island, selected_ratio = random.choice(valid_islands)
+    selected_points = [samples[i] for i in selected_island]
+    
+    print(f"[NavMesh] Selected island: {len(selected_points)} points ({selected_ratio*100:.1f}% of total)")
+    
+    # 6. Cache results with island ratios
     try:
         os.makedirs(cache_dir, exist_ok=True)
         cache_data = {
@@ -207,10 +214,13 @@ def find_largest_connected_region(nav, world, map_name, cache_dir, sample_count=
             "analysis_date": datetime.now().isoformat(),
             "sample_count": len(samples),
             "k_nearest": k_nearest,
-            "num_components": len(components),
-            "largest_region_size": len(largest_points),
-            "largest_region": [{"x": p.x, "y": p.y, "z": p.z} for p in largest_points],
-            "all_component_sizes": [len(c) for c in components]
+            "num_islands": len(islands),
+            "min_ratio_threshold": min_ratio_threshold,
+            "island_ratios": [{"size": len(island), "ratio": ratio} for island, ratio in island_ratios],
+            "valid_islands_count": len(valid_islands),
+            "selected_island_size": len(selected_points),
+            "selected_island_ratio": selected_ratio,
+            "selected_island": [{"x": p.x, "y": p.y, "z": p.z} for p in selected_points]
         }
         
         with open(cache_file, 'w', encoding='utf-8') as f:
@@ -220,15 +230,15 @@ def find_largest_connected_region(nav, world, map_name, cache_dir, sample_count=
     except Exception as e:
         print(f"[NavMesh] WARNING: Failed to cache results: {e}")
     
-    return largest_points
+    return selected_points
 
 
 def select_spawn_point_from_region(region_points, strategy="random", seed=None):
     """
-    Select a spawn point from the largest connected region.
+    Select a spawn point from the largest connected island.
     
     Args:
-        region_points: List of Vector points in the largest connected region
+        region_points: List of Vector points in the largest connected island
         strategy: Selection strategy - "random" or "center" (default: "random")
         seed: Random seed for reproducibility (optional)
     
@@ -236,10 +246,10 @@ def select_spawn_point_from_region(region_points, strategy="random", seed=None):
         Vector representing the selected spawn point
         
     Raises:
-        RuntimeError: If region is empty
+        RuntimeError: If island is empty
     """
     if not region_points:
-        raise RuntimeError("Cannot select spawn point from empty region")
+        raise RuntimeError("Cannot select spawn point from empty island")
     
     if strategy == "center":
         # Select the most central point (closest to region centroid)
@@ -310,8 +320,11 @@ def get_spawn_point_with_connectivity(nav, world, map_path, cfg):
         return find_connected_navmesh_start_point(nav, world, max_attempts=10)
 
     try:
+        # Get cache directory - use project root/logs folder
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        cache_dir = os.path.join(os.path.dirname(script_dir), "logs")
+        # Navigate from ue_pipeline/python/levelsequence to project root
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(script_dir)))
+        cache_dir = os.path.join(project_root, "logs")
 
         # Use map name for cache - each execution will overwrite previous cache
         cache_name = "navmesh_connectivity"
@@ -322,7 +335,7 @@ def get_spawn_point_with_connectivity(nav, world, map_path, cfg):
         density_param = float(connectivity_sample_density) if connectivity_sample_density is not None else None
 
         print(f"[NavMesh] Using connectivity analysis (cache={cache_name}, sample_count={sample_count_param or 'auto'}, density={density_param or 'default'})")
-        largest_region = find_largest_connected_region(
+        largest_island = find_largest_connected_region(
             nav,
             world,
             cache_name,
@@ -330,12 +343,11 @@ def get_spawn_point_with_connectivity(nav, world, map_path, cfg):
             sample_count=sample_count_param,
             sample_density=density_param,
             k_nearest=8,
-            force_recompute=False,
         )
 
         seed_for_spawn = cfg.get("seed", None)
-        origin = select_spawn_point_from_region(largest_region, strategy="random", seed=seed_for_spawn)
-        print("[NavMesh] ✓ Selected spawn point from largest connected region")
+        origin = select_spawn_point_from_region(largest_island, strategy="random", seed=seed_for_spawn)
+        print("[NavMesh] ✓ Selected spawn point from valid connected island")
         return origin
 
     except Exception as e:
