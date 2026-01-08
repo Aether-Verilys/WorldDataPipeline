@@ -159,6 +159,10 @@ def main(argv=None) -> int:
                 build_success = manager.wait_for_navmesh_build(timeout_seconds=build_timeout)
                 if not build_success:
                     logger.warning("NavMesh build timeout or failed")
+                
+                # Additional wait to ensure NavMesh data is fully processed
+                logger.info("Waiting additional 3s for NavMesh data to stabilize...")
+                time.sleep(3)
             else:
                 # Give it a moment even if not waiting
                 time.sleep(2)
@@ -192,6 +196,10 @@ def main(argv=None) -> int:
                 failed_count += 1
                 failed_maps.append({"map": map_path, "error": f"Failed to save: {e}"})
                 continue
+
+            # Wait for save to complete and NavMesh data to be written
+            logger.info("Waiting 2s for save operation to complete...")
+            time.sleep(2)
 
             # Verify NavMesh data
             if verify_navmesh:

@@ -25,6 +25,24 @@ Write-Host "Setting environment variables..." -ForegroundColor Yellow
 $env:UE_SYSTEM_TYPE = "windows"
 Write-Host "  OK UE_SYSTEM_TYPE = windows" -ForegroundColor Green
 
+# 3. Display BOS configuration
+Write-Host ""
+Write-Host "BOS Configuration:" -ForegroundColor Yellow
+$BOS_COPY_CONFIG = Join-Path $REPO_ROOT "ue_pipeline\config\bos_copy_config.json"
+if (Test-Path $BOS_COPY_CONFIG) {
+    try {
+        $config = Get-Content $BOS_COPY_CONFIG -Raw -Encoding UTF8 | ConvertFrom-Json
+        Write-Host "  Source:  " -NoNewline -ForegroundColor Gray
+        Write-Host "bos:/$($config.source_bucket)/$($config.source_prefix)/" -ForegroundColor Cyan
+        Write-Host "  Target:  " -NoNewline -ForegroundColor Gray
+        Write-Host "bos:/$($config.target_bucket)/$($config.target_prefix)/" -ForegroundColor Cyan
+    } catch {
+        Write-Host "  WARNING Failed to load BOS config: $_" -ForegroundColor Red
+    }
+} else {
+    Write-Host "  WARNING BOS copy config not found" -ForegroundColor Red
+}
+
 Write-Host ""
 Write-Host "  Environment Ready!" -ForegroundColor Green
 Write-Host ""
@@ -71,7 +89,98 @@ function ue-export {
 }
 
 function ue-upload {
+    Write-Host ""
+    Write-Host "[Upload] Uploading baked scenes to BOS..." -ForegroundColor Yellow
+    Write-Host "  Target: " -NoNewline -ForegroundColor Gray
+    Write-Host "bos:/world-data/raw/" -ForegroundColor Cyan
+    Write-Host ""
     python app.py upload_scenes
+}
+
+function ue-download {
+    if ($args.Count -eq 0) {
+        Write-Host ""
+        Write-Host "[Download] Listing available scenes..." -ForegroundColor Yellow
+        Write-Host "  Source: " -NoNewline -ForegroundColor Gray
+        Write-Host "bos:/world-data/raw/" -ForegroundColor Cyan
+        Write-Host ""
+        python app.py download_scene --list
+    } elseif ($args[0] -eq "--list" -or $args[0] -eq "-l") {
+        Write-Host ""
+        Write-Host "[Download] Listing available scenes..." -ForegroundColor Yellow
+        Write-Host "  Source: " -NoNewline -ForegroundColor Gray
+        Write-Host "bos:/world-data/raw/" -ForegroundColor Cyan
+        Write-Host ""
+        python app.py download_scene --list
+    } elseif ($args[0] -eq "--search" -or $args[0] -eq "-s") {
+        Write-Host ""
+        Write-Host "[Download] Searching scenes: $($args[1])" -ForegroundColor Yellow
+        Write-Host "  Source: " -NoNewline -ForegroundColor Gray
+        Write-Host "bos:/world-data/raw/" -ForegroundColor Cyan
+        Write-Host ""
+        python app.py download_scene --search $args[1]
+    } elseif ($args[0] -eq "--scene") {
+        Write-Host ""
+        Write-Host "[Download] Downloading scene: $($args[1])" -ForegroundColor Yellow
+        Write-Host "  Source: " -NoNewline -ForegroundColor Gray
+        Write-Host "bos:/world-data/raw/$($args[1])/" -ForegroundColor Cyan
+        Write-Host "  Target: " -NoNewline -ForegroundColor Gray
+        Write-Host "Local Content folder" -ForegroundColor Cyan
+        Write-Host ""
+        python app.py download_scene --scene $args[1]
+    } else {
+        Write-Host ""
+        Write-Host "[Download] Downloading scene: $($args[0])" -ForegroundColor Yellow
+        Write-Host "  Source: " -NoNewline -ForegroundColor Gray
+        Write-Host "bos:/world-data/raw/$($args[0])/" -ForegroundColor Cyan
+        Write-Host "  Target: " -NoNewline -ForegroundColor Gray
+        Write-Host "Local Content folder" -ForegroundColor Cyan
+        Write-Host ""
+        python app.py download_scene --scene $args[0]
+    }
+}
+
+function ue-copy {
+    $BOS_COPY_CONFIG = Join-Path $REPO_ROOT "ue_pipeline\config\bos_copy_config.json"
+    $sourceInfo = "bos:/baidu-download-new/cdy-video-data/UnrealAssets/"
+    $targetInfo = "bos:/world-data/raw/"
+    
+    if (Test-Path $BOS_COPY_CONFIG) {
+        try {
+            $config = Get-Content $BOS_COPY_CONFIG -Raw -Encoding UTF8 | ConvertFrom-Json
+            $sourceInfo = "bos:/$($config.source_bucket)/$($config.source_prefix)/"
+            $targetInfo = "bos:/$($config.target_bucket)/$($config.target_prefix)/"
+        } catch {}
+    }
+    
+    if ($args.Count -eq 0) {
+        Write-Host ""
+        Write-Host "[Copy] Listing available scenes..." -ForegroundColor Yellow
+        Write-Host "  Source: " -NoNewline -ForegroundColor Gray
+        Write-Host $sourceInfo -ForegroundColor Cyan
+        Write-Host "  Target: " -NoNewline -ForegroundColor Gray
+        Write-Host $targetInfo -ForegroundColor Cyan
+        Write-Host ""
+        python app.py copy_scene --list
+    } elseif ($args[0] -eq "--list" -or $args[0] -eq "-l") {
+        Write-Host ""
+        Write-Host "[Copy] Listing available scenes..." -ForegroundColor Yellow
+        Write-Host "  Source: " -NoNewline -ForegroundColor Gray
+        Write-Host $sourceInfo -ForegroundColor Cyan
+        Write-Host "  Target: " -NoNewline -ForegroundColor Gray
+        Write-Host $targetInfo -ForegroundColor Cyan
+        Write-Host ""
+        python app.py copy_scene --list
+    } else {
+        Write-Host ""
+        Write-Host "[Copy] Copying scene(s): $($args -join ', ')" -ForegroundColor Yellow
+        Write-Host "  Source: " -NoNewline -ForegroundColor Gray
+        Write-Host $sourceInfo -ForegroundColor Cyan
+        Write-Host "  Target: " -NoNewline -ForegroundColor Gray
+        Write-Host $targetInfo -ForegroundColor Cyan
+        Write-Host ""
+        python app.py copy_scene --scene @args
+    }
 }
 
 function ue-help {
@@ -81,17 +190,22 @@ function ue-help {
     Write-Host "  ue-sequence   - Create sequences" -ForegroundColor White
     Write-Host "  ue-render     - Render" -ForegroundColor White
     Write-Host "  ue-export     - Export" -ForegroundColor White
-    Write-Host "  ue-upload     - Upload scenes" -ForegroundColor White
+    Write-Host "  ue-upload     - Upload scenes to BOS" -ForegroundColor White
+    Write-Host "  ue-download   - Download scene from BOS" -ForegroundColor White
+    Write-Host "  ue-copy       - Copy scene between BOS buckets" -ForegroundColor White
     Write-Host "  ue-help       - Show this help" -ForegroundColor White
     Write-Host ""
     Write-Host "Examples:" -ForegroundColor Yellow
     Write-Host "  ue-sequence                                            # Use default config" -ForegroundColor Gray
     Write-Host "  ue-sequence ue_pipeline/examples/job_sequence.json     # Specify config file" -ForegroundColor Gray
-    Write-Host "  ue-sequence --manifest ue_pipeline/examples/job_sequence.json  # Also works" -ForegroundColor Gray
+    Write-Host "  ue-download --list                                     # List available scenes" -ForegroundColor Gray
+    Write-Host "  ue-download Seaside_Town                               # Download a scene" -ForegroundColor Gray
+    Write-Host "  ue-copy --list                                         # List scenes to copy" -ForegroundColor Gray
+    Write-Host "  ue-copy Scene1 Scene2                                  # Copy multiple scenes" -ForegroundColor Gray
     Write-Host ""
     Write-Host "Or use app.py directly:" -ForegroundColor Yellow
     Write-Host "  python app.py --help" -ForegroundColor Gray
-    Write-Host "  python app.py create_sequence --manifest ue_pipeline/examples/job_sequence.json" -ForegroundColor Gray
+    Write-Host "  python app.py download_scene --scene Seaside_Town" -ForegroundColor Gray
     Write-Host ""
 }
 
@@ -101,6 +215,7 @@ ue-help
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
 Write-Host "Functions loaded! You can now use:" -ForegroundColor Green
-Write-Host "  ue-bake, ue-sequence, ue-render, etc." -ForegroundColor Cyan
+Write-Host "  ue-bake, ue-sequence, ue-render," -ForegroundColor Cyan
+Write-Host "  ue-export, ue-upload, ue-download, ue-copy" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""

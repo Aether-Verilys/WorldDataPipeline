@@ -474,32 +474,40 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
     if frame_range:
         unreal.log(f"[Rendering] 从配置中读取帧范围: {frame_range.get('start_frame', 0)} - {frame_range.get('end_frame', 0)}")
     
-    # Build output path: base_path/scene_id/map_name/sequence_name
+    # Build output path: base_path/scene_folder/sequence_name
     output_directory = base_output_path
     
     # 获取ue_config用于地图检测和场景查找
     ue_config = manifest.get("ue_config", {})
     
     if base_output_path:
-        # Extract map name from map_path
-        # Map path format: /Game/LevelPrototyping/Lvl_FirstPerson
-        map_name = "UnknownMap"
+        # Extract scene folder name from map_path
+        # Map path format: /Game/LevelPrototyping/test
+        # We want "LevelPrototyping" (the scene folder, not the map name)
+        scene_folder = "UnknownScene"
         
         if map_path:
-            # Extract map name (last part)
-            map_name = map_path.split("/")[-1]
+            # Split path and get the second-to-last part (scene folder)
+            # /Game/LevelPrototyping/test -> ["", "Game", "LevelPrototyping", "test"]
+            path_parts = map_path.split("/")
+            if len(path_parts) >= 3:
+                # Get the folder containing the map (second to last)
+                scene_folder = path_parts[-2]
+            else:
+                # Fallback to last part if path is too short
+                scene_folder = path_parts[-1] if path_parts else "UnknownScene"
         
         # Extract sequence name from sequence_path
-        # Sequence path format: /Game/CameraController/Generated/Lvl_FirstPerson_001
+        # Sequence path format: /Game/LevelPrototyping/Sequence/test_001
         sequence_name = sequence_path.split("/")[-1] if sequence_path else "UnknownSequence"
         
-        # Construct full output path: base/map_name/sequence_name
-        output_directory = os.path.join(base_output_path, map_name, sequence_name)
+        # Construct full output path: base/scene_folder/sequence_name
+        output_directory = os.path.join(base_output_path, scene_folder, sequence_name)
         # Convert to absolute path immediately
         output_directory = os.path.abspath(output_directory)
         # Normalize path separators for UE (use forward slashes)
         output_directory = output_directory.replace('\\', '/')
-        unreal.log(f"[Rendering] Map name: {map_name}")
+        unreal.log(f"[Rendering] Scene folder: {scene_folder}")
         unreal.log(f"[Rendering] Sequence name: {sequence_name}")
         unreal.log(f"[Rendering] Constructed absolute output path: {output_directory}")
     

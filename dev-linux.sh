@@ -76,6 +76,30 @@ ue-upload() {
     python app.py upload_scenes
 }
 
+ue-download() {
+    if [ $# -eq 0 ]; then
+        python app.py download_scene --list
+    elif [ "$1" = "--list" ] || [ "$1" = "-l" ]; then
+        python app.py download_scene --list
+    elif [ "$1" = "--search" ] || [ "$1" = "-s" ]; then
+        python app.py download_scene --search "$2"
+    elif [ "$1" = "--scene" ]; then
+        python app.py download_scene --scene "$2"
+    else
+        python app.py download_scene --scene "$1"
+    fi
+}
+
+ue-copy() {
+    if [ $# -eq 0 ]; then
+        python app.py copy_scene --list
+    elif [ "$1" = "--list" ] || [ "$1" = "-l" ]; then
+        python app.py copy_scene --list
+    else
+        python app.py copy_scene --scene "$@"
+    fi
+}
+
 ue-help() {
     echo ""
     echo "Available shortcut commands:"
@@ -83,17 +107,22 @@ ue-help() {
     echo "  ue-sequence   - Create sequences"
     echo "  ue-render     - Render"
     echo "  ue-export     - Export"
-    echo "  ue-upload     - Upload scenes"
+    echo "  ue-upload     - Upload scenes to BOS"
+    echo "  ue-download   - Download scene from BOS"
+    echo "  ue-copy       - Copy scene between BOS buckets"
     echo "  ue-help       - Show this help"
     echo ""
     echo "Examples:"
     echo "  ue-sequence                                            # Use default config"
     echo "  ue-sequence ue_pipeline/examples/job_sequence.json     # Specify config file"
-    echo "  ue-sequence --manifest ue_pipeline/examples/job_sequence.json  # Also works"
+    echo "  ue-download --list                                     # List available scenes"
+    echo "  ue-download Seaside_Town                               # Download a scene"
+    echo "  ue-copy --list                                         # List scenes to copy"
+    echo "  ue-copy Scene1 Scene2                                  # Copy multiple scenes"
     echo ""
     echo "Or use app.py directly:"
     echo "  python app.py --help"
-    echo "  python app.py create_sequence --manifest ue_pipeline/examples/job_sequence.json"
+    echo "  python app.py download_scene --scene Seaside_Town"
     echo ""
 }
 
@@ -102,6 +131,7 @@ ue-help
 echo ""
 echo "========================================"
 echo "Functions loaded! You can now use:"
-echo "  ue-bake, ue-sequence, ue-render, etc."
+echo "  ue-bake, ue-sequence, ue-render,"
+echo "  ue-export, ue-upload, ue-download, ue-copy"
 echo "========================================"
 echo ""

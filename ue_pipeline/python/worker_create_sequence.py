@@ -236,11 +236,11 @@ def _build_nav_points_with_retry(
                 # -1表示使用随机种子
                 actual_seed = random.randint(0, 999999)
                 random.seed(actual_seed)
-                logger.info(f"✓ NavRoam seed: {actual_seed} (random)")
+                logger.info(f"NavRoam seed: {actual_seed} (random)")
             else:
                 actual_seed = seed_val
                 random.seed(actual_seed)
-                logger.info(f"✓ NavRoam seed: {actual_seed}")
+                logger.info(f"NavRoam seed: {actual_seed}")
         except Exception as e:
             logger.warning(f"Failed to set seed: {e}")
 
@@ -290,7 +290,7 @@ def _apply_fixed_speed_if_configured(
     fps: int,
     duration_seconds: float,
     total_frames: int,
-    movie_scene: Any,
+    sequence: Any,
     fixed_speed_cfg: Any,
     strict_duration: bool,
 ) -> FixedSpeedResult:
@@ -363,7 +363,8 @@ def _apply_fixed_speed_if_configured(
 
         # 重新设置序列的播放范围
         try:
-            movie_scene.set_playback_range(0, total_frames)
+            sequence.set_playback_start(0)
+            sequence.set_playback_end(total_frames)
             logger.info(f"Updated playback range: 0-{total_frames} ({duration_seconds:.2f}s)")
         except Exception as e:
             logger.warning(f"Could not update playback range: {e}")
@@ -440,13 +441,13 @@ def _add_camera_cuts_if_enabled(
     *,
     add_camera: bool,
     sequence: Any,
-    movie_scene: Any,
     actor_binding: Any,
     total_frames: int,
 ) -> None:
     if not add_camera:
         return
 
+    movie_scene = sequence.get_movie_scene()
     logger.info("Adding camera cuts bound to spawnable actor...")
     try:
         # Add Camera Cuts Track
@@ -580,6 +581,9 @@ def generate_all_sequences(
 
     import time
     run_id = int(time.time())
+    
+    # Initialize random seed to ensure different sequences each run
+    random.seed()
 
     world, nav = _prepare_sequence_generation_run(
         map_path=map_path,
@@ -641,8 +645,13 @@ def generate_all_sequences(
             # Per-batch derived values
             duration_seconds = base_duration_seconds
             total_frames = int(fps * duration_seconds)
-            
-            movie_scene = sequence.get_movie_scene()
+
+            try:
+                sequence.set_playback_start(0)
+                sequence.set_playback_end(total_frames)
+                logger.info(f"Set initial playback range: 0-{total_frames} frames ({duration_seconds:.2f}s @ {fps} fps)")
+            except Exception as e:
+                logger.warning(f"Could not set initial playback range: {e}")
 
             transform_key_interp = str(base_transform_key_interp or "auto").lower()
 
@@ -668,7 +677,7 @@ def generate_all_sequences(
                 fps=fps,
                 duration_seconds=duration_seconds,
                 total_frames=total_frames,
-                movie_scene=movie_scene,
+                sequence=sequence,
                 fixed_speed_cfg=fixed_speed_cfg,
                 strict_duration=strict_duration,
             )
@@ -707,7 +716,6 @@ def generate_all_sequences(
             _add_camera_cuts_if_enabled(
                 add_camera=add_camera,
                 sequence=sequence,
-                movie_scene=movie_scene,
                 actor_binding=actor_binding,
                 total_frames=fixed_result.total_frames,
             )
@@ -763,7 +771,7 @@ def _derive_output_dir_from_map(map_path: str) -> Optional[str]:
     # /Game/SecretBase/Map -> /Game/SecretBase
     scene_root = '/'.join(parts[:3])
     
-    output_dir = f"{scene_root}/Levelsequence"
+    output_dir = f"{scene_root}/Sequence"
     logger.info(f"  Output dir: {output_dir}")
     
     return output_dir

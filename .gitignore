@@ -18,3 +18,9 @@ ue_template/project/DerivedDataCache
 ue_template/project/Intermediate
 ue_template/project/Saved
 .venv
+
+**/bos_config.json
+config/bos_config.json
+ue_pipeline/config/bos_config.json
+
+__pycache__

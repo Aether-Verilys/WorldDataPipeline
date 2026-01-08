@@ -1,0 +1,105 @@
+{
+  "_usage": "修改 active_job 和对应的任务参数，然后运行 run.ps1",
+  
+  "active_job": "sequence",
+  
+  "unreal_engine": {
+    "engine_path": "D:/Program Files/Epic Games/UE_5.7",
+    "editor_path": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe"
+  },
+  
+  "project": {
+    "project_path": "D:/WorldDataPipeline/ue_template/project/WorldData.uproject",
+    "output_base_dir": "D:/WorldDataPipeline/output",
+    "exclude_map_names": ["Overview"]
+  },
+  
+  "maps": {
+    "SecretBase": "/Game/SecretBase/Map/SecretBase",
+    "LevelPrototyping": "/Game/LevelPrototyping/Lvl_FirstPerson",
+    "Canyon": "/Game/CanyonScans/Canyon_DemoScene",
+    "GYM": "/Game/GYM/Level/GYM"
+  },
+  
+  "jobs": {
+    "sequence": {
+      "enabled": true,
+      "map": "/Game/LevelPrototyping/test",
+      "sequence_count": 2,
+      "fps": 30,
+      "duration_seconds": 60,
+      "camera_binding": "BP Cameraman C",
+      "fixed_speed_cm_per_sec": 150,
+      "z_offset_cm": 170.0,
+      "max_yaw_rate_deg_per_sec": 30.0,
+      "max_pitch_rate_deg_per_sec": 5.0,
+      "strict_duration": true,
+      "add_camera": true,
+      "force_zero_pitch_roll": true,
+      "camera_pitch_from_slope": true,
+      "max_camera_pitch_deg": 15.0,
+      "camera_export": {
+        "enabled": true,
+        "export_format": "csv"
+      },
+      "nav_roam": {
+        "seed": -1,
+        "nav_build_wait_seconds": 10.0,
+        "max_random_point_tries": 40,
+        "min_segment_step_cm": 75.0,
+        "interpolation": "linear",
+        "project_to_nav": true,
+        "use_connectivity_analysis": true,
+        "connectivity_sample_density": 1.0
+      },
+      "actor": {
+        "name": "BP_Cameraman",
+        "camera_component_name": "Camera",
+        "blueprint_class_path": "/Game/FirstPerson/Blueprints/BP_Cameraman",
+        "binding_mode": "sequence_spawnable"
+      },
+      "random_seed": 42
+    },
+    
+    "bake": {
+      "enabled": true,
+      "maps": ["SecretBase", "LevelPrototyping"],
+      "auto_scale": true,
+      "scale_margin": 1.2,
+      "min_scale": [20.0, 20.0, 5.0],
+      "max_scale": [500.0, 500.0, 5.0],
+      "agent_max_step_height": 50.0,
+      "agent_max_jump_height": 200.0,
+      "wait_for_build": true,
+      "build_timeout": 120,
+      "verify_navmesh": true
+    },
+    
+    "render": {
+      "enabled": true,
+      "map": "LevelPrototyping",
+      "sequence_path": "/Game/CameraController/Generated/Lvl_FirstPerson_003",
+      "preset": "/Game/CameraController/Pending_MoviePipelinePrimaryConfig",
+      "framerate": 30,
+      "frame_range": {
+        "start_frame": 0,
+        "end_frame": -1
+      },
+      "postprocess": {
+        "combine_to_video": true,
+        "delete_frames_after_encode": false,
+        "upload_bos": false
+      }
+    },
+    
+    "export": {
+      "enabled": true,
+      "sequence_path": "/Game/CameraController/Generated/Lvl_FirstPerson_012",
+      "camera_export": {
+        "enabled": true,
+        "binding_camera": "BP Cameraman C",
+        "export_format": "csv"
+      }
+    }
+  }
+}

@@ -113,13 +113,17 @@ def get_render_config(manifest: dict, ue_config: dict) -> dict:
     
     config_preset = rendering.get('preset', '')
     
-    # Extract map name from sequence path
-    # Format: /Game/CameraController/Generated/Lvl_FirstPerson_001
-    # Sequence name: Lvl_FirstPerson_001
-    # Map name: Lvl_FirstPerson
-    map_path = None
+    # First check if map is directly provided in manifest
+    map_path = manifest.get('map')
     
-    if sequence:
+    if map_path:
+        logger.info(f"Using map from manifest: {map_path}")
+    elif sequence:
+        # Extract map name from sequence path if map not provided
+        # Format: /Game/CameraController/Generated/Lvl_FirstPerson_001
+        # Sequence name: Lvl_FirstPerson_001
+        # Map name: Lvl_FirstPerson
+        
         # Get the last part of the sequence path (sequence name)
         parts = sequence.split('/')
         sequence_name = parts[-1] if parts else ''
@@ -149,6 +153,9 @@ def get_render_config(manifest: dict, ue_config: dict) -> dict:
         else:
             logger.error(f"Cannot extract sequence name from path: {sequence}")
             sys.exit(1)
+    else:
+        logger.error("Neither 'map' nor 'sequence' provided in manifest")
+        sys.exit(1)
     
     return {
         'sequence': sequence,
@@ -379,7 +386,7 @@ def wait_for_render_completion_legacy(output_base_dir: str, manifest: dict, time
         time.sleep(check_interval)
 
 
-def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str, job_id: str, full_config: dict) -> int:
+def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str, job_id: str, full_config: dict, output_base_dir: str) -> int:
     abs_manifest_path = os.path.abspath(manifest_path)
     abs_worker = os.path.abspath(worker)
     
@@ -392,13 +399,16 @@ def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str, jo
     # Ensure rendering.output_path is set so MRQ uses the expected output directory
     try:
         rendering_section = manifest.setdefault('rendering', {})
-        # If manifest doesn't provide an output_path, prefer ue_config.output_base_dir
-        if not rendering_section.get('output_path'):
-            output_base = full_config.get('output_base_dir') if isinstance(full_config, dict) else None
-            if output_base:
-                rendering_section['output_path'] = output_base
+        # Replace output_path if it's missing, empty, or set to "default"
+        current_output_path = rendering_section.get('output_path', '')
+        if not current_output_path or current_output_path == 'default':
+            # Use the resolved absolute path instead of "default"
+            if output_base_dir:
+                rendering_section['output_path'] = output_base_dir
                 manifest['rendering'] = rendering_section
-                logger.info(f"Injected rendering.output_path='{output_base}' into manifest")
+                logger.info(f"Injected rendering.output_path='{output_base_dir}' into manifest (was: '{current_output_path}')")
+        else:
+            logger.info(f"Using existing rendering.output_path='{current_output_path}' from manifest")
         
         # Store the output directory for status file monitoring
         output_directory = rendering_section.get('output_path', '')
@@ -520,7 +530,7 @@ def run_postprocess_actions(manifest_path: str):
     converter = script_dir / 'convert_frames_to_video.py'
 
     if combine:
-        cmd = [sys.executable, str(converter), '--config', manifest_path, '--no-pause']
+        cmd = [sys.executable, str(converter), '--config', manifest_path, '--no-pause', '--yes']
         if not delete_frames:
             cmd.append('--keep-frames')
         # run converter
@@ -655,7 +665,7 @@ def main():
     logger.info("Starting headless render job...")
     logger.blank(1)
     
-    exit_code = run_ue_job(ue_editor, project, args.manifest_path, worker, job_id, full_config)
+    exit_code = run_ue_job(ue_editor, project, args.manifest_path, worker, job_id, full_config, output_base_dir)
     sys.exit(exit_code)
 
 

@@ -116,14 +116,25 @@ def extract_config_data(config: dict, framerate: int):
 def build_output_path(base_output_path: str, project_path: str, map_path: str, sequence_path: str, ue_config: dict) -> tuple:
     """Build output directory path and extract names"""
     
-    # Extract map name
+    # Extract scene folder name from map_path
+    # Map path format: /Game/LevelPrototyping/test
+    # We want "LevelPrototyping" (the scene folder, not the map name)
+    path_parts = map_path.split("/")
+    if len(path_parts) >= 3:
+        # Get the folder containing the map (second to last)
+        scene_folder = path_parts[-2]
+    else:
+        # Fallback to last part if path is too short
+        scene_folder = path_parts[-1] if path_parts else "UnknownScene"
+    
+    # Extract map name for reference
     map_name = map_path.split('/')[-1]
     
     # Extract sequence name
     sequence_name = sequence_path.split('/')[-1]
     
-    # Construct output directory path: base/map_name/sequence_name
-    output_dir = Path(base_output_path) / map_name / sequence_name
+    # Construct output directory path: base/scene_folder/sequence_name
+    output_dir = Path(base_output_path) / scene_folder / sequence_name
     
     return output_dir, map_name, sequence_name
 

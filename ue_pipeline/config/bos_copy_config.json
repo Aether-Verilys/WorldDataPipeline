@@ -1,9 +1,10 @@
 {
   "source_bucket": "baidu-download-new",
-  "source_prefix": "UE4场景",
+  "source_prefix": "cdy-video-data/UnrealAssets",
   "target_bucket": "world-data",
   "target_prefix": "raw",
   "target_content_folder": "Content",
+  "scenes": ["CHERRY_TREE"],
   "fallback_markers": [
     "Blueprints",
     "Maps",
@@ -23,5 +24,5 @@
   ],
   "prefer_duplicated_scene_name": true,
   "skip_existing": true,
-  "description": "BOS场景复制配置 - 从源bucket复制UE场景到目标bucket。注意：bcecmd默认只列出几个对象，使用-a参数列出所有对象"
+  "description": "BOS场景配置 - scenes字段可指定要下载的场景列表，为空则列出所有可用场景"
 }

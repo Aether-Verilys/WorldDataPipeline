@@ -316,8 +316,8 @@ def export_camera_from_manifest(manifest: dict) -> dict:
             import re
             scene_name = re.sub(r'_\d+$', '', sequence_name)
         
-        # 构建输出路径：output/场景名（不包含序列名子目录）
-        output_dir = os.path.join(output_base, scene_name)
+        # 构建输出路径：output/场景名/序列名
+        output_dir = os.path.join(output_base, scene_name, sequence_name)
     
     output_dir = os.path.normpath(output_dir)
     

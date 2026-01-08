@@ -12,8 +12,7 @@
     "build_timeout": 120,
     "verify_navmesh": true,
     "maps": [
-      "/Game/LevelPrototyping/Lvl_FirstPerson.umap",    
-      "/Game/GYM/Level/GYM.umap"
+      "/Game/LevelPrototyping/test.umap"
     ]
   }
 }

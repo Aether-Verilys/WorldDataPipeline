@@ -36,10 +36,12 @@ class BosSceneDownloader:
             self.source_bucket = config.get('target_bucket', 'world-data')  # 使用之前的target作为这里的source
             self.source_prefix = config.get('target_prefix', 'raw').strip('/')
             self.local_content_path = Path(config.get('local_content_path', '')) if config.get('local_content_path') else None
+            self.configured_scenes = config.get('scenes', [])  # 从配置读取场景列表
         else:
             self.source_bucket = source_bucket or 'world-data'
             self.source_prefix = (source_prefix or 'raw').strip('/')
             self.local_content_path = Path(local_content_path) if local_content_path else None
+            self.configured_scenes = []
         
         # 如果提供了UE配置文件，从中提取Content路径
         if ue_config_path and not self.local_content_path:
@@ -411,6 +413,31 @@ def main():
         )
         
         return 0 if success else 1
+    
+    # 如果配置文件中指定了场景列表，批量下载
+    if downloader.configured_scenes:
+        print(f"\n从配置文件读取到 {len(downloader.configured_scenes)} 个场景")
+        
+        failed_scenes = []
+        for i, scene in enumerate(downloader.configured_scenes, 1):
+            print(f"\n[{i}/{len(downloader.configured_scenes)}] 处理场景: {scene}")
+            success = downloader.download_scene(
+                scene_name=scene,
+                target_path=Path(args.target) if args.target else None,
+                dry_run=args.dry_run
+            )
+            
+            if not success:
+                failed_scenes.append(scene)
+        
+        if failed_scenes:
+            print(f"\n✗ {len(failed_scenes)} 个场景下载失败:")
+            for scene in failed_scenes:
+                print(f"  - {scene}")
+            return 1
+        else:
+            print(f"\n✓ 所有场景下载成功")
+            return 0
     
     # 如果既没有--list也没有--scene也没有--search，显示帮助
     parser.print_help()

@@ -1,0 +1,199 @@
+---
+# ConfigMap for render job configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: render-job-config
+data:
+  # Unreal Engine paths
+  UE_ENGINE_PATH: "/usr/local/UnrealEngine"
+  UE_EDITOR_PATH: "/usr/local/UnrealEngine/Engine/Binaries/Linux/UnrealEditor-Cmd"
+  
+  # Project paths
+  PROJECT_PATH: "/app/ue_template/project/WorldData.uproject"
+  OUTPUT_BASE_DIR: "/app/output"
+  
+  # Render job parameters
+  MAP_PATH: "/Game/SecretBase/Map/SecretBase"
+  SEQUENCE_PATH: "/Game/SecretBase/Map/Sequences/Sequence_001"
+  RENDER_PRESET: "CustomHighQuality"
+  OUTPUT_FORMAT: "PNG"
+  RESOLUTION_X: "1920"
+  RESOLUTION_Y: "1080"
+
+---
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: render-worlddatapipeline
+spec:
+  runPolicy:
+    schedulingPolicy:
+      priorityClass: normal
+      queue: default
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      restartPolicy: Never
+      template:
+        spec:
+          securityContext:
+            runAsUser: 2007
+            runAsGroup: 2007
+            fsGroup: 2007
+          imagePullSecrets:
+            - name: vast-secret
+          schedulerName: volcano
+          priorityClassName: normal
+
+          containers:
+            - name: pytorch
+              image: ccr-23gxup9u-vpc.cnc.bj.baidubce.com/model/worlddatapipeline:v1
+              imagePullPolicy: Always
+              securityContext:
+                capabilities:
+                  add: ["IPC_LOCK"]
+                allowPrivilegeEscalation: false
+              resources:
+                requests:
+                  cpu: "8"
+                  memory: "16Gi"
+                  nvidia.com/gpu: "1"
+                limits:
+                  cpu: "16"
+                  memory: "32Gi"
+                  nvidia.com/gpu: "1"
+
+              envFrom:
+                - configMapRef:
+                    name: render-job-config
+              
+              env:
+                - name: TZ
+                  value: Asia/Shanghai
+                - name: UE_SYSTEM_TYPE
+                  value: linux
+                - name: UE_CONFIG_PATH
+                  value: /tmp/runtime_ue_config.json
+
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -eu
+
+                  echo "=== BEGIN RENDER JOB ==="
+                  
+                  echo "=== Configuration from ConfigMap ==="
+                  echo "UE_ENGINE_PATH: $UE_ENGINE_PATH"
+                  echo "UE_EDITOR_PATH: $UE_EDITOR_PATH"
+                  echo "PROJECT_PATH: $PROJECT_PATH"
+                  echo "MAP_PATH: $MAP_PATH"
+                  echo "SEQUENCE_PATH: $SEQUENCE_PATH"
+                  echo "RENDER_PRESET: $RENDER_PRESET"
+                  echo "OUTPUT_FORMAT: $OUTPUT_FORMAT"
+                  echo "RESOLUTION: ${RESOLUTION_X}x${RESOLUTION_Y}"
+                  
+                  echo "=== Execute dev-linux.sh ==="
+                  if [ -f /app/dev-linux.sh ]; then
+                    source /app/dev-linux.sh
+                    echo "dev-linux.sh executed successfully"
+                  else
+                    echo "WARNING: dev-linux.sh not found"
+                  fi
+                  
+                  echo "=== Environment Info ==="
+                  echo "User: $(whoami)"
+                  echo "UE_SYSTEM_TYPE: $UE_SYSTEM_TYPE"
+                  echo "Working Directory: $(pwd)"
+                  
+                  echo "=== GPU Info ==="
+                  nvidia-smi || echo "No GPU detected"
+                  
+                  echo "=== SDL Configuration ==="
+                  export SDL_VIDEODRIVER=x11
+                  export XDG_RUNTIME_DIR=/tmp/xdg-runtime
+                  mkdir -p "$XDG_RUNTIME_DIR" || true
+                  chmod 700 "$XDG_RUNTIME_DIR" || true
+
+                  echo "=== Update UE config with ConfigMap paths ==="
+                  cat > /tmp/runtime_ue_config.json <<EOF
+                  {
+                    "editor_path": "${UE_EDITOR_PATH}",
+                    "project_path": "${PROJECT_PATH}",
+                    "output_base_dir": "${OUTPUT_BASE_DIR}",
+                    "exclude_map_names": ["Overview"]
+                  }
+                  EOF
+                  
+                  echo "Runtime UE config:"
+                  cat "$UE_CONFIG_PATH"
+
+                  echo "=== Generate render job manifest ==="
+                  JOB_ID="job-render-$(date +%Y%m%d-%H%M%S)"
+                  INBOX_DIR="/app/ue_pipeline/jobs/inbox"
+                  mkdir -p "$INBOX_DIR"
+                  
+                  cat > "$INBOX_DIR/${JOB_ID}.json" <<EOF
+                  {
+                    "job_type": "render",
+                    "job_id": "${JOB_ID}",
+                    "map": "${MAP_PATH}",
+                    "sequence": "${SEQUENCE_PATH}",
+                    "render_config": {
+                      "preset": "${RENDER_PRESET}",
+                      "output_format": "${OUTPUT_FORMAT}",
+                      "resolution": {
+                        "width": ${RESOLUTION_X},
+                        "height": ${RESOLUTION_Y}
+                      }
+                    }
+                  }
+                  EOF
+                  
+                  echo "Job manifest created: $INBOX_DIR/${JOB_ID}.json"
+                  cat "$INBOX_DIR/${JOB_ID}.json"
+
+                  echo "=== Run render command ==="
+                  cd /app
+                  python -m ue_pipeline.run_render_job_headless \
+                    --manifest "$INBOX_DIR/${JOB_ID}.json"
+                  
+                  EXIT_CODE=$?
+                  if [ $EXIT_CODE -eq 0 ]; then
+                    echo "=== RENDER SUCCESS ==="
+                  else
+                    echo "=== RENDER FAILED (exit code: $EXIT_CODE) ==="
+                    exit $EXIT_CODE
+                  fi
+
+                  echo "=== Check results ==="
+                  ls -la "$OUTPUT_BASE_DIR" || true
+                  
+                  echo "JOB_COMPLETE"
+                  echo "ALL_OK"
+
+              volumeMounts:
+                - name: ue-engine
+                  mountPath: /usr/local/UnrealEngine
+                  readOnly: true
+                - name: devshm
+                  mountPath: /dev/shm
+
+          volumes:
+            - name: ue-engine
+              hostPath:
+                path: /mnt/pfs/users/wuyibo/UE5.7
+                type: Directory
+            - name: devshm
+              emptyDir:
+                medium: Memory
+---
+# Note: To modify render configuration, edit the ConfigMap above.
+# Key configuration parameters:
+#   - SEQUENCE_PATH: Path to the sequence to render
+#   - RENDER_PRESET: Render quality preset
+#   - OUTPUT_FORMAT: Output image format (PNG, JPEG, EXR)
+#   - RESOLUTION_X/Y: Output resolution
+# 
+# After modifying the ConfigMap, apply with: kubectl apply -f job-render.yaml

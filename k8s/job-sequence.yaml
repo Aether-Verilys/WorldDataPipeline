@@ -1,0 +1,264 @@
+---
+# ConfigMap for runtime configuration
+# 修改这里的参数来配置任务执行
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: worlddatapipeline-config
+data:
+  # ====================================
+  # Unreal Engine Configuration
+  # ====================================
+  UE_ENGINE_PATH: "/usr/local/UnrealEngine"
+  UE_EDITOR_PATH: "/usr/local/UnrealEngine/Engine/Binaries/Linux/UnrealEditor-Cmd"
+  
+  # ====================================
+  # Project Configuration
+  # ====================================
+  PROJECT_PATH: "/app/ue_template/project/WorldData.uproject"
+  OUTPUT_BASE_DIR: "/app/output"
+  
+  # ====================================
+  # Map Selection (修改这里切换地图)
+  # ====================================
+  # 可用地图: SecretBase, LevelPrototyping, Canyon, GYM
+  ACTIVE_MAP: "SecretBase"
+  
+  # 地图路径映射
+  MAP_SecretBase: "/Game/SecretBase/Map/SecretBase"
+  MAP_LevelPrototyping: "/Game/LevelPrototyping/Lvl_FirstPerson"
+  MAP_Canyon: "/Game/CanyonScans/Canyon_DemoScene"
+  MAP_GYM: "/Game/GYM/Level/GYM"
+  
+  # ====================================
+  # Create Sequence Parameters (修改这些参数)
+  # ====================================
+  SEQUENCE_COUNT: "2"
+  FPS: "30"
+  DURATION_SECONDS: "60"
+  CAMERA_BINDING: "BP Cameraman C"
+  FIXED_SPEED_CM_PER_SEC: "150"
+  Z_OFFSET_CM: "170.0"
+  MAX_YAW_RATE_DEG_PER_SEC: "30.0"
+  MAX_PITCH_RATE_DEG_PER_SEC: "5.0"
+  RANDOM_SEED: "42"
+
+---
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: sequence-worlddatapipeline
+spec:
+  runPolicy:
+    schedulingPolicy:
+      priorityClass: normal
+      queue: default
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      restartPolicy: Never
+      template:
+        spec:
+          securityContext:
+            runAsUser: 2007
+            runAsGroup: 2007
+            fsGroup: 2007
+          imagePullSecrets:
+            - name: vast-secret
+          schedulerName: volcano
+          priorityClassName: normal
+
+          containers:
+            - name: pytorch
+              image: ccr-23gxup9u-vpc.cnc.bj.baidubce.com/model/worlddatapipeline:v1
+              imagePullPolicy: Always
+              securityContext:
+                capabilities:
+                  add: ["IPC_LOCK"]
+                allowPrivilegeEscalation: false
+              resources:
+                requests:
+                  cpu: "4"
+                  memory: "8Gi"
+                limits:
+                  cpu: "8"
+                  memory: "16Gi"
+
+              envFrom:
+                - configMapRef:
+                    name: worlddatapipeline-config
+              
+              env:
+                - name: TZ
+                  value: Asia/Shanghai
+                - name: UE_SYSTEM_TYPE
+                  value: linux
+                - name: UE_CONFIG_PATH
+                  value: /tmp/runtime_ue_config.json
+
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -eu
+
+                  echo "=== BEGIN SEQUENCE JOB ==="
+                  
+                  echo "=== Configuration from ConfigMap ==="
+                  echo "UE_ENGINE_PATH: $UE_ENGINE_PATH"
+                  echo "UE_EDITOR_PATH: $UE_EDITOR_PATH"
+                  echo "PROJECT_PATH: $PROJECT_PATH"
+                  echo "OUTPUT_BASE_DIR: $OUTPUT_BASE_DIR"
+                  echo "ACTIVE_MAP: $ACTIVE_MAP"
+                  
+                  # 根据ACTIVE_MAP选择地图路径
+                  MAP_VAR_NAME="MAP_${ACTIVE_MAP}"
+                  MAP_PATH="${!MAP_VAR_NAME}"
+                  
+                  if [ -z "$MAP_PATH" ]; then
+                    echo "ERROR: Map '$ACTIVE_MAP' not found in ConfigMap"
+                    echo "Available maps: SecretBase, LevelPrototyping, Canyon, GYM"
+                    exit 1
+                  fi
+                  
+                  echo "Selected Map: $ACTIVE_MAP -> $MAP_PATH"
+                  echo "SEQUENCE_COUNT: $SEQUENCE_COUNT"
+                  echo "FPS: $FPS"
+                  echo "DURATION_SECONDS: $DURATION_SECONDS"
+                  
+                  echo "=== Execute dev-linux.sh ==="
+                  if [ -f /app/dev-linux.sh ]; then
+                    source /app/dev-linux.sh
+                    echo "dev-linux.sh executed successfully"
+                  else
+                    echo "WARNING: dev-linux.sh not found"
+                  fi
+                  
+                  echo "=== Environment Info ==="
+                  echo "User: $(whoami)"
+                  echo "UE_SYSTEM_TYPE: $UE_SYSTEM_TYPE"
+                  echo "UE_CONFIG_PATH: $UE_CONFIG_PATH"
+                  echo "Working Directory: $(pwd)"
+                  
+                  echo "=== SDL Configuration (headless mode) ==="
+                  export SDL_VIDEODRIVER=dummy
+                  export SDL_AUDIODRIVER=dummy
+                  export XDG_RUNTIME_DIR=/tmp/xdg-runtime
+                  mkdir -p "$XDG_RUNTIME_DIR" || true
+                  chmod 700 "$XDG_RUNTIME_DIR" || true
+                  export DISPLAY=
+                  export WAYLAND_DISPLAY=
+
+                  echo "=== Generate job manifest from ConfigMap ==="
+                  JOB_ID="job-sequence-$(date +%Y%m%d-%H%M%S)"
+                  INBOX_DIR="/app/ue_pipeline/jobs/inbox"
+                  mkdir -p "$INBOX_DIR"
+                  
+                  # Create job manifest with ConfigMap values
+                  cat > "$INBOX_DIR/${JOB_ID}.json" <<EOF
+                  {
+                    "job_type": "create_sequence",
+                    "job_id": "${JOB_ID}",
+                    "map": "${MAP_PATH}",
+                    "sequence_config": {
+                      "output_dir": "",
+                      "sequence_count": ${SEQUENCE_COUNT},
+                      "camera_export": {
+                        "enabled": true,
+                        "binding_camera": "${CAMERA_BINDING}",
+                        "export_format": "csv"
+                      },
+                      "fps": ${FPS},
+                      "duration_seconds": ${DURATION_SECONDS},
+                      "fixed_speed_cm_per_sec": ${FIXED_SPEED_CM_PER_SEC},
+                      "strict_duration": true,
+                      "add_camera": true,
+                      "nav_roam": {
+                        "seed": -1,
+                        "nav_build_wait_seconds": 10.0,
+                        "max_random_point_tries": 40,
+                        "min_segment_step_cm": 75.0,
+                        "interpolation": "linear",
+                        "project_to_nav": true,
+                        "z_offset_cm": ${Z_OFFSET_CM},
+                        "use_connectivity_analysis": true,
+                        "connectivity_sample_density": 1.0
+                      },
+                      "force_zero_pitch_roll": true,
+                      "max_yaw_rate_deg_per_sec": ${MAX_YAW_RATE_DEG_PER_SEC},
+                      "max_pitch_rate_deg_per_sec": ${MAX_PITCH_RATE_DEG_PER_SEC},
+                      "camera_pitch_from_slope": true,
+                      "max_camera_pitch_deg": 15.0,
+                      "transform_key_interp": "auto",
+                      "actor_name": "BP_Cameraman",
+                      "camera_component_name": "Camera",
+                      "actor_blueprint_class_path": "/Game/FirstPerson/Blueprints/BP_Cameraman",
+                      "actor_binding_mode": "sequence_spawnable",
+                      "random_seed": ${RANDOM_SEED}
+                    }
+                  }
+                  EOF
+                  
+                  echo "Job manifest created: $INBOX_DIR/${JOB_ID}.json"
+                  cat "$INBOX_DIR/${JOB_ID}.json"
+
+                  echo "=== Update UE config with ConfigMap paths ==="
+                  cat > /tmp/runtime_ue_config.json <<EOF
+                  {
+                    "editor_path": "${UE_EDITOR_PATH}",
+                    "project_path": "${PROJECT_PATH}",
+                    "output_base_dir": "${OUTPUT_BASE_DIR}",
+                    "exclude_map_names": ["Overview"]
+                  }
+                  EOF
+                  
+                  export UE_CONFIG_PATH=/tmp/runtime_ue_config.json
+                  echo "Runtime UE config:"
+                  cat "$UE_CONFIG_PATH"
+
+                  echo "=== Run create_sequence command ==="
+                  cd /app
+                  python app.py create_sequence --manifest "$INBOX_DIR/${JOB_ID}.json"
+                  
+                  EXIT_CODE=$?
+                  if [ $EXIT_CODE -eq 0 ]; then
+                    echo "=== SEQUENCE SUCCESS ==="
+                  else
+                    echo "=== SEQUENCE FAILED (exit code: $EXIT_CODE) ==="
+                    exit $EXIT_CODE
+                  fi
+
+                  echo "=== Check results ==="
+                  ls -la /app/ue_pipeline/jobs/completed/ || true
+                  ls -la /app/ue_pipeline/jobs/failed/ || true
+                  
+                  echo "JOB_COMPLETE"
+                  echo "ALL_OK"
+
+              volumeMounts:
+                - name: ue-engine
+                  mountPath: /usr/local/UnrealEngine
+                  readOnly: true
+                - name: devshm
+                  mountPath: /dev/shm
+
+          volumes:
+            - name: ue-engine
+              hostPath:
+                path: /mnt/pfs/users/wuyibo/UE5.7
+                type: Directory
+            - name: devshm
+              emptyDir:
+                medium: Memory
+---
+# 使用说明:
+# 1. 修改 ConfigMap 中的参数来配置任务
+# 2. 切换地图: 修改 ACTIVE_MAP (可选值: SecretBase, LevelPrototyping, Canyon, GYM)
+# 3. 调整序列参数: SEQUENCE_COUNT, DURATION_SECONDS 等
+# 4. 应用配置: kubectl apply -f job-sequence.yaml
+#
+# 快速切换示例:
+#   ACTIVE_MAP: "Canyon"           # 切换到 Canyon 地图
+#   SEQUENCE_COUNT: "10"           # 生成 10 个序列
+#   DURATION_SECONDS: "30"         # 每个 30 秒
+
