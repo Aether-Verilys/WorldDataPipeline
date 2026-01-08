@@ -686,10 +686,11 @@ class NavMeshManager:
                         unreal.log(f"     Alignment: Ground-level (Z={reference_z_center:.1f} cm)")
                     else:
                         terrain_type = "Valley"
-                        reference_z_center = landscape_z_center
+                        # For valley terrain, align to lowest point to cover all objects below ground
+                        reference_z_center = landscape_z_min
                         unreal.log(f"  Terrain Type: VALLEY")
                         unreal.log(f"     Most objects ({(1-above_ratio)*100:.1f}%) are below ground")
-                        unreal.log(f"     Alignment: Landscape center (Z={reference_z_center:.1f} cm)")
+                        unreal.log(f"     Alignment: Landscape bottom (Z={reference_z_center:.1f} cm)")
                 else:
                     terrain_type = "Plain (default)"
                     reference_z_center = landscape_z_center
