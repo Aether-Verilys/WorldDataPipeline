@@ -1,8 +1,8 @@
 {
   "job_type": "render",
   "job_id": "job-render-001",
-  "sequence": "/Game/LevelPrototyping/Sequence/test_001",
-  "map": "/Game/LevelPrototyping/test",
+  "sequence": "/Game/RockyDesert/Sequence/Demo_003",
+  "map": "/Game/RockyDesert/Maps/Demo",
   "rendering": {
     "preset": "/Game/CameraController/Pending_MoviePipelinePrimaryConfig",
     "output_path": "default",
@@ -15,7 +15,6 @@
     ,
     "postprocess": {
       "combine_to_video": true,
-      "_video_output_note": "视频输出: {output_base_dir}/LevelPrototyping/test_001/test_001.mp4",
       "delete_frames_after_encode": true,
       "upload_bos": {
         "enabled": false,

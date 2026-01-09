@@ -106,22 +106,6 @@ class NavMeshManager:
                 unreal.log(f"  Scale: {scale}")
                 unreal.log(f"  Actor: {navmesh_volume.get_name()}")
                 
-                # Force NavMesh rebuild after adding volume
-                # This ensures NavMesh generation starts immediately
-                try:
-                    world = unreal.EditorLevelLibrary.get_editor_world()
-                    nav_sys = unreal.NavigationSystemV1.get_navigation_system(world)
-                    if nav_sys:
-                        # Trigger rebuild
-                        rebuild_fn = getattr(nav_sys, "build", None)
-                        if callable(rebuild_fn):
-                            unreal.log("Triggering NavMesh rebuild...")
-                            rebuild_fn()
-                        else:
-                            unreal.log("NavMesh will auto-build (rebuild API not available)")
-                except Exception as e:
-                    unreal.log_warning(f"Could not trigger manual rebuild: {str(e)}")
-                
                 # Save level (note: actual save will be done after NavMesh build)
                 # No need to save here, will save in worker after verification
                 
@@ -205,43 +189,80 @@ class NavMeshManager:
                 unreal.log_warning("NavigationSystem not found")
                 return False
             
-            # IMPORTANT: Give NavMesh time to start building before checking
-            # NavMesh build may not start immediately after adding NavMeshBoundsVolume
-            initial_delay = 2.0  # Wait 2 seconds for build to start
-            unreal.log(f"Waiting {initial_delay}s for NavMesh build to start...")
-            time.sleep(initial_delay)
-            
             # Try to find the is_navigation_being_built method with various signatures
             check_fn = getattr(nav_sys, "is_navigation_being_built_or_locked", None)
             if not callable(check_fn):
                 check_fn = getattr(unreal.NavigationSystemV1, "is_navigation_being_built_or_locked", None)
             
             if not callable(check_fn):
-                # Fallback: just wait a fixed time (increased for Landscape)
+                # Fallback: just wait a fixed time
                 fallback_time = 10.0
                 unreal.log(f"is_navigation_being_built API not available, waiting {fallback_time} seconds...")
                 time.sleep(fallback_time)
                 return True
             
-            start_time = time.time()
-            check_interval = 0.5  # Check every 0.5 seconds
+            # Phase 1: Wait for build to START (max 15 seconds)
+            # We must use time.sleep to allow some OS-level thread scheduling, 
+            # although Python blocks the GameThread, brief sleeps might allow task dispatching on some threads.
+            # Also, we need to wait for RecastNavMesh to be spawned by the system.
+            unreal.log("Waiting for NavMesh build to start...")
+            start_wait_begin = time.time()
+            started = False
             
-            while time.time() - start_time < timeout_seconds:
-                # Check if navigation is still being built
+            while time.time() - start_wait_begin < 15.0:
+                is_building = False
                 try:
                     is_building = check_fn(world)
                 except TypeError:
-                    # Try without world parameter
-                    is_building = check_fn()
+                    try:
+                        is_building = check_fn()
+                    except:
+                        pass
+                
+                if is_building:
+                    started = True
+                    break
+                
+                # Check if RecastNavMesh exists yet
+                all_actors = unreal.EditorLevelLibrary.get_all_level_actors()
+                has_recast = any(isinstance(a, unreal.RecastNavMesh) for a in all_actors)
+                if not has_recast:
+                     # Force command again if not found
+                     unreal.SystemLibrary.execute_console_command(world, "RebuildNavigation")
+                
+                time.sleep(0.5)
+            
+            if not started:
+                unreal.log_warning("NavMesh build did not report 'started' status within 15s.")
+                # It's possible it finished very quickly or the flag is unreliable.
+                # proceed to completion check / verification
+            else:
+                unreal.log(f"NavMesh build started after {time.time() - start_wait_begin:.1f}s.")
+
+            # Phase 2: Wait for build to FINISH
+            build_wait_begin = time.time()
+            while time.time() - build_wait_begin < timeout_seconds:
+                is_building = False
+                try:
+                    is_building = check_fn(world)
+                except TypeError:
+                    try:
+                        is_building = check_fn()
+                    except:
+                        pass
                 
                 if not is_building:
-                    elapsed = time.time() - start_time
+                    elapsed = time.time() - build_wait_begin
                     unreal.log(f"NavMesh build completed in {elapsed:.1f} seconds")
                     return True
                 
-                time.sleep(check_interval)
+                time.sleep(0.5)
             
             unreal.log_warning(f"NavMesh build timeout after {timeout_seconds} seconds")
+            return False
+            
+        except Exception as e:
+            unreal.log_error(f"Error waiting for NavMesh build: {str(e)}")
             return False
             
         except Exception as e:
@@ -251,7 +272,7 @@ class NavMeshManager:
     def verify_navmesh_data(self, test_reachability=True, min_success_rate=0.8):
         """
         Strictly verify that NavMesh has valid navigable areas
-        Checks: NavigationSystem exists, random point reachability
+        Checks: NavigationSystem exists, NavMeshBoundsVolume exists, RecastNavMesh exists, random point reachability
         
         Args:
             test_reachability: Whether to test random point reachability
@@ -268,6 +289,29 @@ class NavMeshManager:
                 return False
             
             unreal.log("NavigationSystem exists")
+            
+            # Check for required actors in level
+            all_actors = unreal.EditorLevelLibrary.get_all_level_actors()
+            nav_bounds_found = False
+            recast_navmesh_found = False
+            
+            for actor in all_actors:
+                if isinstance(actor, unreal.NavMeshBoundsVolume):
+                    nav_bounds_found = True
+                elif isinstance(actor, unreal.RecastNavMesh):
+                    recast_navmesh_found = True
+            
+            if not nav_bounds_found:
+                unreal.log_error("Verification Failed: No NavMeshBoundsVolume found in the level")
+                return False
+            else:
+                unreal.log("✓ Found NavMeshBoundsVolume")
+                
+            if not recast_navmesh_found:
+                unreal.log_error("Verification Failed: No RecastNavMesh (Built NavMesh data) found in the level. Build likely failed or empty.")
+                return False
+            else:
+                unreal.log("✓ Found RecastNavMesh (Generated NavMesh data)")
             
             # Test random point reachability to verify NavMesh has data
             if test_reachability:

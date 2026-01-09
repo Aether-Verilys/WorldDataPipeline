@@ -45,9 +45,7 @@ BOS下载场景 ──→ NavMesh烘焙          Docker容器(UE 5.7)
 **输出：** UE Content中的可用场景 上传到BOS Raw中
 
 **流程：**
-1. `bos_manager.py` 下载场景到本地缓存 `D:/UE_Cache/{scene_name}/`
-2. `copy_scene_assets_wrapper.py` 复制.umap/.uasset到UE Content
-3. 验证场景可加载，更新 `WorldData00_scenes_status.json`
+1. 经过筛选，从另一个库复制到另一个库
 
 ---
 
@@ -73,7 +71,7 @@ BOS下载场景 ──→ NavMesh烘焙          Docker容器(UE 5.7)
 5. 限制范围：最小 `[20,20,5]`，最大 `[500,500,50]`（单个Volume）
 6. 触发NavMesh重建 (`rebuild_navmesh()`)，支持多Volume并行烘焙
 7. **等待NavMesh构建完成** (监控构建状态，Tile生成进度)
-8. **保存场景文件** (`EditorLevelLibrary.save_current_level()`)
+8. **保存场景文件**
 9. **严格验证NavMesh可用性**：
    - 检查 `NavigationSystemV1.GetMainNavData()` 是否存在
    - 验证 `NavData.GetNavMeshTilesCount() > 0`（确保已生成导航网格）

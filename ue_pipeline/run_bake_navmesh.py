@@ -91,9 +91,10 @@ def validate_paths(ue_editor: str, project: str, worker: str):
         sys.exit(1)
 
 
-def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str, job_id: str, full_config: dict) -> int:
+def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker_phase1: str, worker_phase2: str, job_id: str, full_config: dict) -> int:
     abs_manifest_path = os.path.abspath(manifest_path)
-    abs_worker = os.path.abspath(worker)
+    abs_worker_phase1 = os.path.abspath(worker_phase1)
+    abs_worker_phase2 = os.path.abspath(worker_phase2)
     
     with open(abs_manifest_path, 'r', encoding='utf-8') as f:
         manifest = json.load(f)
@@ -110,10 +111,21 @@ def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str, jo
         
         abs_project = os.path.abspath(project)
         
-        ue_args = [
+        # Get maps list for Phase 2
+        navmesh_config = manifest.get('navmesh_config', {})
+        maps = navmesh_config.get('maps', [])
+        
+        # ============================================================
+        # PHASE 1: Add NavMeshBoundsVolume and save maps
+        # ============================================================
+        logger.info("=" * 60)
+        logger.info("PHASE 1: Adding NavMeshBoundsVolume to maps")
+        logger.info("=" * 60)
+        
+        ue_args_phase1 = [
             ue_editor,
             abs_project,
-            f'-ExecutePythonScript={abs_worker}',
+            f'-ExecutePythonScript={abs_worker_phase1}',
             '-RenderOffscreen',
             '-ResX=1920',
             '-ResY=1080',
@@ -127,29 +139,91 @@ def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str, jo
             '-AllowStdOutLogVerbosity',
             '-log',
             '-FullStdOutLogOutput',
-            f'LOG=NavMeshBake_{job_id}.txt',
+            f'LOG=NavMeshBake_Phase1_{job_id}.txt',
         ]
         
-        logger.info(f"Command: {' '.join(ue_args)}")
+        logger.info(f"Command: {' '.join(ue_args_phase1)}")
         logger.blank(1)
         logger.separator(width=40, char='-')
         
         try:
-            result = subprocess.run(ue_args, check=False)
+            result_phase1 = subprocess.run(ue_args_phase1, check=False)
 
             logger.blank(1)
             logger.separator(width=40, char='-')
             
-            if result.returncode == 0:
-                logger.info("NavMesh bake job completed successfully")
-                return 0
-            else:
-                logger.error(f"NavMesh bake job failed with exit code: {result.returncode}")
-                return result.returncode
-                
+            if result_phase1.returncode != 0:
+                logger.error(f"Phase 1 failed with exit code: {result_phase1.returncode}")
+                return result_phase1.returncode
+            
+            logger.info("Phase 1 completed - NavMeshBoundsVolume added and saved")
+            logger.blank(1)
+            
         except Exception as e:
-            logger.error(f"Failed to launch UE: {e}")
+            logger.error(f"Failed to launch UE Phase 1: {e}")
             return 1
+        
+        # ============================================================
+        # PHASE 2: Reload each map with cmd to trigger NavMesh build
+        # ============================================================
+        logger.info("=" * 60)
+        logger.info("PHASE 2: Triggering NavMesh build by reloading maps")
+        logger.info("=" * 60)
+        
+        for i, map_path in enumerate(maps, 1):
+            logger.info(f"[{i}/{len(maps)}] Reloading map to trigger build and verify: {map_path}")
+            
+            # Set environment variable for worker to know which map to verify
+            os.environ['UE_VERIFY_MAP_PATH'] = map_path
+            
+            ue_args_phase2 = [
+                ue_editor,
+                abs_project,
+                map_path,  # Directly load the map to trigger NavMesh build
+                f'-ExecutePythonScript={abs_worker_phase2}',
+                map_path,  # Directly load the map to trigger NavMesh build
+                '-RenderOffscreen',
+                '-ResX=1920',
+                '-ResY=1080',
+                '-ForceRes',
+                '-Windowed',
+                '-NoLoadingScreen',
+                '-NoScreenMessages',
+                '-NoSplash',
+                '-Unattended',
+                '-NoSound',
+                '-AllowStdOutLogVerbosity',
+                '-log',
+                '-FullStdOutLogOutput',
+                f'LOG=NavMeshBake_Phase2_{job_id}_Map{i}.txt',
+            ]
+            
+            logger.info(f"Command: {' '.join(ue_args_phase2)}")
+            logger.blank(1)
+            logger.separator(width=40, char='-')
+            
+            try:
+                result_phase2 = subprocess.run(ue_args_phase2, check=False)
+
+                logger.blank(1)
+                logger.separator(width=40, char='-')
+                
+                if result_phase2.returncode != 0:
+                    logger.warning(f"Phase 2 map {i} completed with exit code: {result_phase2.returncode}")
+                else:
+                    logger.info(f"Phase 2 map {i} completed successfully")
+                    
+            except Exception as e:
+                logger.error(f"Failed to launch UE Phase 2 for map {i}: {e}")
+                continue
+            
+            logger.blank(1)
+        
+        logger.info("=" * 60)
+        logger.info("NavMesh bake job completed (2-phase execution)")
+        logger.info("=" * 60)
+        return 0
+                
     finally:
         try:
             if os.path.exists(temp_manifest_path):
@@ -175,7 +249,8 @@ def main():
     args = parser.parse_args()
     
     script_dir = Path(__file__).parent
-    worker = str(script_dir / 'python' / 'worker_bake_navmesh.py')
+    worker_phase1 = str(script_dir / 'python' / 'worker_bake_navmesh.py')
+    worker_phase2 = str(script_dir / 'python' / 'worker_verify_navmesh.py')
     
     logger.header("UE NavMesh Bake Tool (Headless Mode)")
     
@@ -225,12 +300,16 @@ def main():
         logger.plain(json.dumps(manifest, indent=2))
         logger.blank(1)
     
-    validate_paths(ue_editor, project, worker)
+    validate_paths(ue_editor, project, worker_phase1)
+    
+    if not os.path.exists(worker_phase2):
+        logger.error(f"Worker script not found at: {worker_phase2}")
+        sys.exit(1)
     
     logger.info("Starting NavMesh bake job...")
     logger.blank(1)
     
-    exit_code = run_ue_job(ue_editor, project, args.manifest_path, worker, job_id, full_config)
+    exit_code = run_ue_job(ue_editor, project, args.manifest_path, worker_phase1, worker_phase2, job_id, full_config)
     sys.exit(exit_code)
 
 

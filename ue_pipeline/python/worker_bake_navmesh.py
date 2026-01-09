@@ -149,23 +149,12 @@ def main(argv=None) -> int:
 
             if not navmesh:
                 logger.warning("NavMesh volume not created (may already exist)")
-
-            # NavMesh auto-builds after adding NavMeshBoundsVolume in UE 5.7+
-            logger.info(f"NavMesh auto-building for {map_path}...")
-
-            # Wait for NavMesh build to complete
-            if wait_for_build:
-                logger.info("Waiting for NavMesh build to complete...")
-                build_success = manager.wait_for_navmesh_build(timeout_seconds=build_timeout)
-                if not build_success:
-                    logger.warning("NavMesh build timeout or failed")
-                
-                # Additional wait to ensure NavMesh data is fully processed
-                logger.info("Waiting additional 3s for NavMesh data to stabilize...")
-                time.sleep(3)
             else:
-                # Give it a moment even if not waiting
-                time.sleep(2)
+                logger.info("NavMeshBoundsVolume added successfully")
+
+            # Phase 1: Only add volume and save, don't wait for build
+            # Build will be triggered in Phase 2 by reloading the map with cmd
+            logger.info("Phase 1 mode: Skipping build wait, will be triggered in Phase 2")
 
             # Save level
             logger.info(f"Saving level: {map_path}")
@@ -197,18 +186,14 @@ def main(argv=None) -> int:
                 failed_maps.append({"map": map_path, "error": f"Failed to save: {e}"})
                 continue
 
-            # Wait for save to complete and NavMesh data to be written
-            logger.info("Waiting 2s for save operation to complete...")
-            time.sleep(2)
-
             # Verify NavMesh data
-            if verify_navmesh:
-                logger.info("Verifying NavMesh data...")
-                is_valid = manager.verify_navmesh_data()
-                if is_valid:
-                    logger.info("NavMesh verification passed")
-                else:
-                    logger.warning("NavMesh verification failed - may not have navigable areas")
+            # if verify_navmesh:
+            #     logger.info("Verifying NavMesh data...")
+            #     is_valid = manager.verify_navmesh_data()
+            #     if is_valid:
+            #         logger.info("NavMesh verification passed")
+            #     else:
+            #         logger.warning("NavMesh verification failed - may not have navigable areas")
 
             success_count += 1
             logger.info(f"Completed: {map_path}")

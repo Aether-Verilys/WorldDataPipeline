@@ -233,7 +233,8 @@ def _build_nav_points_with_retry(
         try:
             seed_val = int(seed_cfg)
             if seed_val == -1:
-                # -1表示使用随机种子
+                # -1表示使用随机种子，先用时间重新初始化random确保真随机
+                random.seed()
                 actual_seed = random.randint(0, 999999)
                 random.seed(actual_seed)
                 logger.info(f"NavRoam seed: {actual_seed} (random)")
@@ -260,6 +261,7 @@ def _build_nav_points_with_retry(
         try:
             if path_attempt == 1:
                 # 第二次尝试：重新生成随机种子
+                random.seed()
                 actual_seed = random.randint(0, 999999)
                 random.seed(actual_seed)
                 logger.warning(f"Retry with new seed: {actual_seed}")
@@ -571,7 +573,6 @@ def generate_all_sequences(
     nav_roam_cfg: Dict[str, Any],
     force_zero_pitch_roll: bool,
     max_yaw_rate_deg_per_sec: Optional[float],
-    base_transform_keys_cfg: Optional[list],
     base_transform_key_interp: str,
     sequence_config: Dict[str, Any],
     camera_export_cfg: Optional[Dict[str, Any]],
@@ -581,9 +582,6 @@ def generate_all_sequences(
 
     import time
     run_id = int(time.time())
-    
-    # Initialize random seed to ensure different sequences each run
-    random.seed()
 
     world, nav = _prepare_sequence_generation_run(
         map_path=map_path,
@@ -609,7 +607,6 @@ def generate_all_sequences(
             logger.info("Cache will be reused for all sequences in this batch run")
         except Exception as e:
             logger.warning(f"Connectivity analysis pre-computation failed: {e}")
-            logger.warning("Will fall back to legacy method in batch loop")
         logger.info("========================================")
 
     fps = int(seq_cfg.get("fps", 30))
@@ -842,7 +839,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     nav_roam_cfg = job_config.nav_roam
     force_zero_pitch_roll = bool(job_config.force_zero_pitch_roll)
     max_yaw_rate_deg_per_sec = job_config.max_yaw_rate_deg_per_sec
-    base_transform_keys_cfg = job_config.transform_keys
     base_transform_key_interp = job_config.transform_key_interp
 
     map_name = "Unknown"
@@ -883,7 +879,6 @@ def main(argv: Optional[List[str]] = None) -> int:
             nav_roam_cfg=nav_roam_cfg,
             force_zero_pitch_roll=force_zero_pitch_roll,
             max_yaw_rate_deg_per_sec=max_yaw_rate_deg_per_sec,
-            base_transform_keys_cfg=base_transform_keys_cfg,
             base_transform_key_interp=base_transform_key_interp,
             sequence_config=sequence_config,
             camera_export_cfg=camera_export_cfg,
