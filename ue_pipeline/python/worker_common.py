@@ -6,16 +6,6 @@ from typing import Any, Dict, List, Optional
 
 
 def resolve_manifest_path(env_value: Optional[str], argv: List[str]) -> Optional[str]:
-    """Resolve manifest path from env value or argv.
-
-    Accepts:
-    - env_value: the value of an environment variable (already looked up)
-    - argv: full argv list (may include script path)
-
-    Supported argv forms:
-    - --manifest=PATH
-    - --manifest PATH
-    """
     if env_value:
         return env_value
 
@@ -29,7 +19,6 @@ def resolve_manifest_path(env_value: Optional[str], argv: List[str]) -> Optional
 
 
 def resolve_manifest_path_from_env(env_key: str, argv: List[str]) -> Optional[str]:
-    """Resolve manifest path using an env var key plus argv fallback."""
     return resolve_manifest_path(os.environ.get(env_key), argv)
 
 

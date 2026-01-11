@@ -1,5 +1,6 @@
 import unreal
 from typing import List, Optional, Dict, Any
+from ue_api import get_movie_pipeline_queue_subsystem
 import gc
 import os
 import json
@@ -361,19 +362,7 @@ def render_sequences_remote(
     
     # Get Movie Pipeline Queue Subsystem
     # Try multiple possible class names for different UE versions
-    subsystem = None
-    try:
-        subsystem = unreal.get_editor_subsystem(unreal.MoviePipelineQueueSubsystem)
-    except AttributeError:
-        try:
-            subsystem = unreal.get_editor_subsystem(unreal.MoviePipelineEditorSubsystem)
-        except AttributeError:
-            try:
-                subsystem_class = unreal.load_class(None, "/Script/MovieRenderPipelineCore.MoviePipelineQueueSubsystem")
-                if subsystem_class:
-                    subsystem = unreal.get_editor_subsystem(subsystem_class)
-            except:
-                pass
+    subsystem = get_movie_pipeline_queue_subsystem()
     
     if not subsystem:
         unreal.log_error("[Rendering] 无法获取 MoviePipelineQueueSubsystem")
@@ -557,21 +546,7 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
     
     # Get Movie Pipeline Queue Subsystem
     # Try multiple possible class names for different UE versions
-    subsystem = None
-    try:
-        subsystem = unreal.get_editor_subsystem(unreal.MoviePipelineQueueSubsystem)
-    except AttributeError:
-        try:
-            # UE5 may use different class name
-            subsystem = unreal.get_editor_subsystem(unreal.MoviePipelineEditorSubsystem)
-        except AttributeError:
-            # Try loading by class path
-            try:
-                subsystem_class = unreal.load_class(None, "/Script/MovieRenderPipelineCore.MoviePipelineQueueSubsystem")
-                if subsystem_class:
-                    subsystem = unreal.get_editor_subsystem(subsystem_class)
-            except:
-                pass
+    subsystem = get_movie_pipeline_queue_subsystem()
     
     if not subsystem:
         unreal.log_error("[Rendering] Cannot get MoviePipelineQueueSubsystem")

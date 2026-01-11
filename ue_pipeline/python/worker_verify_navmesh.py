@@ -8,6 +8,8 @@ if _current_dir not in sys.path:
     sys.path.insert(0, _current_dir)
 
 from logger import logger
+from ue_api import get_editor_world, get_level_editor_subsystem, get_navigation_system
+from assets_manager import save_current_level
 
 
 def trigger_navmesh_rebuild(world) -> bool:
@@ -16,7 +18,7 @@ def trigger_navmesh_rebuild(world) -> bool:
         logger.info("Triggering NavMesh rebuild...")
         
         # Get navigation system
-        nav_sys = unreal.NavigationSystemV1.get_navigation_system(world)
+        nav_sys = get_navigation_system(world)
         
         # Check initial build status
         if nav_sys.is_navigation_being_built(world):
@@ -25,7 +27,7 @@ def trigger_navmesh_rebuild(world) -> bool:
             logger.info("Navigation not built yet")
         
         # Execute rebuild command
-        editor_world = unreal.EditorLevelLibrary.get_editor_world()
+        editor_world = get_editor_world()
         logger.info("Executing RebuildNavigation command...")
         unreal.SystemLibrary.execute_console_command(editor_world, "RebuildNavigation")
         
@@ -34,7 +36,7 @@ def trigger_navmesh_rebuild(world) -> bool:
         time.sleep(10)
         
         # Check final build status
-        nav_sys = unreal.NavigationSystemV1.get_navigation_system(world)
+        nav_sys = get_navigation_system(world)
         if nav_sys.is_navigation_being_built(world):
             logger.info("Navigation is being built")
             # Wait a bit more if still building
@@ -85,8 +87,7 @@ def main(argv=None) -> int:
     try:
         # Get world
         try:
-            subsystem = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
-            world = subsystem.get_editor_world()
+            world = get_editor_world()
         except Exception as e:
             logger.error(f"Failed to get editor world: {e}")
             return 1
@@ -113,17 +114,9 @@ def main(argv=None) -> int:
         logger.info("Saving level after NavMesh rebuild...")
         save_start = time.time()
         try:
-            # Use LevelEditorSubsystem to save (recommended in UE 5.7+)
-            level_editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
-            if level_editor:
-                success = level_editor.save_current_level()
-                save_elapsed = time.time() - save_start
-                logger.info(f"Level saved successfully ({save_elapsed:.2f}s)")
-            else:
-                # Fallback to EditorLevelLibrary (deprecated but works)
-                unreal.EditorLevelLibrary.save_current_level()
-                save_elapsed = time.time() - save_start
-                logger.info(f"Level saved successfully ({save_elapsed:.2f}s)")
+            save_current_level()
+            save_elapsed = time.time() - save_start
+            logger.info(f"Level saved successfully ({save_elapsed:.2f}s)")
         except Exception as e:
             logger.error(f"Failed to save level: {e}")
             return 1

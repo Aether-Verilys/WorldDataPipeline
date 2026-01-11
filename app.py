@@ -1,21 +1,16 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import argparse
 import os
 import platform
 import sys
 from pathlib import Path
 
-# Setup path to ensure imports work
 script_dir = Path(__file__).parent
-repo_root = script_dir  # Now at project root
+repo_root = script_dir  
 ue_pipeline_dir = script_dir / 'ue_pipeline'
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-# Import BOS client manager
-from ue_pipeline.python.bos.bos_client import initialize_bos, get_bos_manager
+from ue_pipeline.python.bos.bos_client import initialize_bos
 import sys as _sys
 _sys.stderr.write("BOS client imported successfully\n")
 _sys.stderr.flush()
@@ -46,7 +41,6 @@ def setup_ue_config_env(system_type: str | None = None):
     """
     config_dir = ue_pipeline_dir / 'config'
     
-    # 确定系统类型
     if system_type is None:
         # 从环境变量读取，如果没有则自动检测
         system_type = os.environ.get('UE_SYSTEM_TYPE', '').lower()
@@ -58,10 +52,9 @@ def setup_ue_config_env(system_type: str | None = None):
             else:
                 system_type = 'linux'  # 默认 linux
     
-    # 选择配置文件
     if system_type == 'windows':
         config_file = config_dir / 'ue_config.json'
-    else:  # linux 或其他系统
+    else: 
         config_file = config_dir / 'linux_ue_config.json'
     
     # 设置环境变量
@@ -75,7 +68,6 @@ def setup_ue_config_env(system_type: str | None = None):
 
 
 def main():
-    # 初始化全局BOS客户端（应用启动时执行一次）
     setup_bos_client()
     
     parser = argparse.ArgumentParser(
@@ -84,7 +76,6 @@ def main():
         epilog=__doc__
     )
     
-    # Global option for system type
     parser.add_argument(
         '--system',
         type=str,
@@ -99,7 +90,6 @@ def main():
         required=True
     )
     
-    # Command: bake_navmesh
     parser_bake = subparsers.add_parser(
         'bake_navmesh',
         help='Bake navigation mesh for scenes'
@@ -111,7 +101,6 @@ def main():
         help='Path to the job manifest JSON file'
     )
     
-    # Command: create_sequence
     parser_create_seq = subparsers.add_parser(
         'create_sequence',
         help='Create level sequences'
@@ -123,7 +112,6 @@ def main():
         help='Path to the job manifest JSON file'
     )
     
-    # Command: export
     parser_export = subparsers.add_parser(
         'export',
         help='Export camera/data from sequences'
@@ -135,7 +123,6 @@ def main():
         help='Path to the job manifest JSON file'
     )
     
-    # Command: render
     parser_render = subparsers.add_parser(
         'render',
         help='Render sequences (headless mode)'
@@ -152,14 +139,11 @@ def main():
         help='Dry run mode (show what would be done without executing)'
     )
     
-    # Command: upload_scenes
     parser_upload = subparsers.add_parser(
         'upload_scenes',
         help='Upload baked scenes to BOS'
     )
-    # upload_scenes reads from ue_config.json by default, no manifest needed
-    
-    # Command: download_scene
+
     parser_download = subparsers.add_parser(
         'download_scene',
         help='Download scene from BOS to local Content folder'
@@ -181,7 +165,6 @@ def main():
         help='Search for scenes containing this string'
     )
     
-    # Command: copy_scene
     parser_copy = subparsers.add_parser(
         'copy_scene',
         help='Copy scene from source BOS bucket to target bucket'
@@ -205,13 +188,11 @@ def main():
     
     args = parser.parse_args()
     
-    # Setup UE config based on system type
     setup_ue_config_env(args.system)
     
     # Dispatch to the appropriate module
     if args.command == 'bake_navmesh':
         from ue_pipeline.run_bake_navmesh import main as bake_main
-        # Pass manifest path as positional argument
         sys.argv = ['run_bake_navmesh.py', args.manifest]
         return bake_main()
     
@@ -241,7 +222,6 @@ def main():
     elif args.command == 'download_scene':
         from ue_pipeline.python.bos.download_scene import BosSceneDownloader
         
-        # 创建下载器（使用默认配置）
         downloader = BosSceneDownloader()
         
         if args.list:
@@ -286,7 +266,6 @@ def main():
     elif args.command == 'copy_scene':
         from ue_pipeline.python.bos.copy_scenes import BosSceneCopier
         
-        # 创建复制器（使用默认配置）
         copier = BosSceneCopier()
         
         if args.list:

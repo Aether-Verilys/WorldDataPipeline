@@ -16,6 +16,7 @@ import unreal
 
 from logger import logger
 
+from ue_api import get_editor_world, get_actor_subsystem, load_map, load_blueprint_class
 from worker_common import load_json as _load_json, resolve_manifest_path_from_env as _resolve_manifest_path_from_env
 
 # Setup import paths for UE direct execution environment
@@ -26,8 +27,6 @@ except ImportError:
 
 from validators import validate_prerequisites
 from assets_manager import (
-    load_map,
-    load_blueprint_class,
     ensure_directory_exists,
     create_level_sequence,
     save_asset,
@@ -101,19 +100,11 @@ def _calculate_pitch_from_slope(a: unreal.Vector, b: unreal.Vector, max_pitch_de
         slope_angle = max_pitch_deg if slope_angle > 0 else -max_pitch_deg
 
     return float(slope_angle)
-def _get_world():
-    try:
-        # Use UnrealEditorSubsystem instead of deprecated EditorLevelLibrary.get_editor_world
-        subsystem = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
-        return subsystem.get_editor_world()
-    except Exception as e:
-        raise RuntimeError(f"Failed to get editor world: {e}")
-
 
 def _find_first_startpoint(mode: str = "player_start"):
     mode = (mode or "player_start").lower()
     # 使用 EditorActorSubsystem 获取所有场景Actor
-    actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    actor_subsystem = get_actor_subsystem()
     actors = actor_subsystem.get_all_level_actors()
 
     player_start_cls = getattr(unreal, "PlayerStart", None)
@@ -212,7 +203,7 @@ def _prepare_sequence_generation_run(
 
     ensure_directory_exists(output_dir)
 
-    world = _get_world()
+    world = get_editor_world()
     nav = get_nav_system(world)
     wait_for_navigation_ready(nav, world, float(nav_roam_cfg.get("nav_build_wait_seconds", 10.0)))
     return world, nav

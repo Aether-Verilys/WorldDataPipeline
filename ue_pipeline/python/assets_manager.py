@@ -1,76 +1,5 @@
 import unreal
-
-
-def load_map(map_asset_path: str) -> None:
-    if not map_asset_path:
-        return
-
-    # 优先使用 LevelEditorSubsystem.load_level
-    try:
-        level_editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
-        if level_editor:
-            print(f"[AssetsManager] Loading map via LevelEditorSubsystem: {map_asset_path}")
-            ok = level_editor.load_level(map_asset_path)
-            if ok:
-                print("[AssetsManager] Map loaded")
-                return
-            print("[AssetsManager] WARNING: LevelEditorSubsystem.load_level returned False")
-    except Exception as e:
-        print(f"[AssetsManager] WARNING: LevelEditorSubsystem.load_level failed: {e}")
-
-    # 备选方案：EditorLevelLibrary.load_level
-    load_level = getattr(unreal.EditorLevelLibrary, "load_level", None)
-    if callable(load_level):
-        print(f"[AssetsManager] Loading map via EditorLevelLibrary.load_level: {map_asset_path}")
-        if load_level(map_asset_path):
-            print("[AssetsManager] Map loaded")
-            return
-
-    raise RuntimeError(f"Failed to load map: {map_asset_path}")
-
-
-def load_blueprint_class(blueprint_asset_path: str):
-    if not blueprint_asset_path:
-        return None
-
-    # 标准化路径（移除 .BP_Name 后缀）
-    normalized = blueprint_asset_path
-    if "." in normalized:
-        normalized = normalized.split(".", 1)[0]
-
-    # 尝试使用 EditorAssetLibrary.load_blueprint_class
-    loader = getattr(unreal.EditorAssetLibrary, "load_blueprint_class", None)
-    if callable(loader):
-        for p in (blueprint_asset_path, normalized):
-            try:
-                cls = loader(p)
-                if cls:
-                    return cls
-            except Exception:
-                continue
-
-    # 备选方案：通过 load_asset 获取 generated_class
-    asset = unreal.load_asset(normalized)
-    if asset is None:
-        asset = unreal.load_asset(blueprint_asset_path)
-        if asset is None:
-            return None
-
-    gen_cls = getattr(asset, "generated_class", None)
-    if gen_cls:
-        return gen_cls
-
-    # 最后尝试：加载生成的类（_C 后缀）
-    try:
-        base_name = normalized.split("/")[-1]
-        generated = f"{normalized}.{base_name}_C"
-        cls = unreal.load_class(None, generated)
-        if cls:
-            return cls
-    except Exception:
-        pass
-
-    return None
+from ue_api import get_editor_world, get_level_editor_subsystem, get_actor_subsystem, load_map, load_blueprint_class
 
 
 def ensure_directory_exists(directory_path: str) -> bool:
@@ -129,7 +58,7 @@ def find_actor_by_name(name_or_label: str):
         找到的Actor对象，如果未找到则返回None
     """
     try:
-        actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+        actor_subsystem = get_actor_subsystem()
         actors = actor_subsystem.get_all_level_actors()
     except Exception as e:
         raise RuntimeError(f"Unable to enumerate level actors: {e}")
@@ -169,7 +98,7 @@ def spawn_actor_from_blueprint(blueprint_asset_path: str, desired_label: str, sp
     if not cls:
         raise RuntimeError(f"Failed to load blueprint class: {blueprint_asset_path}")
 
-    actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    actor_subsystem = get_actor_subsystem()
     actor = actor_subsystem.spawn_actor_from_class(cls, spawn_location, spawn_rotation)
     if not actor:
         raise RuntimeError("Failed to spawn actor")
@@ -196,9 +125,8 @@ def spawn_actor_from_blueprint(blueprint_asset_path: str, desired_label: str, sp
 
 
 def save_current_level() -> None:
-    """保存当前关卡"""
     try:
-        level_editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+        level_editor = get_level_editor_subsystem()
         level_editor.save_current_level()
         print(f"[AssetsManager] ✓ Saved current level")
         return
@@ -206,9 +134,8 @@ def save_current_level() -> None:
         print(f"[AssetsManager] WARNING: save_current_level failed: {e}")
 
     try:
-        subsystem = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem)
-        world = subsystem.get_editor_world()
-        level_editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+        world = get_editor_world()
+        level_editor = get_level_editor_subsystem()
         level_editor.save_all_dirty_levels()
         print(f"[AssetsManager] ✓ Saved dirty levels")
     except Exception:

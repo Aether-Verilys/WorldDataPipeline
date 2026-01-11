@@ -1,289 +1,117 @@
-"""
-Job Manifest Utilities
-Provides functions for reading, validating, and updating job manifests and status files.
-"""
-import json
 import os
-import time
-from typing import Dict, Any, Optional
+import json
+import sys
 from pathlib import Path
+from ue_pipeline.python.logger import logger
 
-
-# ==============================================================================
-# Manifest Schema Validation
-# ==============================================================================
-
-REQUIRED_FIELDS = {
-    "job_id": str,
-    "map": str,
-    "sequence": str,
-    "frame_range": dict,
-}
-
-OPTIONAL_FIELDS = {
-    "project": str,
-    "camera": dict,
-    "render": dict,
-    "post_process": list,
-    "priority": int,
-    "retries": int,
-    "metadata": dict,
-    "callback": dict,
-}
-
-
-def validate_manifest(manifest: Dict[str, Any]) -> tuple[bool, Optional[str]]:
-    # Check required fields
-    for field, expected_type in REQUIRED_FIELDS.items():
-        if field not in manifest:
-            return False, f"Missing required field: {field}"
-        if not isinstance(manifest[field], expected_type):
-            return False, f"Field '{field}' must be {expected_type.__name__}"
-    
-    # Validate frame_range
-    frame_range = manifest.get("frame_range", {})
-    if "start_frame" not in frame_range or "end_frame" not in frame_range:
-        return False, "frame_range must contain start_frame and end_frame"
-    
-    if not isinstance(frame_range["start_frame"], int) or not isinstance(frame_range["end_frame"], int):
-        return False, "start_frame and end_frame must be integers"
-    
-    if frame_range["start_frame"] > frame_range["end_frame"]:
-        return False, "start_frame must be <= end_frame"
-    
-    # Validate optional camera field
-    if "camera" in manifest:
-        camera = manifest["camera"]
-        if not isinstance(camera, dict):
-            return False, "camera must be a dict"
-    
-    # Validate optional render field
-    if "render" in manifest:
-        render = manifest["render"]
-        if not isinstance(render, dict):
-            return False, "render must be a dict"
-        if "enabled" in render and not isinstance(render["enabled"], bool):
-            return False, "render.enabled must be a boolean"
-    
-    return True, None
-
-
-# ==============================================================================
-# Manifest I/O
-# ==============================================================================
-
-def read_manifest(manifest_path: str) -> Dict[str, Any]:
+def load_manifest(manifest_path: str) -> dict:
     if not os.path.exists(manifest_path):
-        raise FileNotFoundError(f"Manifest not found: {manifest_path}")
+        logger.error(f"Manifest file not found: {manifest_path}")
+        sys.exit(1)
     
-    with open(manifest_path, 'r', encoding='utf-8') as f:
-        manifest = json.load(f)
+    try:
+        with open(manifest_path, 'r', encoding='utf-8') as f:
+            manifest = json.load(f)
+        return manifest
+    except Exception as e:
+        logger.error(f"Cannot parse manifest: {e}")
+        sys.exit(1)
+
+def validate_manifest_type(manifest: dict, expected_type: str) -> str:
+    job_id = manifest.get('job_id', 'unknown')
+    job_type = manifest.get('job_type', 'unknown')
     
-    is_valid, error = validate_manifest(manifest)
-    if not is_valid:
-        raise ValueError(f"Invalid manifest: {error}")
+    if job_type != expected_type:
+        logger.error(f"Invalid job type '{job_type}', expected '{expected_type}'")
+        sys.exit(1)
     
-    return manifest
+    return job_id
 
-
-def write_manifest(manifest: Dict[str, Any], output_path: str, atomic: bool = True) -> str:
-    is_valid, error = validate_manifest(manifest)
-    if not is_valid:
-        raise ValueError(f"Invalid manifest: {error}")
-    
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    
-    if atomic:
-        temp_path = output_path + ".tmp"
-        with open(temp_path, 'w', encoding='utf-8') as f:
-            json.dump(manifest, f, indent=2, ensure_ascii=False)
-        os.replace(temp_path, output_path)
-    else:
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(manifest, f, indent=2, ensure_ascii=False)
-    
-    return output_path
-
-
-# ==============================================================================
-# Status File Management
-# ==============================================================================
-
-class JobStatus:
-    """Job status constants"""
-    PENDING = "PENDING"
-    IN_PROGRESS = "IN_PROGRESS"
-    SUCCESS = "SUCCESS"
-    FAILED = "FAILED"
-    CANCELLED = "CANCELLED"
-
-
-def get_status_path(job_id: str, base_dir: str = None) -> str:
-    """Get status file path for a job"""
-    if base_dir is None:
-        base_dir = os.path.join(os.path.dirname(__file__), "..", "jobs", "status")
-    
-    os.makedirs(base_dir, exist_ok=True)
-    return os.path.join(base_dir, f"{job_id}.status.json")
-
-
-def read_status(job_id: str, base_dir: str = None) -> Optional[Dict[str, Any]]:
-    """Read job status file, return None if not exists"""
-    status_path = get_status_path(job_id, base_dir)
-    if not os.path.exists(status_path):
-        return None
-    
-    with open(status_path, 'r', encoding='utf-8') as f:
-        return json.load(f)
-
-
-def write_status(
-    job_id: str,
-    status: str,
-    message: str = "",
-    details: Dict[str, Any] = None,
-    base_dir: str = None
-) -> str:
-    status_path = get_status_path(job_id, base_dir)
-    
-    status_data = {
-        "job_id": job_id,
-        "status": status,
-        "message": message,
-        "timestamp": time.time(),
-        "timestamp_readable": time.strftime("%Y-%m-%d %H:%M:%S"),
-    }
-    
-    if details:
-        status_data["details"] = details
-    
-    # Atomic write
-    temp_path = status_path + ".tmp"
-    with open(temp_path, 'w', encoding='utf-8') as f:
-        json.dump(status_data, f, indent=2, ensure_ascii=False)
-    os.replace(temp_path, status_path)
-    
-    return status_path
-
-
-def update_status_progress(
-    job_id: str,
-    current_frame: int,
-    total_frames: int,
-    base_dir: str = None
-) -> str:
-    """Update job progress in status file"""
-    existing = read_status(job_id, base_dir)
-    details = existing.get("details", {}) if existing else {}
-    details["current_frame"] = current_frame
-    details["total_frames"] = total_frames
-    details["progress_pct"] = round(100 * current_frame / total_frames, 2)
-    
-    return write_status(
-        job_id,
-        JobStatus.IN_PROGRESS,
-        f"Processing frame {current_frame}/{total_frames}",
-        details,
-        base_dir
-    )
-
-
-# ==============================================================================
-# Output Path Helpers
-# ==============================================================================
-
-def get_output_paths(manifest: Dict[str, Any]) -> Dict[str, str]:
-    job_id = manifest["job_id"]
-    
-    # Default base output directory
-    base_output = manifest.get("base_output_dir", os.path.join(os.path.dirname(__file__), "..", "output"))
-    
-    paths = {}
-    
-    # Camera export path
-    if "camera" in manifest:
-        camera_config = manifest["camera"]
-        if "export_path" in camera_config:
-            paths["camera_export_dir"] = camera_config["export_path"]
-        else:
-            paths["camera_export_dir"] = os.path.join(base_output, job_id, "camera")
-    
-    # Render output path
-    if "render" in manifest:
-        render_config = manifest["render"]
-        if "output_path" in render_config:
-            paths["render_output_dir"] = render_config["output_path"]
-        else:
-            paths["render_output_dir"] = os.path.join(base_output, job_id, "renders")
-    
-    return paths
-
-
-def ensure_output_dirs(manifest: Dict[str, Any]) -> Dict[str, str]:
-    """Create output directories and return paths"""
-    paths = get_output_paths(manifest)
-    for path in paths.values():
-        os.makedirs(path, exist_ok=True)
-    return paths
-
-
-# ==============================================================================
-# Job Discovery
-# ==============================================================================
-
-def discover_pending_jobs(watch_dir: str) -> list[str]:
-    if not os.path.exists(watch_dir):
-        return []
-    
-    manifest_files = []
-    for filename in os.listdir(watch_dir):
-        if filename.endswith(".json") and not filename.endswith(".tmp"):
-            full_path = os.path.join(watch_dir, filename)
-            if os.path.isfile(full_path):
-                manifest_files.append(full_path)
-    
-    # Sort by modification time (oldest first)
-    manifest_files.sort(key=lambda p: os.path.getmtime(p))
-    return manifest_files
-
-
-def mark_job_processing(manifest_path: str) -> str:
-    inbox_dir = os.path.dirname(manifest_path)
-    processing_dir = os.path.join(os.path.dirname(inbox_dir), "processing")
-    os.makedirs(processing_dir, exist_ok=True)
-    
-    filename = os.path.basename(manifest_path)
-    processing_path = os.path.join(processing_dir, filename)
-    
-    os.replace(manifest_path, processing_path)
-    return processing_path
-
-
-def mark_job_completed(manifest_path: str, success: bool = True) -> str:
-    processing_dir = os.path.dirname(manifest_path)
-    target_dir = os.path.join(os.path.dirname(processing_dir), "completed" if success else "failed")
-    os.makedirs(target_dir, exist_ok=True)
-    
-    filename = os.path.basename(manifest_path)
-    target_path = os.path.join(target_dir, filename)
-    
-    os.replace(manifest_path, target_path)
-    return target_path
-
-
-# ==============================================================================
-# UE Configuration
-# ==============================================================================
-
-def load_ue_config() -> Dict[str, Any]:
-    """Load UE configuration from config/ue_config.json"""
-    script_dir = Path(__file__).parent
-    config_path = script_dir / '..' / 'config' / 'ue_config.json'
+def load_default_ue_config() -> dict:
+    # This utility is in ue_pipeline/python/job_utils.py
+    # Config is in ue_pipeline/config/ue_config.json
+    script_dir = Path(__file__).parent.parent
+    env_config_path = os.environ.get('UE_CONFIG_PATH')
+    config_path = Path(env_config_path) if env_config_path else (script_dir / 'config' / 'ue_config.json')
     
     if not config_path.exists():
-        raise FileNotFoundError(f"UE config file not found: {config_path}")
+        logger.warning(f"UE config file not found: {config_path}")
+        return {}
     
-    with open(config_path, 'r', encoding='utf-8') as f:
-        config = json.load(f)
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.warning(f"Failed to load UE config: {e}")
+        return {}
+
+def get_ue_config(manifest: dict) -> dict:
+    # Load default config first
+    default_config = load_default_ue_config()
     
-    return config
+    # Merge with manifest config (manifest overrides default)
+    manifest_config = manifest.get('ue_config', {})
+    ue_config = {**default_config, **manifest_config}
+    
+    if not ue_config:
+        logger.error("No ue_config found in manifest or default config file")
+        sys.exit(1)
+    
+    # Resolve Editor path
+    editor_path = ue_config.get('editor_path')
+    if not editor_path:
+        logger.error("Missing 'editor_path' in ue_config")
+        sys.exit(1)
+    
+    # Use UnrealEditor-Cmd.exe for headless/scripting jobs
+    ue_config['editor_cmd'] = editor_path.replace('UnrealEditor.exe', 'UnrealEditor-Cmd.exe')
+    
+    # Resolve Project path
+    project = ue_config.get('project_path')
+    if not project:
+        logger.error("Missing 'project_path' in ue_config")
+        sys.exit(1)
+    
+    # Handle "default" value - use ue_template project
+    if project == "default":
+        # Root is 3 levels up from this file (ue_pipeline/python/job_utils.py)
+        repo_root = Path(__file__).parent.parent.parent
+        project = str(repo_root / "ue_template" / "project" / "WorldData.uproject")
+        ue_config['project_path'] = project
+        logger.info(f"Using default project: {project}")
+    
+    # Handle optional output_base_dir
+    output_base_dir = ue_config.get('output_base_dir')
+    if output_base_dir == "default":
+        repo_root = Path(__file__).parent.parent.parent
+        output_base_dir = str(repo_root / "output")
+        ue_config['output_base_dir'] = output_base_dir
+        logger.info(f"Using default output directory: {output_base_dir}")
+        
+    return ue_config
+
+def validate_paths(ue_config: dict, worker_scripts: list = None):
+    editor_cmd = ue_config.get('editor_cmd')
+    project = ue_config.get('project_path')
+    
+    if not os.path.exists(editor_cmd):
+        logger.error(f"UE Editor not found at: {editor_cmd}")
+        sys.exit(1)
+    
+    if not os.path.exists(project):
+        logger.error(f"Project not found at: {project}")
+        sys.exit(1)
+    
+    if worker_scripts:
+        for script in worker_scripts:
+            if not os.path.exists(script):
+                logger.error(f"Worker script not found at: {script}")
+                sys.exit(1)
+
+def save_manifest(manifest: dict, manifest_path: str):
+    try:
+        with open(manifest_path, 'w', encoding='utf-8') as f:
+            json.dump(manifest, f, indent=2, ensure_ascii=False)
+        logger.info(f"Manifest file updated: {manifest_path}")
+    except Exception as e:
+        logger.warning(f"Failed to update manifest file: {e}")

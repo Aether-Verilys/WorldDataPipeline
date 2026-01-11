@@ -3,6 +3,7 @@ import random
 import time
 import traceback
 import unreal
+import ue_api
 
 
 def call_maybe(obj, method_names, *args):
@@ -89,7 +90,7 @@ def random_reachable_point(nav, world, origin: unreal.Vector, radius_cm: float) 
 
 def get_navmesh_bounds(world) -> tuple:
     try:
-        actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+        actor_subsystem = ue_api.get_actor_subsystem()
         actors = actor_subsystem.get_all_level_actors()
         navmesh_bounds_cls = getattr(unreal, "NavMeshBoundsVolume", None)
         if not navmesh_bounds_cls:

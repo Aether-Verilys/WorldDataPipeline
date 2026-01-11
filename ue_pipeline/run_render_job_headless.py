@@ -19,92 +19,7 @@ if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
 from ue_pipeline.python.logger import logger
-
-
-def load_manifest(manifest_path: str) -> dict:
-    if not os.path.exists(manifest_path):
-        logger.error(f"Manifest file not found: {manifest_path}")
-        sys.exit(1)
-    
-    try:
-        with open(manifest_path, 'r', encoding='utf-8') as f:
-            manifest = json.load(f)
-        return manifest
-    except Exception as e:
-        logger.error(f"Cannot parse manifest: {e}")
-        sys.exit(1)
-
-
-def validate_manifest(manifest: dict) -> tuple[str, str]:
-    job_id = manifest.get('job_id', 'unknown')
-    job_type = manifest.get('job_type', 'unknown')
-    
-    if job_type != 'render':
-        logger.error(f"Invalid job type '{job_type}', expected 'render'")
-        sys.exit(1)
-    
-    return job_id, job_type
-
-
-def load_default_ue_config() -> dict:
-    script_dir = Path(__file__).parent
-    env_config_path = os.environ.get('UE_CONFIG_PATH')
-    config_path = Path(env_config_path) if env_config_path else (script_dir / 'config' / 'ue_config.json')
-    
-    if not config_path.exists():
-        return {}
-    
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Cannot load default ue_config: {e}")
-        sys.exit(1)
-
-
-def get_ue_config(manifest: dict) -> tuple[str, str, str]:
-    # Load default config first
-    default_config = load_default_ue_config()
-    
-    # Merge with manifest config (manifest overrides default)
-    manifest_config = manifest.get('ue_config', {})
-    ue_config = {**default_config, **manifest_config}
-    
-    if not ue_config:
-        logger.error("No ue_config found in manifest or default config file")
-        sys.exit(1)
-    
-    editor_path = ue_config.get('editor_path')
-    if not editor_path:
-        logger.error("Missing 'editor_path' in ue_config")
-        sys.exit(1)
-    
-    # Replace UnrealEditor.exe with UnrealEditor-Cmd.exe
-    ue_editor = editor_path.replace('UnrealEditor.exe', 'UnrealEditor-Cmd.exe')
-    
-    project = ue_config.get('project_path')
-    if not project:
-        logger.error("Missing 'project_path' in ue_config")
-        sys.exit(1)
-    
-    # Handle "default" value - use ue_template project
-    if project == "default":
-        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        project = os.path.join(script_dir, "ue_template", "project", "WorldData.uproject")
-        logger.info(f"Using default project: {project}")
-    
-    output_base_dir = ue_config.get('output_base_dir', '')
-    if not output_base_dir:
-        logger.error("Missing 'output_base_dir' in ue_config")
-        sys.exit(1)
-    
-    # Handle "default" value - use project directory's output folder
-    if output_base_dir == "default":
-        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        output_base_dir = os.path.join(script_dir, "output")
-        logger.info(f"Using default output directory: {output_base_dir}")
-    
-    return ue_editor, project, output_base_dir
+from ue_pipeline.python import job_utils
 
 
 def get_render_config(manifest: dict, ue_config: dict) -> dict:
@@ -162,20 +77,6 @@ def get_render_config(manifest: dict, ue_config: dict) -> dict:
         'map': map_path,
         'preset': config_preset
     }
-
-
-def validate_paths(ue_editor: str, project: str, worker: str):
-    if not os.path.exists(ue_editor):
-        logger.error(f"UE Editor not found at: {ue_editor}")
-        sys.exit(1)
-    
-    if not os.path.exists(project):
-        logger.error(f"Project not found at: {project}")
-        sys.exit(1)
-    
-    if not os.path.exists(worker):
-        logger.error(f"Worker script not found at: {worker}")
-        sys.exit(1)
 
 
 def ensure_output_directory(output_path: str):
@@ -633,14 +534,21 @@ def main():
     logger.header("UE Render Job Executor (Headless Mode)")
     
     # Load and validate manifest
-    manifest = load_manifest(args.manifest_path)
-    job_id, job_type = validate_manifest(manifest)
+    manifest = job_utils.load_manifest(args.manifest_path)
+    job_id = job_utils.validate_manifest_type(manifest, 'render')
     
     # Get UE configuration
-    ue_editor, project, output_base_dir = get_ue_config(manifest)
+    ue_config = job_utils.get_ue_config(manifest)
+    ue_editor = ue_config['editor_cmd']
+    project = ue_config['project_path']
+    output_base_dir = ue_config.get('output_base_dir')
+    
+    if not output_base_dir:
+        logger.error("Missing 'output_base_dir' in ue_config")
+        sys.exit(1)
     
     # Load full config for scene lookup
-    full_config = load_default_ue_config()
+    full_config = job_utils.load_default_ue_config()
     
     # Get render configuration (with map lookup)
     render_config = get_render_config(manifest, full_config)
@@ -656,7 +564,7 @@ def main():
     logger.blank(1)
     
     # Validate paths
-    validate_paths(ue_editor, project, worker)
+    job_utils.validate_paths(ue_config, [worker])
     
     # Ensure output directory exists
     ensure_output_directory(output_base_dir)

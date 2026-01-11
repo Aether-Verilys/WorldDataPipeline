@@ -1,4 +1,5 @@
 import unreal
+from ue_api import get_level_editor_subsystem, get_actor_subsystem, load_map
 
 
 def validate_prerequisites(map_path: str, blueprint_path: str, check_navmesh: bool, log_prefix: str = "[Validator]") -> None:
@@ -17,12 +18,11 @@ def validate_prerequisites(map_path: str, blueprint_path: str, check_navmesh: bo
         navmesh_found = False
         
         try:
-            level_editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
-            if not level_editor.load_level(map_path):
+            if not load_map(map_path):
                 errors.append(f"Failed to load map for NavMesh check: {map_path}")
             else:
                 # 检查场景中的NavMeshBoundsVolume
-                actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+                actor_subsystem = get_actor_subsystem()
                 actors = actor_subsystem.get_all_level_actors()
                 
                 # 查找NavMeshBoundsVolume
@@ -77,12 +77,11 @@ def validate_navmesh_in_scene(map_path: str, log_prefix: str = "[Validator]") ->
     
     try:
         # 先加载地图
-        level_editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
-        if not level_editor.load_level(map_path):
+        if not load_map(map_path):
             return False
         
         # 检查场景中的NavMeshBoundsVolume
-        actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+        actor_subsystem = get_actor_subsystem()
         actors = actor_subsystem.get_all_level_actors()
         
         # 查找NavMeshBoundsVolume

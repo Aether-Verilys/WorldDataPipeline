@@ -18,24 +18,7 @@ if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
 from ue_pipeline.python.logger import logger
-
-def load_ue_config():
-    """Load UE configuration from config file"""
-    script_dir = Path(__file__).parent
-    env_config_path = os.environ.get('UE_CONFIG_PATH')
-    config_path = Path(env_config_path) if env_config_path else (script_dir / 'config' / 'ue_config.json')
-    
-    if not config_path.exists():
-        logger.error(f"UE config file not found: {config_path}")
-        sys.exit(1)
-    
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-        return config
-    except Exception as e:
-        logger.error(f"Failed to load UE config: {e}")
-        sys.exit(1)
+from ue_pipeline.python import job_utils
 
 def main():
     # Parse arguments
@@ -47,76 +30,34 @@ def main():
 
     logger.header("UE Camera Export Job Executor")
 
-    # Load UE configuration from config file
-    ue_config_global = load_ue_config()
+    # Load and validate manifest
+    manifest = job_utils.load_manifest(manifest_path)
+    job_id = job_utils.validate_manifest_type(manifest, 'export')
 
-    # Check manifest file
-    if not os.path.isfile(manifest_path):
-        logger.error(f"Manifest file not found: {manifest_path}")
-        return 1
-
-    # Parse manifest to get job_id, job_type, and ue_config
-    try:
-        with open(manifest_path, 'r', encoding='utf-8') as f:
-            manifest = json.load(f)
-        
-        job_id = manifest.get('job_id')
-        job_type = manifest.get('job_type')
-
-        if job_type != 'export':
-            logger.error(f"Invalid job type '{job_type}', expected 'export'")
-            return 1
-
-        # Read UE paths from manifest or use config file defaults
-        ue_config = manifest.get('ue_config', {})
-        ue_editor = ue_config.get('editor_path', ue_config_global.get('editor_path'))
-        project = ue_config.get('project_path', ue_config_global.get('project_path'))
-        
-        # Handle "default" value - use ue_template project
-        if project == "default":
-            script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            project = os.path.join(script_dir, "ue_template", "project", "WorldData.uproject")
-            logger.info(f"Using default project: {project}")
-
-        # Merge ue_config into manifest if not present
-        if not manifest.get('ue_config'):
-            logger.warning("No ue_config in manifest, merging config file defaults")
-            manifest['ue_config'] = ue_config_global
-            # Save updated manifest
-            with open(manifest_path, 'w', encoding='utf-8') as f:
-                json.dump(manifest, f, indent=2, ensure_ascii=False)
-
-        logger.kv("Job ID:", job_id)
-        logger.kv("Job Type:", job_type)
-
-    except json.JSONDecodeError as e:
-        logger.error(f"Cannot parse manifest: {e}")
-        return 1
-    except Exception as e:
-        logger.error(f"Failed to read manifest: {e}")
-        return 1
+    # Get UE configuration
+    ue_config = job_utils.get_ue_config(manifest)
+    ue_editor = ue_config['editor_cmd']
+    project = ue_config['project_path']
+    
+    # Merge complete ue_config back into manifest for worker
+    manifest['ue_config'] = ue_config
+    
+    # Save updated manifest with merged ue_config
+    job_utils.save_manifest(manifest, manifest_path)
 
     # Worker Export script path
     script_dir = Path(__file__).parent
-    worker_export = script_dir / 'python' / 'worker_export.py'
+    worker_export = str(script_dir / 'python' / 'worker_export.py')
 
+    logger.kv("Job ID:", job_id)
+    logger.kv("Job Type:", "export")
     logger.kv("Manifest:", manifest_path)
     logger.kv("UE Editor:", ue_editor)
     logger.kv("Project:", project)
     logger.blank(1)
 
-    # Check required files
-    if not os.path.isfile(ue_editor):
-        logger.error(f"UE Editor not found at: {ue_editor}")
-        return 1
-
-    if not os.path.isfile(project):
-        logger.error(f"Project not found at: {project}")
-        return 1
-
-    if not os.path.isfile(worker_export):
-        logger.error(f"Worker export script not found at: {worker_export}")
-        return 1
+    # Validate paths
+    job_utils.validate_paths(ue_config, [worker_export])
 
     logger.info("Starting export job...")
     logger.blank(1)

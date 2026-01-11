@@ -1,6 +1,5 @@
 import unreal
 import sys
-import json
 import os
 import time
 from pathlib import Path
@@ -9,13 +8,15 @@ _current_dir = os.path.dirname(os.path.abspath(__file__))
 if _current_dir not in sys.path:
     sys.path.insert(0, _current_dir)
 
+import ue_api
 from worker_common import load_json as _load_json, resolve_manifest_path_from_env as _resolve_manifest_path_from_env
 from logger import logger
+from assets_manager import save_current_level
 
 
 def main(argv=None) -> int:
     logger.info("Starting NavMesh bake job execution...")
-    logger.info(f"Python version: {sys.version}")
+    # logger.info(f"Python version: {sys.version}")
     logger.info(f"Working directory: {os.getcwd()}")
 
     argv = list(argv) if argv is not None else sys.argv
@@ -49,7 +50,6 @@ def main(argv=None) -> int:
     navmesh_config = manifest.get("navmesh_config", {})
 
     # Get configuration parameters
-    auto_scale = navmesh_config.get("auto_scale", False)
     location = navmesh_config.get("location", [0.0, 0.0, 0.0])
     scale = navmesh_config.get("scale", [100.0, 100.0, 10.0])
     maps = navmesh_config.get("maps", [])
@@ -72,16 +72,11 @@ def main(argv=None) -> int:
         logger.error("No maps specified in navmesh_config")
         return 1
 
-    logger.info(f"Auto-scale enabled: {auto_scale}")
-    if auto_scale:
-        logger.info(f"Scale margin: {scale_margin}")
-        logger.info(f"Min scale: {min_scale}")
-        logger.info(f"Max scale: {max_scale}")
-        logger.info(f"Agent MaxStepHeight: {agent_max_step_height} cm")
-        logger.info(f"Agent MaxJumpHeight: {agent_max_jump_height} cm")
-    else:
-        logger.info(f"Manual location: {location}")
-        logger.info(f"Manual scale: {scale}")
+    logger.info(f"Scale margin: {scale_margin}")
+    logger.info(f"Min scale: {min_scale}")
+    logger.info(f"Max scale: {max_scale}")
+    logger.info(f"Agent MaxStepHeight: {agent_max_step_height} cm")
+    logger.info(f"Agent MaxJumpHeight: {agent_max_jump_height} cm")
     logger.info(f"Wait for build: {wait_for_build}")
     logger.info(f"Build timeout: {build_timeout}s")
     logger.info(f"Verify NavMesh: {verify_navmesh}")
@@ -108,7 +103,7 @@ def main(argv=None) -> int:
             logger.info(f"[{i}/{total_maps}] Processing: {map_path}")
 
             # Load map
-            if not manager.load_map(map_path):
+            if not ue_api.load_map(map_path):
                 logger.error(f"Failed to load map: {map_path}")
                 failed_count += 1
                 failed_maps.append({"map": map_path, "error": "Failed to load map"})
@@ -131,21 +126,14 @@ def main(argv=None) -> int:
                 logger.info(f"Level file tracked: {full_level_path}")
 
             # Add or configure NavMesh
-            navmesh = None
-            if auto_scale:
-                logger.info("Using auto-scale mode...")
-                navmesh = manager.auto_scale_navmesh(
-                    margin=scale_margin,
-                    min_scale=min_scale,
-                    max_scale=max_scale,
-                    agent_max_step_height=agent_max_step_height,
-                    agent_max_jump_height=agent_max_jump_height,
-                )
-            else:
-                logger.info("Using manual scale mode...")
-                location_vec = unreal.Vector(location[0], location[1], location[2])
-                scale_vec = unreal.Vector(scale[0], scale[1], scale[2])
-                navmesh = manager.add_navmesh_bounds_volume(location_vec, scale_vec)
+            logger.info("Using auto-scale mode...")
+            navmesh = manager.auto_scale_navmesh(
+                margin=scale_margin,
+                min_scale=min_scale,
+                max_scale=max_scale,
+                agent_max_step_height=agent_max_step_height,
+                agent_max_jump_height=agent_max_jump_height,
+            )
 
             if not navmesh:
                 logger.warning("NavMesh volume not created (may already exist)")
@@ -160,17 +148,9 @@ def main(argv=None) -> int:
             logger.info(f"Saving level: {map_path}")
             save_start = time.time()
             try:
-                # Use LevelEditorSubsystem to save (recommended in UE 5.7+)
-                level_editor = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
-                if level_editor:
-                    success = level_editor.save_current_level()
-                    save_elapsed = time.time() - save_start
-                    logger.info(f"Level saved successfully ({save_elapsed:.2f}s)")
-                else:
-                    # Fallback to EditorLevelLibrary (deprecated but works)
-                    unreal.EditorLevelLibrary.save_current_level()
-                    save_elapsed = time.time() - save_start
-                    logger.info(f"Level saved successfully ({save_elapsed:.2f}s)")
+                save_current_level()
+                save_elapsed = time.time() - save_start
+                logger.info(f"Level saved successfully ({save_elapsed:.2f}s)")
 
                 # Verify save by checking file modification time
                 if full_level_path.exists():
@@ -185,15 +165,6 @@ def main(argv=None) -> int:
                 failed_count += 1
                 failed_maps.append({"map": map_path, "error": f"Failed to save: {e}"})
                 continue
-
-            # Verify NavMesh data
-            # if verify_navmesh:
-            #     logger.info("Verifying NavMesh data...")
-            #     is_valid = manager.verify_navmesh_data()
-            #     if is_valid:
-            #         logger.info("NavMesh verification passed")
-            #     else:
-            #         logger.warning("NavMesh verification failed - may not have navigable areas")
 
             success_count += 1
             logger.info(f"Completed: {map_path}")

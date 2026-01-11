@@ -1,45 +1,13 @@
 import unreal
 import time
+import ue_api
 
 
 class NavMeshManager:
     
     def __init__(self):
-        self.level_editor_subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
-        self.editor_actor_subsystem = unreal.EditorActorSubsystem()
-    
-    def load_map(self, map_package_path):
-        """
-        Load a map/level in UE Editor
-        Uses LevelEditorSubsystem.load_level (recommended) with fallback to EditorLevelLibrary
-        """
-        try:
-            # Method 1: LevelEditorSubsystem.load_level (preferred)
-            if self.level_editor_subsystem:
-                unreal.log(f"Loading map via LevelEditorSubsystem: {map_package_path}")
-                success = self.level_editor_subsystem.load_level(map_package_path)
-                if success:
-                    unreal.log(f"✓ Map loaded: {map_package_path}")
-                    return True
-                else:
-                    unreal.log_warning(f"LevelEditorSubsystem.load_level returned False for: {map_package_path}")
-        except Exception as e:
-            unreal.log_warning(f"LevelEditorSubsystem.load_level failed: {str(e)}")
-        
-        # Method 2: EditorLevelLibrary.load_level (fallback)
-        try:
-            load_level = getattr(unreal.EditorLevelLibrary, "load_level", None)
-            if callable(load_level):
-                unreal.log(f"Loading map via EditorLevelLibrary: {map_package_path}")
-                success = load_level(map_package_path)
-                if success:
-                    unreal.log(f"✓ Map loaded: {map_package_path}")
-                    return True
-        except Exception as e:
-            unreal.log_error(f"EditorLevelLibrary.load_level failed: {str(e)}")
-        
-        unreal.log_error(f"Failed to load map: {map_package_path}")
-        return False
+        self.level_editor_subsystem = ue_api.get_level_editor_subsystem()
+        self.editor_actor_subsystem = ue_api.get_actor_subsystem()
     
     def count_static_mesh_actors(self) -> int:
         """
@@ -49,7 +17,8 @@ class NavMeshManager:
             int: Number of StaticMeshActor instances found
         """
         try:
-            all_actors = unreal.EditorLevelLibrary.get_all_level_actors()
+            actor_subsystem = ue_api.get_actor_subsystem()
+            all_actors = actor_subsystem.get_all_level_actors()
             count = 0
             
             for actor in all_actors:
@@ -64,7 +33,8 @@ class NavMeshManager:
             return 0
     
     def check_navmesh_exists(self):
-        all_actors = unreal.EditorLevelLibrary.get_all_level_actors()
+        actor_subsystem = ue_api.get_actor_subsystem()
+        all_actors = actor_subsystem.get_all_level_actors()
         
         for actor in all_actors:
             if isinstance(actor, unreal.NavMeshBoundsVolume):
@@ -118,8 +88,6 @@ class NavMeshManager:
             unreal.log_error(f"Error adding NavMeshBoundsVolume: {str(e)}")
             return None
     
-
-    
     def batch_add_navmesh_to_maps(self, map_list, location=None, scale=None):
         results = {
             'total': len(map_list),
@@ -141,7 +109,7 @@ class NavMeshManager:
             unreal.log(f"[{i}/{len(map_list)}] Processing: {map_path}")
             
             # Load map
-            if not self.load_map(map_path):
+            if not ue_api.load_map(map_path):
                 results['failed'] += 1
                 results['failed_maps'].append(map_path)
                 continue
@@ -182,8 +150,8 @@ class NavMeshManager:
         """
         try:
             unreal.log(f"Waiting for NavMesh build to complete (timeout: {timeout_seconds}s)...")
-            world = unreal.EditorLevelLibrary.get_editor_world()
-            nav_sys = unreal.NavigationSystemV1.get_navigation_system(world)
+            world = ue_api.get_editor_world()
+            nav_sys = ue_api.get_navigation_system(world)
             
             if not nav_sys:
                 unreal.log_warning("NavigationSystem not found")
@@ -224,7 +192,8 @@ class NavMeshManager:
                     break
                 
                 # Check if RecastNavMesh exists yet
-                all_actors = unreal.EditorLevelLibrary.get_all_level_actors()
+                actor_subsystem = ue_api.get_actor_subsystem()
+                all_actors = actor_subsystem.get_all_level_actors()
                 has_recast = any(isinstance(a, unreal.RecastNavMesh) for a in all_actors)
                 if not has_recast:
                      # Force command again if not found
@@ -281,8 +250,8 @@ class NavMeshManager:
         Returns True if NavMesh is valid and has data
         """
         try:
-            world = unreal.EditorLevelLibrary.get_editor_world()
-            nav_sys = unreal.NavigationSystemV1.get_navigation_system(world)
+            world = ue_api.get_editor_world()
+            nav_sys = ue_api.get_navigation_system(world)
             
             if not nav_sys:
                 unreal.log_warning("NavigationSystem not found")
@@ -291,7 +260,8 @@ class NavMeshManager:
             unreal.log("NavigationSystem exists")
             
             # Check for required actors in level
-            all_actors = unreal.EditorLevelLibrary.get_all_level_actors()
+            actor_subsystem = ue_api.get_actor_subsystem()
+            all_actors = actor_subsystem.get_all_level_actors()
             nav_bounds_found = False
             recast_navmesh_found = False
             
@@ -374,7 +344,8 @@ class NavMeshManager:
         This is required for NavMesh to be generated on Landscape surfaces
         """
         try:
-            all_actors = unreal.EditorLevelLibrary.get_all_level_actors()
+            actor_subsystem = ue_api.get_actor_subsystem()
+            all_actors = actor_subsystem.get_all_level_actors()
             landscape_count = 0
             
             for actor in all_actors:
@@ -461,8 +432,9 @@ class NavMeshManager:
             unreal.log(f"Agent MaxJumpHeight: {agent_max_jump_height} cm")
             unreal.log("")
             
-            world = unreal.EditorLevelLibrary.get_editor_world()
-            all_actors = unreal.EditorLevelLibrary.get_all_level_actors()
+            world = ue_api.get_editor_world()
+            actor_subsystem = ue_api.get_actor_subsystem()
+            all_actors = actor_subsystem.get_all_level_actors()
             
             # Phase 1: Find Landscape (ground) - HIGHEST PRIORITY
             landscape_z_min = None
@@ -1004,46 +976,6 @@ class NavMeshManager:
         unreal.log("✓ Auto-Scale NavMesh Complete!")
         unreal.log("=" * 60)
         return navmesh
-
-
-def example_usage():
-    """Example: Add NavMesh to a single map with auto-scaling"""
-    manager = NavMeshManager()
-    
-    # Load map
-    map_path = '/Game/Maps/Level01'
-    if not manager.load_map(map_path):
-        return None
-    
-    # Auto-scale NavMesh (recommended approach)
-    navmesh = manager.auto_scale_navmesh()
-    
-    # Wait for NavMesh build
-    manager.wait_for_navmesh_build()
-    
-    # Verify
-    if manager.verify_navmesh_data():
-        unreal.log("NavMesh added successfully!")
-    
-    return navmesh
-
-
-def batch_example():
-    """Example: Batch add NavMesh to multiple maps"""
-    manager = NavMeshManager()
-    
-    map_list = [
-        '/Game/Maps/Level01',
-        '/Game/Maps/Level02',
-    ]
-    
-    results = manager.batch_add_navmesh_to_maps(
-        map_list,
-        location=None,  # Will auto-calculate
-        scale=None      # Will auto-calculate
-    )
-    
-    return results
 
 
 if __name__ == "__main__":
