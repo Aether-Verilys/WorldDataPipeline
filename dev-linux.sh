@@ -34,7 +34,7 @@ echo ""
 # Define shortcut functions
 ue-bake() {
     if [ $# -eq 0 ]; then
-        python app.py bake_navmesh --manifest ue_pipeline/examples/job_bake.json
+        python app.py bake_navmesh
     elif [ "$1" = "--manifest" ]; then
         python app.py bake_navmesh --manifest "$2"
     else
@@ -44,7 +44,7 @@ ue-bake() {
 
 ue-sequence() {
     if [ $# -eq 0 ]; then
-        python app.py create_sequence --manifest ue_pipeline/examples/job_sequence.json
+        python app.py create_sequence
     elif [ "$1" = "--manifest" ]; then
         python app.py create_sequence --manifest "$2"
     else
@@ -54,7 +54,7 @@ ue-sequence() {
 
 ue-render() {
     if [ $# -eq 0 ]; then
-        python app.py render --manifest ue_pipeline/examples/job_render.json
+        python app.py render
     elif [ "$1" = "--manifest" ]; then
         python app.py render --manifest "$2"
     else
@@ -64,7 +64,7 @@ ue-render() {
 
 ue-export() {
     if [ $# -eq 0 ]; then
-        python app.py export --manifest ue_pipeline/examples/job_export.json
+        python app.py export
     elif [ "$1" = "--manifest" ]; then
         python app.py export --manifest "$2"
     else
@@ -113,12 +113,12 @@ ue-help() {
     echo "  ue-help       - Show this help"
     echo ""
     echo "Examples:"
-    echo "  ue-sequence                                            # Use default config"
-    echo "  ue-sequence ue_pipeline/examples/job_sequence.json     # Specify config file"
-    echo "  ue-download --list                                     # List available scenes"
-    echo "  ue-download Seaside_Town                               # Download a scene"
-    echo "  ue-copy --list                                         # List scenes to copy"
-    echo "  ue-copy Scene1 Scene2                                  # Copy multiple scenes"
+    echo "  ue-sequence                                  # Use config/job_config.json"
+    echo "  ue-sequence custom_job.json                  # Use custom config file"
+    echo "  ue-download --list                           # List available scenes"
+    echo "  ue-download Seaside_Town                     # Download a scene"
+    echo "  ue-copy --list                               # List scenes to copy"
+    echo "  ue-copy Scene1 Scene2                        # Copy multiple scenes"
     echo ""
     echo "Or use app.py directly:"
     echo "  python app.py --help"

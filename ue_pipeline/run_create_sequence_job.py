@@ -16,49 +16,64 @@ from ue_pipeline.python.logger import logger
 from ue_pipeline.python import job_utils
 
 
-def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str) -> int:
-    abs_manifest_path = os.path.abspath(manifest_path)
+def run_ue_job(ue_editor: str, project: str, merged_manifest: dict, worker: str) -> int:
     abs_worker = os.path.abspath(worker)
     abs_project = os.path.abspath(project)
     
-    # UE-CMD mode: Use -ExecutePythonScript with manifest passed as environment variable
-    os.environ['UE_MANIFEST_PATH'] = abs_manifest_path
-    
-    ue_args = [
-        ue_editor,
-        abs_project,
-        f'-ExecutePythonScript={abs_worker}',
-        '-unattended',
-        '-nopause',
-        '-nosplash',
-        '-NullRHI',
-        '-buildmachine',
-        '-NoSound',
-        '-AllowStdOutLogVerbosity',
-        '-FullStdOutLogOutput',
-        '-log',
-    ]
-    
-    logger.info(f"Command: {' '.join(ue_args)}")
-    logger.blank(1)
-    logger.separator(width=40, char='-')
-    
+    # Create a temporary manifest with merged config
+    import tempfile
+    import json
+    temp_manifest_fd, temp_manifest_path = tempfile.mkstemp(suffix='.json', prefix='sequence_manifest_')
     try:
-        result = subprocess.run(ue_args, check=False)
-
+        with os.fdopen(temp_manifest_fd, 'w', encoding='utf-8') as f:
+            json.dump(merged_manifest, f, indent=2)
+        
+        # UE-CMD mode: Use -ExecutePythonScript with manifest passed as environment variable
+        os.environ['UE_MANIFEST_PATH'] = temp_manifest_path
+        os.environ['UE_MANIFEST_PATH'] = temp_manifest_path
+        
+        ue_args = [
+            ue_editor,
+            abs_project,
+            f'-ExecutePythonScript={abs_worker}',
+            '-unattended',
+            '-nopause',
+            '-nosplash',
+            '-NullRHI',
+            '-buildmachine',
+            '-NoSound',
+            '-AllowStdOutLogVerbosity',
+            '-FullStdOutLogOutput',
+            '-log',
+        ]
+        
+        logger.info(f"Command: {' '.join(ue_args)}")
         logger.blank(1)
         logger.separator(width=40, char='-')
         
-        if result.returncode == 0:
-            logger.info("Job completed successfully")
-            return 0
-        else:
-            logger.error(f"Job failed with exit code: {result.returncode}")
-            return result.returncode
+        try:
+            result = subprocess.run(ue_args, check=False)
+
+            logger.blank(1)
+            logger.separator(width=40, char='-')
             
-    except Exception as e:
-        logger.error(f"Failed to launch UE: {e}")
-        return 1
+            if result.returncode == 0:
+                logger.info("Job completed")
+                return 0
+            else:
+                logger.error(f"Job failed with exit code: {result.returncode}")
+                return result.returncode
+                
+        except Exception as e:
+            logger.error(f"Failed to launch UE: {e}")
+            return 1
+    finally:
+        # Clean up temporary manifest
+        try:
+            if os.path.exists(temp_manifest_path):
+                os.remove(temp_manifest_path)
+        except Exception:
+            pass
 
 # ============================================================
 
@@ -79,15 +94,11 @@ def main():
     manifest = job_utils.load_manifest(args.manifest_path)
     job_id = job_utils.validate_manifest_type(manifest, 'create_sequence')
     
-    ue_config = job_utils.get_ue_config(manifest)
+    # 使用新的配置合并机制
+    manifest = job_utils.merge_configs(manifest)
+    ue_config = manifest['ue_config']
     ue_editor = ue_config['editor_cmd']
     project = ue_config['project_path']
-    
-    # Merge complete ue_config back into manifest for worker
-    manifest['ue_config'] = ue_config
-    
-    # Save updated manifest with merged ue_config
-    job_utils.save_manifest(manifest, args.manifest_path)
     
     logger.kv("Job ID:", job_id)
     logger.kv("Job Type:", "create_sequence")
@@ -102,7 +113,7 @@ def main():
     logger.info("Creating LevelSequence...")
     logger.blank(1)
     
-    exit_code = run_ue_job(ue_editor, project, args.manifest_path, worker)
+    exit_code = run_ue_job(ue_editor, project, manifest, worker)
     sys.exit(exit_code)
 
 

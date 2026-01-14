@@ -35,7 +35,6 @@ def get_render_config(manifest: dict, ue_config: dict) -> dict:
         logger.info(f"Using map from manifest: {map_path}")
     elif sequence:
         # Extract map name from sequence path if map not provided
-        # Format: /Game/CameraController/Generated/Lvl_FirstPerson_001
         # Sequence name: Lvl_FirstPerson_001
         # Map name: Lvl_FirstPerson
         
@@ -287,35 +286,22 @@ def wait_for_render_completion_legacy(output_base_dir: str, manifest: dict, time
         time.sleep(check_interval)
 
 
-def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker: str, job_id: str, full_config: dict, output_base_dir: str) -> int:
-    abs_manifest_path = os.path.abspath(manifest_path)
+def run_ue_job(ue_editor: str, project: str, merged_manifest: dict, worker: str, job_id: str, full_config: dict, output_base_dir: str) -> int:
     abs_worker = os.path.abspath(worker)
     
-    # Load original manifest
-    with open(abs_manifest_path, 'r', encoding='utf-8') as f:
-        manifest = json.load(f)
+    # Use the already merged manifest (no template field)
+    manifest = merged_manifest.copy()
     
     # Inject full ue_config into manifest for worker to use
     manifest['ue_config'] = full_config
-    # Ensure rendering.output_path is set so MRQ uses the expected output directory
-    try:
-        rendering_section = manifest.setdefault('rendering', {})
-        # Replace output_path if it's missing, empty, or set to "default"
-        current_output_path = rendering_section.get('output_path', '')
-        if not current_output_path or current_output_path == 'default':
-            # Use the resolved absolute path instead of "default"
-            if output_base_dir:
-                rendering_section['output_path'] = output_base_dir
-                manifest['rendering'] = rendering_section
-                logger.info(f"Injected rendering.output_path='{output_base_dir}' into manifest (was: '{current_output_path}')")
-        else:
-            logger.info(f"Using existing rendering.output_path='{current_output_path}' from manifest")
-        
-        # Store the output directory for status file monitoring
-        output_directory = rendering_section.get('output_path', '')
-    except Exception:
-        output_directory = ''
-        pass
+    
+    # Inject output_base_dir into rendering section for worker
+    rendering_section = manifest.setdefault('rendering', {})
+    rendering_section['output_path'] = output_base_dir
+    manifest['rendering'] = rendering_section
+    logger.info(f"Using output directory: {output_base_dir}")
+    
+    output_directory = output_base_dir
     
     # Create a temporary manifest with ue_config injected
     import tempfile
@@ -537,8 +523,9 @@ def main():
     manifest = job_utils.load_manifest(args.manifest_path)
     job_id = job_utils.validate_manifest_type(manifest, 'render')
     
-    # Get UE configuration
-    ue_config = job_utils.get_ue_config(manifest)
+    # 使用新的配置合并机制
+    manifest = job_utils.merge_configs(manifest)
+    ue_config = manifest['ue_config']
     ue_editor = ue_config['editor_cmd']
     project = ue_config['project_path']
     output_base_dir = ue_config.get('output_base_dir')
@@ -573,7 +560,7 @@ def main():
     logger.info("Starting headless render job...")
     logger.blank(1)
     
-    exit_code = run_ue_job(ue_editor, project, args.manifest_path, worker, job_id, full_config, output_base_dir)
+    exit_code = run_ue_job(ue_editor, project, manifest, worker, job_id, full_config, output_base_dir)
     sys.exit(exit_code)
 
 

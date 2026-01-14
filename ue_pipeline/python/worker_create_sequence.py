@@ -798,7 +798,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     logger.info("========================================")
     logger.info(f"ue_config present in manifest: {bool(ue_config)}")
     if ue_config:
-        logger.info(f"  editor_path: {ue_config.get('editor_path', 'NOT SET')}")
+        logger.info(f"  editor_cmd: {ue_config.get('editor_cmd', 'NOT SET')}")
         logger.info(f"  project_path: {ue_config.get('project_path', 'NOT SET')}")
         logger.info(f"  output_base_dir: {ue_config.get('output_base_dir', 'NOT SET')}")
         logger.info(f"  scenes: {bool(ue_config.get('scenes'))}")

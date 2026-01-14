@@ -1,7 +1,7 @@
 {
   "job_type": "create_sequence",
   "job_id": "job-create-seq-001",
-  "map": "/Game/LevelPrototyping/test",
+  "map": "/Game/LevelPrototyping/test132",
   "sequence_config": {
     "output_dir": "",
     "sequence_count": 2,
@@ -38,7 +38,7 @@
     "actor_binding_mode": "sequence_spawnable"
   },
   "ue_config": {
-    "editor_path": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
+    "editor_cmd": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
     "project_path": "default",
     "output_base_dir": "default",
     "exclude_map_names": [

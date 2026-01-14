@@ -8,7 +8,7 @@
     "export_format": "csv"
   },
   "ue_config": {
-    "editor_path": "F:/Epic/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
+    "editor_cmd": "F:/Epic/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
     "project_path": "E:/WorldProject/WorldProject.uproject",
     "output_base_dir": "E:/WorldDataPipeline/output"
   }

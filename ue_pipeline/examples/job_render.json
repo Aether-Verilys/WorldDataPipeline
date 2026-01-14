@@ -5,8 +5,6 @@
   "map": "/Game/RockyDesert/Maps/Demo",
   "rendering": {
     "preset": "/Game/CameraController/Pending_MoviePipelinePrimaryConfig",
-    "output_path": "default",
-    "_output_note": "设为 'default' 时自动使用 ue_config.json 的 output_base_dir，渲染到 {output_base_dir}/LevelPrototyping/test_001/",
     "framerate": 30,
     "frame_range": {
       "start_frame": 0,

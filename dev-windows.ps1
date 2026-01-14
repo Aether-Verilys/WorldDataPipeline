@@ -50,7 +50,7 @@ Write-Host ""
 # Define shortcut functions
 function ue-bake {
     if ($args.Count -eq 0) {
-        python app.py bake_navmesh --manifest ue_pipeline/examples/job_bake.json
+        python app.py bake_navmesh
     } elseif ($args[0] -eq "--manifest") {
         python app.py bake_navmesh --manifest $args[1]
     } else {
@@ -60,7 +60,7 @@ function ue-bake {
 
 function ue-sequence {
     if ($args.Count -eq 0) {
-        python app.py create_sequence --manifest ue_pipeline/examples/job_sequence.json
+        python app.py create_sequence
     } elseif ($args[0] -eq "--manifest") {
         python app.py create_sequence --manifest $args[1]
     } else {
@@ -70,7 +70,7 @@ function ue-sequence {
 
 function ue-render {
     if ($args.Count -eq 0) {
-        python app.py render --manifest ue_pipeline/examples/job_render.json
+        python app.py render
     } elseif ($args[0] -eq "--manifest") {
         python app.py render --manifest $args[1]
     } else {
@@ -80,7 +80,7 @@ function ue-render {
 
 function ue-export {
     if ($args.Count -eq 0) {
-        python app.py export --manifest ue_pipeline/examples/job_export.json
+        python app.py export
     } elseif ($args[0] -eq "--manifest") {
         python app.py export --manifest $args[1]
     } else {
@@ -196,12 +196,12 @@ function ue-help {
     Write-Host "  ue-help       - Show this help" -ForegroundColor White
     Write-Host ""
     Write-Host "Examples:" -ForegroundColor Yellow
-    Write-Host "  ue-sequence                                            # Use default config" -ForegroundColor Gray
-    Write-Host "  ue-sequence ue_pipeline/examples/job_sequence.json     # Specify config file" -ForegroundColor Gray
-    Write-Host "  ue-download --list                                     # List available scenes" -ForegroundColor Gray
-    Write-Host "  ue-download Seaside_Town                               # Download a scene" -ForegroundColor Gray
-    Write-Host "  ue-copy --list                                         # List scenes to copy" -ForegroundColor Gray
-    Write-Host "  ue-copy Scene1 Scene2                                  # Copy multiple scenes" -ForegroundColor Gray
+    Write-Host "  ue-sequence                                  # Use config/job_config.json" -ForegroundColor Gray
+    Write-Host "  ue-sequence custom_job.json                  # Use custom config file" -ForegroundColor Gray
+    Write-Host "  ue-download --list                           # List available scenes" -ForegroundColor Gray
+    Write-Host "  ue-download Seaside_Town                     # Download a scene" -ForegroundColor Gray
+    Write-Host "  ue-copy --list                               # List scenes to copy" -ForegroundColor Gray
+    Write-Host "  ue-copy Scene1 Scene2                        # Copy multiple scenes" -ForegroundColor Gray
     Write-Host ""
     Write-Host "Or use app.py directly:" -ForegroundColor Yellow
     Write-Host "  python app.py --help" -ForegroundColor Gray

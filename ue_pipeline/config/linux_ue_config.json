@@ -1,5 +1,5 @@
 {
-  "editor_path": "/usr/local/UnrealEngine/Engine/Binaries/Linux/UnrealEditor-Cmd",
+  "editor_cmd": "/usr/local/UnrealEngine/Engine/Binaries/Linux/UnrealEditor-Cmd",
   "project_path": "/app/ue_template/project/WorldData.uproject",
   "output_base_dir": "/app/output",
   "exclude_map_names": [

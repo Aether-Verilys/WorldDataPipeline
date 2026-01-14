@@ -6,7 +6,8 @@ from typing import Optional
 
 @dataclass
 class SequenceJobConfig:
-    output_dir: str = "/Game/CameraController/Generated"
+    # Leave empty so worker can auto-derive from map path (e.g. /Game/LevelPrototyping/Sequence)
+    output_dir: str = ""
     sequence_count: int = 1
     actor_name: str = "BP_NPC_NavMesh"
     camera_component_name: str = "Camera"

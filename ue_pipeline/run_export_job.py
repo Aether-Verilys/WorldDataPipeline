@@ -34,16 +34,11 @@ def main():
     manifest = job_utils.load_manifest(manifest_path)
     job_id = job_utils.validate_manifest_type(manifest, 'export')
 
-    # Get UE configuration
-    ue_config = job_utils.get_ue_config(manifest)
+    # 使用新的配置合并机制
+    manifest = job_utils.merge_configs(manifest)
+    ue_config = manifest['ue_config']
     ue_editor = ue_config['editor_cmd']
     project = ue_config['project_path']
-    
-    # Merge complete ue_config back into manifest for worker
-    manifest['ue_config'] = ue_config
-    
-    # Save updated manifest with merged ue_config
-    job_utils.save_manifest(manifest, manifest_path)
 
     # Worker Export script path
     script_dir = Path(__file__).parent
@@ -62,54 +57,67 @@ def main():
     logger.info("Starting export job...")
     logger.blank(1)
 
-    # Resolve absolute path for manifest
-    abs_manifest_path = os.path.abspath(manifest_path)
-    abs_project = os.path.abspath(project)
-
-    # Pass manifest path via environment variable (for headless mode)
-    os.environ['UE_MANIFEST_PATH'] = abs_manifest_path
-
-    # Build UE launch arguments (Headless mode)
-    ue_args = [
-        abs_project,
-        f'-ExecutePythonScript={worker_export}',
-        '-unattended',
-        '-nopause',
-        '-nosplash',
-        '-NullRHI',
-        '-buildmachine',
-        '-NoSound',
-        '-AllowStdOutLogVerbosity',
-        '-FullStdOutLogOutput',
-        '-log'
-    ]
-
-    # Print command
-    command_str = f'{ue_editor} {" ".join(ue_args)}'
-    logger.info(f"Command: {command_str}")
-    logger.blank(1)
-    logger.separator(width=40, char='-')
-
-    # Launch UE
+    # Create a temporary manifest with merged config
+    import tempfile
+    temp_manifest_fd, temp_manifest_path = tempfile.mkstemp(suffix='.json', prefix='export_manifest_')
     try:
-        process = subprocess.run(
-            [ue_editor] + ue_args,
-            check=False
-        )
+        with os.fdopen(temp_manifest_fd, 'w', encoding='utf-8') as f:
+            json.dump(manifest, f, indent=2)
+        
+        # Resolve absolute path for manifest
+        abs_project = os.path.abspath(project)
 
+        # Pass manifest path via environment variable (for headless mode)
+        os.environ['UE_MANIFEST_PATH'] = temp_manifest_path
+
+        # Build UE launch arguments (Headless mode)
+        ue_args = [
+            abs_project,
+            f'-ExecutePythonScript={worker_export}',
+            '-unattended',
+            '-nopause',
+            '-nosplash',
+            '-NullRHI',
+            '-buildmachine',
+            '-NoSound',
+            '-AllowStdOutLogVerbosity',
+            '-FullStdOutLogOutput',
+            '-log'
+        ]
+
+        # Print command
+        command_str = f'{ue_editor} {" ".join(ue_args)}'
+        logger.info(f"Command: {command_str}")
         logger.blank(1)
         logger.separator(width=40, char='-')
 
-        if process.returncode == 0:
-            logger.info("Export job completed successfully")
-            return 0
-        else:
-            logger.error(f"Export job failed with exit code: {process.returncode}")
-            return process.returncode
+        # Launch UE
+        try:
+            process = subprocess.run(
+                [ue_editor] + ue_args,
+                check=False
+            )
 
-    except Exception as e:
-        logger.error(f"Failed to launch UE: {e}")
-        return 1
+            logger.blank(1)
+            logger.separator(width=40, char='-')
+
+            if process.returncode == 0:
+                logger.info("Export job completed")
+                return 0
+            else:
+                logger.error(f"Export job failed with exit code: {process.returncode}")
+                return process.returncode
+
+        except Exception as e:
+            logger.error(f"Failed to launch UE: {e}")
+            return 1
+    finally:
+        # Clean up temporary manifest
+        try:
+            if os.path.exists(temp_manifest_path):
+                os.remove(temp_manifest_path)
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':

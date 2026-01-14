@@ -17,14 +17,12 @@ from ue_pipeline.python.logger import logger
 from ue_pipeline.python import job_utils
 
 
-def run_ue_job(ue_editor: str, project: str, manifest_path: str, worker_phase1: str, worker_phase2: str, job_id: str, full_config: dict) -> int:
-    abs_manifest_path = os.path.abspath(manifest_path)
+def run_ue_job(ue_editor: str, project: str, merged_manifest: dict, worker_phase1: str, worker_phase2: str, job_id: str, full_config: dict) -> int:
     abs_worker_phase1 = os.path.abspath(worker_phase1)
     abs_worker_phase2 = os.path.abspath(worker_phase2)
     
-    with open(abs_manifest_path, 'r', encoding='utf-8') as f:
-        manifest = json.load(f)
-    
+    # Use the already merged manifest (no template field)
+    manifest = merged_manifest.copy()
     manifest['ue_config'] = full_config
     
     import tempfile
@@ -183,7 +181,9 @@ def main():
     manifest = job_utils.load_manifest(args.manifest_path)
     job_id = job_utils.validate_manifest_type(manifest, 'bake_navmesh')
     
-    ue_config = job_utils.get_ue_config(manifest)
+    # 使用新的配置合并机制
+    manifest = job_utils.merge_configs(manifest)
+    ue_config = manifest['ue_config']
     ue_editor = ue_config['editor_cmd']
     project = ue_config['project_path']
     
@@ -210,7 +210,7 @@ def main():
     logger.info("Starting NavMesh bake job...")
     logger.blank(1)
     
-    exit_code = run_ue_job(ue_editor, project, args.manifest_path, worker_phase1, worker_phase2, job_id, full_config)
+    exit_code = run_ue_job(ue_editor, project, manifest, worker_phase1, worker_phase2, job_id, full_config)
     sys.exit(exit_code)
 
 

@@ -97,8 +97,8 @@ def main():
     parser_bake.add_argument(
         '--manifest',
         type=str,
-        required=True,
-        help='Path to the job manifest JSON file'
+        default='config/job_config.json',
+        help='Path to the job manifest JSON file (default: config/job_config.json)'
     )
     
     parser_create_seq = subparsers.add_parser(
@@ -108,8 +108,8 @@ def main():
     parser_create_seq.add_argument(
         '--manifest',
         type=str,
-        required=True,
-        help='Path to the job manifest JSON file'
+        default='config/job_config.json',
+        help='Path to the job manifest JSON file (default: config/job_config.json)'
     )
     
     parser_export = subparsers.add_parser(
@@ -119,8 +119,8 @@ def main():
     parser_export.add_argument(
         '--manifest',
         type=str,
-        required=True,
-        help='Path to the job manifest JSON file'
+        default='config/job_config.json',
+        help='Path to the job manifest JSON file (default: config/job_config.json)'
     )
     
     parser_render = subparsers.add_parser(
@@ -130,8 +130,8 @@ def main():
     parser_render.add_argument(
         '--manifest',
         type=str,
-        required=True,
-        help='Path to the job manifest JSON file'
+        default='config/job_config.json',
+        help='Path to the job manifest JSON file (default: config/job_config.json)'
     )
     parser_render.add_argument(
         '--dry-run',
