@@ -1,0 +1,15 @@
+{
+  "job_type": "create_sequence",
+  "job_id": "job-001",
+  "template": "ue_pipeline/examples/job_sequence.json",
+  
+  "map": "/Game/LevelPrototyping/test",
+  
+  "sequence_config": {
+    "sequence_count": 1
+  },
+  
+  "ue_config": {
+    "output_base_dir": "output/2026-01-16"
+  }
+}

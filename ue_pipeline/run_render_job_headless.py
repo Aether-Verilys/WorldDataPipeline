@@ -6,8 +6,10 @@ Execute a render job using command-line MRQ execution
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
+import tempfile
 import time
 import psutil
 from pathlib import Path
@@ -20,6 +22,101 @@ if str(repo_root) not in sys.path:
 
 from ue_pipeline.python.logger import logger
 from ue_pipeline.python import job_utils
+
+def scan_local_sequences(project_path: str, sequence_dir: str) -> list:
+    """
+    Scan local file system for level sequence assets.
+    Converts /Game/SceneName/Sequence to Content/SceneName/Sequence
+    """
+    # Convert UE asset path to local file system path
+    # /Game/SceneName/Sequence -> Content/SceneName/Sequence
+    ue_path_parts = sequence_dir.split('/')
+    if len(ue_path_parts) >= 2 and ue_path_parts[1] == 'Game':
+        relative_path = '/'.join(ue_path_parts[2:])  # Remove /Game
+        project_dir = Path(project_path).parent
+        content_dir = project_dir / 'Content' / relative_path
+        
+        logger.info(f"Scanning local directory: {content_dir}")
+        
+        if not content_dir.exists():
+            logger.error(f"Directory does not exist: {content_dir}")
+            return []
+        
+        # Find all .uasset files (LevelSequence assets)
+        sequences = []
+        for uasset_file in content_dir.glob('*.uasset'):
+            # Convert back to UE asset path
+            # Content/SceneName/Sequence/MySeq.uasset -> /Game/SceneName/Sequence/MySeq
+            asset_name = uasset_file.stem
+            ue_asset_path = f"{sequence_dir}/{asset_name}"
+            sequences.append(ue_asset_path)
+            logger.info(f"  Found: {ue_asset_path}")
+        
+        return sorted(sequences)
+    else:
+        logger.error(f"Invalid UE asset path format: {sequence_dir}")
+        return []
+
+
+def run_batch_render(ue_editor: str, project: str, manifest: dict, worker: str, job_id: str, full_config: dict, output_base_dir: str) -> int:
+    """
+    Run batch render: scan sequences and render them one by one.
+    Each sequence is rendered, then post-processed, before moving to next.
+    """
+    # Scan local file system for sequences (fast, no need to start UE)
+    sequence_dir = manifest.get('sequence_dir')
+    logger.info(f"Scanning for sequences in: {sequence_dir}")
+    
+    sequences = scan_local_sequences(project, sequence_dir)
+    
+    if not sequences:
+        logger.error("No sequences found")
+        return 1
+    
+    logger.info(f"Found {len(sequences)} sequence(s)")
+    for seq in sequences:
+        logger.info(f"  - {seq}")
+    logger.blank(1)
+    
+    # Now render each sequence one by one
+    total = len(sequences)
+    failed_sequences = []
+    
+    for idx, sequence_path in enumerate(sequences, 1):
+        logger.separator(width=60, char='=')
+        logger.info(f"RENDERING SEQUENCE {idx}/{total}")
+        logger.info(f"Sequence: {sequence_path}")
+        logger.separator(width=60, char='=')
+        logger.blank(1)
+        
+        # Create manifest for this sequence
+        seq_manifest = manifest.copy()
+        seq_manifest['sequence'] = sequence_path
+        seq_manifest.pop('batch_mode', None)
+        seq_manifest.pop('sequence_dir', None)
+        
+        # Render this sequence
+        exit_code = run_ue_job(ue_editor, project, seq_manifest, worker, f"{job_id}_seq{idx}", full_config, output_base_dir)
+        
+        if exit_code != 0:
+            logger.error(f"✗ Sequence {idx}/{total} failed")
+            failed_sequences.append(sequence_path)
+        else:
+            logger.info(f"✓ Sequence {idx}/{total} completed")
+        
+        logger.blank(1)
+    
+    # Summary
+    logger.separator(width=60, char='=')
+    logger.info(f"BATCH RENDER COMPLETE")
+    logger.info(f"Total: {total} | Success: {total - len(failed_sequences)} | Failed: {len(failed_sequences)}")
+    if failed_sequences:
+        logger.error("Failed sequences:")
+        for seq in failed_sequences:
+            logger.error(f"  - {seq}")
+    logger.separator(width=60, char='=')
+    
+    return 0 if not failed_sequences else 1
 
 
 def get_render_config(manifest: dict, ue_config: dict) -> dict:
@@ -45,7 +142,6 @@ def get_render_config(manifest: dict, ue_config: dict) -> dict:
         if sequence_name:
             # Extract map name by removing trailing _### pattern
             # e.g., Lvl_FirstPerson_001 -> Lvl_FirstPerson
-            import re
             map_name = re.sub(r'_\d+$', '', sequence_name)
             
             # Lookup map path from ue_config scenes
@@ -180,7 +276,6 @@ def wait_for_render_completion_legacy(output_base_dir: str, manifest: dict, time
             map_name = map_path.split("/")[-1]
             
             # Extract scene ID from map path
-            import re
             path_parts = map_path.split("/")
             for part in path_parts:
                 if re.match(r'^S\d{4}$', part):
@@ -304,7 +399,6 @@ def run_ue_job(ue_editor: str, project: str, merged_manifest: dict, worker: str,
     output_directory = output_base_dir
     
     # Create a temporary manifest with ue_config injected
-    import tempfile
     temp_manifest_fd, temp_manifest_path = tempfile.mkstemp(suffix='.json', prefix='render_manifest_')
     try:
         with os.fdopen(temp_manifest_fd, 'w', encoding='utf-8') as f:
@@ -445,7 +539,6 @@ def run_postprocess_actions(manifest_path: str):
             sequence = m.get('sequence', '').split('/')[-1]
             # try to extract scene id from map_path
             for part in map_path.split('/'):
-                import re
                 if re.match(r'^S\d{4}$', part):
                     scene_id = part
                     break
@@ -537,17 +630,55 @@ def main():
     # Load full config for scene lookup
     full_config = job_utils.load_default_ue_config()
     
-    # Get render configuration (with map lookup)
-    render_config = get_render_config(manifest, full_config)
+    # Check if sequence is provided or should scan directory
+    sequence = manifest.get('sequence', '')
+    sequences_to_render = []
+    
+    if sequence:
+        # Single sequence mode
+        logger.info("Single sequence mode")
+        render_config = get_render_config(manifest, full_config)
+        sequences_to_render = [render_config['sequence']]
+        map_path = render_config['map']
+    else:
+        # Batch mode: scan Sequence directory
+        logger.info("Batch mode: scanning for sequences...")
+        
+        # Get map from manifest
+        map_path = manifest.get('map')
+        if not map_path:
+            logger.error("No 'map' specified in manifest")
+            sys.exit(1)
+        
+        # Derive Sequence directory from map path
+        # e.g., /Game/RockyDesert/Maps/Demo -> /Game/RockyDesert/Sequence
+        # Scene name is the second segment in the path (after 'Game')
+        map_parts = map_path.split('/')
+        if len(map_parts) >= 3:
+            scene_name = map_parts[2]
+            sequence_dir = f"/Game/{scene_name}/Sequence"
+            logger.info(f"Sequence directory (derived from scene '{scene_name}'): {sequence_dir}")
+            
+            # We'll scan sequences in the worker, for now just set a marker
+            manifest['batch_mode'] = True
+            manifest['sequence_dir'] = sequence_dir
+        else:
+            logger.error(f"Cannot derive scene path from map (too few parts): {map_path}")
+            sys.exit(1)
     
     # Print job info
     logger.kv("Job ID:", job_id)
-    logger.kv("Sequence:", render_config['sequence'])
-    logger.kv("Map:", render_config['map'])
-    logger.kv("Config:", render_config['preset'])
+    logger.kv("Map:", map_path)
     logger.kv("Output:", output_base_dir)
     logger.kv("UE Editor:", ue_editor)
     logger.kv("Project:", project)
+    
+    if sequence:
+        logger.kv("Sequence:", sequence)
+    else:
+        logger.kv("Mode:", "Batch (scan Sequence directory)")
+        logger.kv("Sequence Dir:", manifest.get('sequence_dir'))
+    
     logger.blank(1)
     
     # Validate paths
@@ -557,11 +688,18 @@ def main():
     ensure_output_directory(output_base_dir)
     
     # Run the job
-    logger.info("Starting headless render job...")
-    logger.blank(1)
-    
-    exit_code = run_ue_job(ue_editor, project, manifest, worker, job_id, full_config, output_base_dir)
-    sys.exit(exit_code)
+    if sequence:
+        # Single sequence mode
+        logger.info("Starting headless render job...")
+        logger.blank(1)
+        exit_code = run_ue_job(ue_editor, project, manifest, worker, job_id, full_config, output_base_dir)
+        sys.exit(exit_code)
+    else:
+        # Batch mode: scan and render sequences one by one
+        logger.info("Starting batch render job...")
+        logger.blank(1)
+        exit_code = run_batch_render(ue_editor, project, manifest, worker, job_id, full_config, output_base_dir)
+        sys.exit(exit_code)
 
 
 if __name__ == '__main__':
