@@ -1,0 +1,19 @@
+{
+  "fallback_markers": [
+    "Blueprints",
+    "Maps",
+    "Map",
+    "Level",
+    "Levels",
+    "Meshes",
+    "Materials",
+    "Textures"
+  ],
+  "exclude_map_names": [
+    "Overview",
+    "prop",
+    "test",
+    "Test"
+  ],
+  "description": "场景结构扫描配置 - 用于识别Content目录和排除特定地图"
+}

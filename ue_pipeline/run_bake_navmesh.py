@@ -80,6 +80,16 @@ def run_ue_job(ue_editor: str, project: str, merged_manifest: dict, worker_phase
                 logger.error(f"Phase 1 failed with exit code: {result_phase1.returncode}")
                 return result_phase1.returncode
             
+            # 额外检查：即使退出码是0，也检查是否有"Map file does not exist"等关键错误
+            log_file = f'NavMeshBake_Phase1_{job_id}.txt'
+            if os.path.exists(log_file):
+                with open(log_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    log_content = f.read()
+                    if 'Map file does not exist' in log_content or 'Failed to load map' in log_content:
+                        logger.error("Phase 1 detected map loading errors in log")
+                        logger.error("Aborting - map file not found")
+                        return 1
+            
             logger.info("Phase 1 completed - NavMeshBoundsVolume added and saved")
             logger.blank(1)
             

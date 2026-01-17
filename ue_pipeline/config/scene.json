@@ -1,0 +1,9 @@
+{
+    "name": "LevelPrototyping",
+    "maps": [
+    {
+        "name": "Lvl_FirstPerson",
+        "path": "/Game/LevelPrototyping/Lvl_FirstPerson"
+    }
+    ]
+}

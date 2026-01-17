@@ -125,7 +125,24 @@ def spawn_actor_from_blueprint(blueprint_asset_path: str, desired_label: str, sp
 
 
 def save_current_level() -> None:
+    """保存当前打开的关卡"""
     try:
+        # 方法1: 使用 EditorLoadingAndSavingUtils.save_dirty_packages
+        # 这是官方推荐的方式，更可靠
+        import unreal
+        
+        # 获取当前世界的包
+        world = get_editor_world()
+        if world:
+            package = world.get_outer()
+            if package:
+                # 使用 EditorLoadingAndSavingUtils 保存包
+                save_options = unreal.EditorLoadingAndSavingUtils.save_packages([package], True)
+                if save_options:
+                    print(f"[AssetsManager] ✓ Saved current level package: {package.get_name()}")
+                    return
+        
+        # 方法2: 如果方法1失败，尝试使用 LevelEditorSubsystem
         level_editor = get_level_editor_subsystem()
         level_editor.save_current_level()
         print(f"[AssetsManager] ✓ Saved current level")
@@ -133,10 +150,11 @@ def save_current_level() -> None:
     except Exception as e:
         print(f"[AssetsManager] WARNING: save_current_level failed: {e}")
 
+    # 方法3: 最后的备选方案 - 保存所有脏关卡
     try:
         world = get_editor_world()
         level_editor = get_level_editor_subsystem()
         level_editor.save_all_dirty_levels()
         print(f"[AssetsManager] ✓ Saved dirty levels")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[AssetsManager] WARNING: save_all_dirty_levels failed: {e}")

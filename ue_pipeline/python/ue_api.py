@@ -41,17 +41,44 @@ def get_navigation_system(world: unreal.World = None) -> unreal.NavigationSystem
     return unreal.NavigationSystemV1.get_navigation_system(world)
 
 def load_map(map_asset_path: str) -> bool:
+    """
+    加载地图到编辑器
+    
+    Args:
+        map_asset_path: 地图资源路径，如 "/Game/Maps/MyMap" (不需要.umap后缀)
+                       如果提供了.umap后缀会自动移除
+    
+    Returns:
+        bool: 加载成功返回True，否则返回False
+    """
     if not map_asset_path:
         return False
 
+    # 确保路径没有.umap后缀（UE API通常不需要）
+    # 但如果用户提供了，我们也接受
+    normalized_path = map_asset_path.replace('.umap', '')
+    
+    # 检查地图文件是否存在
+    # 转换为物理路径检查
+    import unreal
+    level_path = normalized_path.replace("/Game/", "/Content/") + ".umap"
+    project_path = unreal.Paths.project_content_dir()
+    from pathlib import Path
+    full_path = Path(project_path).parent / level_path.lstrip('/')
+    
+    if not full_path.exists():
+        logger.error(f"Map file does not exist: {full_path}")
+        logger.error(f"Asset path: {normalized_path}")
+        return False
+    
     # 优先使用 LevelEditorSubsystem.load_level
     try:
         level_editor = get_level_editor_subsystem()
         if level_editor:
-            logger.info(f"Loading map via LevelEditorSubsystem: {map_asset_path}")
-            ok = level_editor.load_level(map_asset_path)
+            logger.info(f"Loading map via LevelEditorSubsystem: {normalized_path}")
+            ok = level_editor.load_level(normalized_path)
             if ok:
-                logger.info("Map loaded")
+                logger.info("Map loaded successfully")
                 return True
             logger.warning("LevelEditorSubsystem.load_level returned False")
     except Exception as e:
@@ -60,12 +87,12 @@ def load_map(map_asset_path: str) -> bool:
     # 备选方案：EditorLevelLibrary.load_level
     load_level = getattr(unreal.EditorLevelLibrary, "load_level", None)
     if callable(load_level):
-        logger.info(f"Loading map via EditorLevelLibrary.load_level: {map_asset_path}")
-        if load_level(map_asset_path):
-            logger.info("Map loaded")
+        logger.info(f"Loading map via EditorLevelLibrary.load_level: {normalized_path}")
+        if load_level(normalized_path):
+            logger.info("Map loaded successfully")
             return True
 
-    logger.error(f"Failed to load map: {map_asset_path}")
+    logger.error(f"Failed to load map: {normalized_path}")
     return False
 
 def load_blueprint_class(blueprint_asset_path: str):

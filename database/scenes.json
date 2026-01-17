@@ -1,0 +1,1378 @@
+{
+  "total_scenes": 63,
+  "last_updated": "2026-01-16 12:47:48",
+  "scenes": {
+    "3D_Scanned_Canyon": {
+      "scene_name": "3D_Scanned_Canyon",
+      "launch_directory": "CanyonScans",
+      "content_path": "F:\\Raw\\3D_Scanned_Canyon\\Content",
+      "launch_directory_path": "F:\\Raw\\3D_Scanned_Canyon\\Content\\CanyonScans",
+      "base_game_path": "/Game/CanyonScans",
+      "maps": [
+        {
+          "name": "Canyon_DemoScene",
+          "path": "/Game/CanyonScans/Maps/Canyon_DemoScene"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "CHERRY_TREE": {
+      "scene_name": "CHERRY_TREE",
+      "launch_directory": "CHERRY_TREE",
+      "content_path": "F:\\Raw\\CHERRY_TREE\\Content",
+      "launch_directory_path": "F:\\Raw\\CHERRY_TREE\\Content\\CHERRY_TREE",
+      "base_game_path": "/Game/CHERRY_TREE",
+      "maps": [],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "MW_Broadleaf_Trees_Forest_Biome": {
+      "scene_name": "MW_Broadleaf_Trees_Forest_Biome",
+      "launch_directory": "ForestCollection2",
+      "content_path": "F:\\Raw\\MW_Broadleaf_Trees_Forest_Biome\\Content",
+      "launch_directory_path": "F:\\Raw\\MW_Broadleaf_Trees_Forest_Biome\\Content\\ForestCollection2",
+      "base_game_path": "/Game/ForestCollection2",
+      "maps": [
+        {
+          "name": "ForestCollection_BroadleafForest_Example_Lighting",
+          "path": "/Game/ForestCollection2/Maps/ForestCollection_BroadleafForest_Example_Lighting"
+        },
+        {
+          "name": "ForestCollection_BroadleafForest_Example_Procedural",
+          "path": "/Game/ForestCollection2/Maps/ForestCollection_BroadleafForest_Example_Procedural"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Modular_SciFi_Polaris_Colony": {
+      "scene_name": "Modular_SciFi_Polaris_Colony",
+      "launch_directory": "ModSci_PolarisColony",
+      "content_path": "F:\\Raw\\Modular_SciFi_Polaris_Colony\\Content",
+      "launch_directory_path": "F:\\Raw\\Modular_SciFi_Polaris_Colony\\Content\\ModSci_PolarisColony",
+      "base_game_path": "/Game/ModSci_PolarisColony",
+      "maps": [
+        {
+          "name": "ExampleEnvironment_A",
+          "path": "/Game/ModSci_PolarisColony/Maps/ExampleEnvironment_A"
+        },
+        {
+          "name": "ExampleEnvironment_A_Dynamic",
+          "path": "/Game/ModSci_PolarisColony/Maps/ExampleEnvironment_A_Dynamic"
+        },
+        {
+          "name": "ExampleEnvironment_B",
+          "path": "/Game/ModSci_PolarisColony/Maps/ExampleEnvironment_B"
+        },
+        {
+          "name": "ExampleEnvironment_B_Dynamic",
+          "path": "/Game/ModSci_PolarisColony/Maps/ExampleEnvironment_B_Dynamic"
+        },
+        {
+          "name": "ExampleEnvironment_C_Dynamic",
+          "path": "/Game/ModSci_PolarisColony/Maps/ExampleEnvironment_C_Dynamic"
+        },
+        {
+          "name": "ExampleEnvironment_Catwalks",
+          "path": "/Game/ModSci_PolarisColony/Maps/ExampleEnvironment_Catwalks"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Modular_Sci_Fi_Orion_Mars_Corridors": {
+      "scene_name": "Modular_Sci_Fi_Orion_Mars_Corridors",
+      "launch_directory": "OrionMars",
+      "content_path": "F:\\Raw\\Modular_Sci_Fi_Orion_Mars_Corridors\\Content",
+      "launch_directory_path": "F:\\Raw\\Modular_Sci_Fi_Orion_Mars_Corridors\\Content\\OrionMars",
+      "base_game_path": "/Game/OrionMars",
+      "maps": [
+        {
+          "name": "OrionLevel",
+          "path": "/Game/OrionMars/Maps/OrionLevel"
+        },
+        {
+          "name": "OrionLevel_2",
+          "path": "/Game/OrionMars/Maps/OrionLevel_2"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Modular_Sci_Fi_Underground_Environment": {
+      "scene_name": "Modular_Sci_Fi_Underground_Environment",
+      "launch_directory": "SciFiUnderground",
+      "content_path": "F:\\Raw\\Modular_Sci_Fi_Underground_Environment\\Content",
+      "launch_directory_path": "F:\\Raw\\Modular_Sci_Fi_Underground_Environment\\Content\\SciFiUnderground",
+      "base_game_path": "/Game/SciFiUnderground",
+      "maps": [
+        {
+          "name": "CyberpunkUnderground",
+          "path": "/Game/SciFiUnderground/Map/CyberpunkUnderground"
+        },
+        {
+          "name": "Overveiw",
+          "path": "/Game/SciFiUnderground/Map/Overveiw"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Modular_Secret_Military_Base": {
+      "scene_name": "Modular_Secret_Military_Base",
+      "launch_directory": "SecretBase",
+      "content_path": "F:\\Raw\\Modular_Secret_Military_Base\\Content",
+      "launch_directory_path": "F:\\Raw\\Modular_Secret_Military_Base\\Content\\SecretBase",
+      "base_game_path": "/Game/SecretBase",
+      "maps": [
+        {
+          "name": "SecretBase",
+          "path": "/Game/SecretBase/Map/SecretBase"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Modular_Slum_Environment": {
+      "scene_name": "Modular_Slum_Environment",
+      "launch_directory": "SlumEnvironment",
+      "content_path": "F:\\Raw\\Modular_Slum_Environment\\Content",
+      "launch_directory_path": "F:\\Raw\\Modular_Slum_Environment\\Content\\SlumEnvironment",
+      "base_game_path": "/Game/SlumEnvironment",
+      "maps": [
+        {
+          "name": "Map_DesertSlum",
+          "path": "/Game/SlumEnvironment/Maps/Map_DesertSlum"
+        },
+        {
+          "name": "Map_LakeSlum",
+          "path": "/Game/SlumEnvironment/Maps/Map_LakeSlum"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Mountain_Grassland_Environment_427": {
+      "scene_name": "Mountain_Grassland_Environment_427",
+      "launch_directory": "MountainGrassland",
+      "content_path": "F:\\Raw\\Mountain_Grassland_Environment_427\\Content",
+      "launch_directory_path": "F:\\Raw\\Mountain_Grassland_Environment_427\\Content\\MountainGrassland",
+      "base_game_path": "/Game/MountainGrassland",
+      "maps": [
+        {
+          "name": "MG_Map_Demo",
+          "path": "/Game/MountainGrassland/MG_Maps/MG_Map_Demo"
+        },
+        {
+          "name": "MG_Map_Demo_3",
+          "path": "/Game/MountainGrassland/MG_Maps/MG_Map_Demo_3"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Mountain_Village_Environment": {
+      "scene_name": "Mountain_Village_Environment",
+      "launch_directory": "MountainVillageEnv",
+      "content_path": "F:\\Raw\\Mountain_Village_Environment\\Content",
+      "launch_directory_path": "F:\\Raw\\Mountain_Village_Environment\\Content\\MountainVillageEnv",
+      "base_game_path": "/Game/MountainVillageEnv",
+      "maps": [
+        {
+          "name": "MV_Map_Demo",
+          "path": "/Game/MountainVillageEnv/MV_Maps/MV_Map_Demo"
+        },
+        {
+          "name": "MV_Map_Demo_1",
+          "path": "/Game/MountainVillageEnv/MV_Maps/MV_Map_Demo_1"
+        },
+        {
+          "name": "MV_Map_Houses",
+          "path": "/Game/MountainVillageEnv/MV_Maps/MV_Map_Houses"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Next_Gen_Modular_City_V3": {
+      "scene_name": "Next_Gen_Modular_City_V3",
+      "launch_directory": "ModularCity",
+      "content_path": "F:\\Raw\\Next_Gen_Modular_City_V3\\Content",
+      "launch_directory_path": "F:\\Raw\\Next_Gen_Modular_City_V3\\Content\\ModularCity",
+      "base_game_path": "/Game/ModularCity",
+      "maps": [
+        {
+          "name": "ModularCity3",
+          "path": "/Game/ModularCity/maps/ModularCity3"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Nordic_Conifer_Biome": {
+      "scene_name": "Nordic_Conifer_Biome",
+      "launch_directory": "NordicConiferBiome",
+      "content_path": "F:\\Raw\\Nordic_Conifer_Biome\\Content",
+      "launch_directory_path": "F:\\Raw\\Nordic_Conifer_Biome\\Content\\NordicConiferBiome",
+      "base_game_path": "/Game/NordicConiferBiome",
+      "maps": [
+        {
+          "name": "AssetZoo",
+          "path": "/Game/NordicConiferBiome/Map/AssetZoo/AssetZoo"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Nuclear_Bomb_Shelter": {
+      "scene_name": "Nuclear_Bomb_Shelter",
+      "launch_directory": "NuclearBombShelter",
+      "content_path": "F:\\Raw\\Nuclear_Bomb_Shelter\\Content",
+      "launch_directory_path": "F:\\Raw\\Nuclear_Bomb_Shelter\\Content\\NuclearBombShelter",
+      "base_game_path": "/Game/NuclearBombShelter",
+      "maps": [
+        {
+          "name": "BombShelter",
+          "path": "/Game/NuclearBombShelter/Maps/BombShelter"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Ocean_City_Environment_Package": {
+      "scene_name": "Ocean_City_Environment_Package",
+      "launch_directory": "OceanCity",
+      "content_path": "F:\\Raw\\Ocean_City_Environment_Package\\Content",
+      "launch_directory_path": "F:\\Raw\\Ocean_City_Environment_Package\\Content\\OceanCity",
+      "base_game_path": "/Game/OceanCity",
+      "maps": [
+        {
+          "name": "Ambulance",
+          "path": "/Game/OceanCity/VehicleBundle/Ambulance_Vehicle/Maps/Ambulance"
+        },
+        {
+          "name": "BuggyDemo",
+          "path": "/Game/OceanCity/VehicleBundle/Buggy_Vehicle/Maps/BuggyDemo"
+        },
+        {
+          "name": "Example01",
+          "path": "/Game/OceanCity/MallEnvironment/Mall/Maps/Example01"
+        },
+        {
+          "name": "OceanCity",
+          "path": "/Game/OceanCity/Map/OceanCity"
+        },
+        {
+          "name": "SwatVehicle",
+          "path": "/Game/OceanCity/VehicleBundle/SwatVehicle/Map/SwatVehicle"
+        },
+        {
+          "name": "VehicleExampleMap",
+          "path": "/Game/OceanCity/VehicleBundle/OffRoadVehicles/Maps/VehicleExampleMap"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Ocean_Environment_Lite_Pack_Starter_Kit_5.0": {
+      "scene_name": "Ocean_Environment_Lite_Pack_Starter_Kit_5.0",
+      "launch_directory": "OceanPackLite",
+      "content_path": "F:\\Raw\\Ocean_Environment_Lite_Pack_Starter_Kit_5.0\\Content",
+      "launch_directory_path": "F:\\Raw\\Ocean_Environment_Lite_Pack_Starter_Kit_5.0\\Content\\OceanPackLite",
+      "base_game_path": "/Game/OceanPackLite",
+      "maps": [
+        {
+          "name": "Demonstration_Dry",
+          "path": "/Game/OceanPackLite/Levels/Demonstration_Dry"
+        },
+        {
+          "name": "Demonstration_WaterDeep",
+          "path": "/Game/OceanPackLite/Levels/Demonstration_WaterDeep"
+        },
+        {
+          "name": "Demonstration_WaterGreen",
+          "path": "/Game/OceanPackLite/Levels/Demonstration_WaterGreen"
+        },
+        {
+          "name": "Demonstration_WaterMid",
+          "path": "/Game/OceanPackLite/Levels/Demonstration_WaterMid"
+        },
+        {
+          "name": "Demonstration_WaterShallow",
+          "path": "/Game/OceanPackLite/Levels/Demonstration_WaterShallow"
+        },
+        {
+          "name": "Demonstration_Wet",
+          "path": "/Game/OceanPackLite/Levels/Demonstration_Wet"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Office_Meeting_Room_v_01": {
+      "scene_name": "Office_Meeting_Room_v_01",
+      "launch_directory": "OfficePack_v01",
+      "content_path": "F:\\Raw\\Office_Meeting_Room_v_01\\Content",
+      "launch_directory_path": "F:\\Raw\\Office_Meeting_Room_v_01\\Content\\OfficePack_v01",
+      "base_game_path": "/Game/OfficePack_v01",
+      "maps": [],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Old_Brick_House": {
+      "scene_name": "Old_Brick_House",
+      "launch_directory": "OldBrickHouse",
+      "content_path": "F:\\Raw\\Old_Brick_House\\Content",
+      "launch_directory_path": "F:\\Raw\\Old_Brick_House\\Content\\OldBrickHouse",
+      "base_game_path": "/Game/OldBrickHouse",
+      "maps": [],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Old_Factory": {
+      "scene_name": "Old_Factory",
+      "launch_directory": "OldFactory",
+      "content_path": "F:\\Raw\\Old_Factory\\Content",
+      "launch_directory_path": "F:\\Raw\\Old_Factory\\Content\\OldFactory",
+      "base_game_path": "/Game/OldFactory",
+      "maps": [
+        {
+          "name": "Assets",
+          "path": "/Game/OldFactory/Maps/Assets"
+        },
+        {
+          "name": "Demo",
+          "path": "/Game/OldFactory/Maps/Demo"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Old_Restroom": {
+      "scene_name": "Old_Restroom",
+      "launch_directory": "OldRestroom",
+      "content_path": "F:\\Raw\\Old_Restroom\\Content",
+      "launch_directory_path": "F:\\Raw\\Old_Restroom\\Content\\OldRestroom",
+      "base_game_path": "/Game/OldRestroom",
+      "maps": [
+        {
+          "name": "DemoMap",
+          "path": "/Game/OldRestroom/Maps/DemoMap"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Old_Village_Houses_Pack": {
+      "scene_name": "Old_Village_Houses_Pack",
+      "launch_directory": "OldVillage",
+      "content_path": "F:\\Raw\\Old_Village_Houses_Pack\\Content",
+      "launch_directory_path": "F:\\Raw\\Old_Village_Houses_Pack\\Content\\OldVillage",
+      "base_game_path": "/Game/OldVillage",
+      "maps": [
+        {
+          "name": "Blueprints",
+          "path": "/Game/OldVillage/Levels/Blueprints"
+        },
+        {
+          "name": "Old_Village_Daylight",
+          "path": "/Game/OldVillage/Levels/Old_Village_Daylight"
+        },
+        {
+          "name": "Old_Village_Night",
+          "path": "/Game/OldVillage/Levels/Old_Village_Night"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Old_West_Modular_Barn": {
+      "scene_name": "Old_West_Modular_Barn",
+      "launch_directory": "Western_Barn",
+      "content_path": "F:\\Raw\\Old_West_Modular_Barn\\Content",
+      "launch_directory_path": "F:\\Raw\\Old_West_Modular_Barn\\Content\\Western_Barn",
+      "base_game_path": "/Game/Western_Barn",
+      "maps": [
+        {
+          "name": "Demonstration_map",
+          "path": "/Game/Western_Barn/Maps/Demonstration_map"
+        },
+        {
+          "name": "Demonstration_map_2",
+          "path": "/Game/Western_Barn/Maps/Demonstration_map_2"
+        },
+        {
+          "name": "Demonstration_map_3",
+          "path": "/Game/Western_Barn/Maps/Demonstration_map_3"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Old_graveyard": {
+      "scene_name": "Old_graveyard",
+      "launch_directory": "OldGraveyard",
+      "content_path": "F:\\Raw\\Old_graveyard\\Content",
+      "launch_directory_path": "F:\\Raw\\Old_graveyard\\Content\\OldGraveyard",
+      "base_game_path": "/Game/OldGraveyard",
+      "maps": [
+        {
+          "name": "Assets",
+          "path": "/Game/OldGraveyard/Scenes/Assets"
+        },
+        {
+          "name": "ExampleGathering",
+          "path": "/Game/OldGraveyard/Scenes/ExampleGathering"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "POLYGON_Dungeon_Realms": {
+      "scene_name": "POLYGON_Dungeon_Realms",
+      "launch_directory": "PolygonDungeonRealms",
+      "content_path": "F:\\Raw\\POLYGON_Dungeon_Realms\\Content",
+      "launch_directory_path": "F:\\Raw\\POLYGON_Dungeon_Realms\\Content\\PolygonDungeonRealms",
+      "base_game_path": "/Game/PolygonDungeonRealms",
+      "maps": [
+        {
+          "name": "Demo_Desert_01",
+          "path": "/Game/PolygonDungeonRealms/Maps/Demo_Desert_01"
+        },
+        {
+          "name": "Demo_Dungeon_01",
+          "path": "/Game/PolygonDungeonRealms/Maps/Demo_Dungeon_01"
+        },
+        {
+          "name": "Demo_Forge_01",
+          "path": "/Game/PolygonDungeonRealms/Maps/Demo_Forge_01"
+        },
+        {
+          "name": "Demo_Hell_01",
+          "path": "/Game/PolygonDungeonRealms/Maps/Demo_Hell_01"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "POLYGON_Gang_Warfare_Pack": {
+      "scene_name": "POLYGON_Gang_Warfare_Pack",
+      "launch_directory": "PolygonGangWarfare",
+      "content_path": "F:\\Raw\\POLYGON_Gang_Warfare_Pack\\Content",
+      "launch_directory_path": "F:\\Raw\\POLYGON_Gang_Warfare_Pack\\Content\\PolygonGangWarfare",
+      "base_game_path": "/Game/PolygonGangWarfare",
+      "maps": [
+        {
+          "name": "Demonstation",
+          "path": "/Game/PolygonGangWarfare/Maps/Demonstation"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "POLYGON_Shops_Pack": {
+      "scene_name": "POLYGON_Shops_Pack",
+      "launch_directory": "PolygonShops",
+      "content_path": "F:\\Raw\\POLYGON_Shops_Pack\\Content",
+      "launch_directory_path": "F:\\Raw\\POLYGON_Shops_Pack\\Content\\PolygonShops",
+      "base_game_path": "/Game/PolygonShops",
+      "maps": [
+        {
+          "name": "Demonstration",
+          "path": "/Game/PolygonShops/Maps/Demonstration"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "POLYGON_Snow_Kit": {
+      "scene_name": "POLYGON_Snow_Kit",
+      "launch_directory": "PolygonSnow",
+      "content_path": "F:\\Raw\\POLYGON_Snow_Kit\\Content",
+      "launch_directory_path": "F:\\Raw\\POLYGON_Snow_Kit\\Content\\PolygonSnow",
+      "base_game_path": "/Game/PolygonSnow",
+      "maps": [],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "POLYGON_Vikings_Pack": {
+      "scene_name": "POLYGON_Vikings_Pack",
+      "launch_directory": "PolygonVikings",
+      "content_path": "F:\\Raw\\POLYGON_Vikings_Pack\\Content",
+      "launch_directory_path": "F:\\Raw\\POLYGON_Vikings_Pack\\Content\\PolygonVikings",
+      "base_game_path": "/Game/PolygonVikings",
+      "maps": [
+        {
+          "name": "demonstration",
+          "path": "/Game/PolygonVikings/Maps/demonstration"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "POLY_Houses": {
+      "scene_name": "POLY_Houses",
+      "launch_directory": "Polygon-Houses",
+      "content_path": "F:\\Raw\\POLY_Houses\\Content",
+      "launch_directory_path": "F:\\Raw\\POLY_Houses\\Content\\Polygon-Houses",
+      "base_game_path": "/Game/Polygon-Houses",
+      "maps": [
+        {
+          "name": "Demonstration",
+          "path": "/Game/Polygon-Houses/Maps/Demonstration"
+        },
+        {
+          "name": "Level_Day",
+          "path": "/Game/Polygon-Houses/Maps/Level_Day"
+        },
+        {
+          "name": "Level_Night",
+          "path": "/Game/Polygon-Houses/Maps/Level_Night"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Parking_Garage": {
+      "scene_name": "Parking_Garage",
+      "launch_directory": "ParkingGarage",
+      "content_path": "F:\\Raw\\Parking_Garage\\Content",
+      "launch_directory_path": "F:\\Raw\\Parking_Garage\\Content\\ParkingGarage",
+      "base_game_path": "/Game/ParkingGarage",
+      "maps": [
+        {
+          "name": "Demonstration",
+          "path": "/Game/ParkingGarage/Maps/Demonstration"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Photogrammetry_Rock_Textures": {
+      "scene_name": "Photogrammetry_Rock_Textures",
+      "launch_directory": "RockSet",
+      "content_path": "F:\\Raw\\Photogrammetry_Rock_Textures\\Content",
+      "launch_directory_path": "F:\\Raw\\Photogrammetry_Rock_Textures\\Content\\RockSet",
+      "base_game_path": "/Game/RockSet",
+      "maps": [
+        {
+          "name": "Demonstration",
+          "path": "/Game/RockSet/Maps/Demonstration"
+        },
+        {
+          "name": "Outdoor",
+          "path": "/Game/RockSet/Maps/Outdoor"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Photorealistic_Landscape_Bundle_1": {
+      "scene_name": "Photorealistic_Landscape_Bundle_1",
+      "launch_directory": "PhotoR_Landscapes_3",
+      "content_path": "F:\\Raw\\Photorealistic_Landscape_Bundle_1\\Content",
+      "launch_directory_path": "F:\\Raw\\Photorealistic_Landscape_Bundle_1\\Content\\PhotoR_Landscapes_3",
+      "base_game_path": "/Game/PhotoR_Landscapes_3",
+      "maps": [
+        {
+          "name": "Photorealistic_Canyon_a",
+          "path": "/Game/PhotoR_Landscapes_3/Maps/Photorealistic_Canyon_a"
+        },
+        {
+          "name": "Photorealistic_Desert",
+          "path": "/Game/PhotoR_Landscapes_3/Maps/Photorealistic_Desert"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Photorealistic_Landscape_Pack_2": {
+      "scene_name": "Photorealistic_Landscape_Pack_2",
+      "launch_directory": "PhotoR_Mountains",
+      "content_path": "F:\\Raw\\Photorealistic_Landscape_Pack_2\\Content",
+      "launch_directory_path": "F:\\Raw\\Photorealistic_Landscape_Pack_2\\Content\\PhotoR_Mountains",
+      "base_game_path": "/Game/PhotoR_Mountains",
+      "maps": [],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Post-Soviet_Village": {
+      "scene_name": "Post-Soviet_Village",
+      "launch_directory": "Village",
+      "content_path": "F:\\Raw\\Post-Soviet_Village\\Content",
+      "launch_directory_path": "F:\\Raw\\Post-Soviet_Village\\Content\\Village",
+      "base_game_path": "/Game/Village",
+      "maps": [
+        {
+          "name": "CyberVillage",
+          "path": "/Game/Village/Maps/CyberVillage"
+        },
+        {
+          "name": "Village",
+          "path": "/Game/Village/Maps/Village"
+        },
+        {
+          "name": "Village_SummerNightExample",
+          "path": "/Game/Village/Maps/Village_SummerNightExample"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Post-Soviet_World": {
+      "scene_name": "Post-Soviet_World",
+      "launch_directory": "PostSovietWorld",
+      "content_path": "F:\\Raw\\Post-Soviet_World\\Content",
+      "launch_directory_path": "F:\\Raw\\Post-Soviet_World\\Content\\PostSovietWorld",
+      "base_game_path": "/Game/PostSovietWorld",
+      "maps": [
+        {
+          "name": "PanelkiWorld",
+          "path": "/Game/PostSovietWorld/Maps/PanelkiWorld"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:47",
+      "low_actor": false,
+      "baked": false
+    },
+    "Post_Apocalyptic_City_1": {
+      "scene_name": "Post_Apocalyptic_City_1",
+      "launch_directory": "PostCity",
+      "content_path": "F:\\Raw\\Post_Apocalyptic_City_1\\Content",
+      "launch_directory_path": "F:\\Raw\\Post_Apocalyptic_City_1\\Content\\PostCity",
+      "base_game_path": "/Game/PostCity",
+      "maps": [
+        {
+          "name": "ExampleSceneDynamic1",
+          "path": "/Game/PostCity/Maps/ExampleSceneDynamic1"
+        },
+        {
+          "name": "Showcase",
+          "path": "/Game/PostCity/Maps/Showcase"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Post_Soviet_Flat": {
+      "scene_name": "Post_Soviet_Flat",
+      "launch_directory": "SovietFlat",
+      "content_path": "F:\\Raw\\Post_Soviet_Flat\\Content",
+      "launch_directory_path": "F:\\Raw\\Post_Soviet_Flat\\Content\\SovietFlat",
+      "base_game_path": "/Game/SovietFlat",
+      "maps": [
+        {
+          "name": "Demo_01",
+          "path": "/Game/SovietFlat/Maps/Demo_01"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Pro_Inventory_Component_426": {
+      "scene_name": "Pro_Inventory_Component_426",
+      "launch_directory": "Inventory",
+      "content_path": "F:\\Raw\\Pro_Inventory_Component_426\\Content",
+      "launch_directory_path": "F:\\Raw\\Pro_Inventory_Component_426\\Content\\Inventory",
+      "base_game_path": "/Game/Inventory",
+      "maps": [
+        {
+          "name": "Default",
+          "path": "/Game/Inventory/EpicContent/Maps/Default"
+        },
+        {
+          "name": "M_DemoMap_FPS",
+          "path": "/Game/Inventory/EpicContent/Maps/M_DemoMap_FPS"
+        },
+        {
+          "name": "M_DemoMap_TPS",
+          "path": "/Game/Inventory/EpicContent/Maps/M_DemoMap_TPS"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "QA_Police_Station": {
+      "scene_name": "QA_Police_Station",
+      "launch_directory": "QAPoliceStation",
+      "content_path": "F:\\Raw\\QA_Police_Station\\Content",
+      "launch_directory_path": "F:\\Raw\\QA_Police_Station\\Content\\QAPoliceStation",
+      "base_game_path": "/Game/QAPoliceStation",
+      "maps": [
+        {
+          "name": "OA_PoliceStation_Demo",
+          "path": "/Game/QAPoliceStation/Maps/OA_PoliceStation_Demo"
+        },
+        {
+          "name": "QA_Holding_Cells_A",
+          "path": "/Game/QAPoliceStation/Maps/QA_Holding_Cells_A"
+        },
+        {
+          "name": "QA_Holding_Cells_B",
+          "path": "/Game/QAPoliceStation/Maps/QA_Holding_Cells_B"
+        },
+        {
+          "name": "QA_PoliceStation_Moduls",
+          "path": "/Game/QAPoliceStation/Maps/QA_PoliceStation_Moduls"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Quarry_Environment": {
+      "scene_name": "Quarry_Environment",
+      "launch_directory": "QuarryEnv",
+      "content_path": "F:\\Raw\\Quarry_Environment\\Content",
+      "launch_directory_path": "F:\\Raw\\Quarry_Environment\\Content\\QuarryEnv",
+      "base_game_path": "/Game/QuarryEnv",
+      "maps": [
+        {
+          "name": "Map_Quarry",
+          "path": "/Game/QuarryEnv/Maps/Map_Quarry"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "R2_-_REALISTIC_HOUSE_PACK_426": {
+      "scene_name": "R2_-_REALISTIC_HOUSE_PACK_426",
+      "launch_directory": "DVIZ_R2HOUSE",
+      "content_path": "F:\\Raw\\R2_-_REALISTIC_HOUSE_PACK_426\\Content",
+      "launch_directory_path": "F:\\Raw\\R2_-_REALISTIC_HOUSE_PACK_426\\Content\\DVIZ_R2HOUSE",
+      "base_game_path": "/Game/DVIZ_R2HOUSE",
+      "maps": [
+        {
+          "name": "R2_MainLevel_Day",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_MainLevel_Day"
+        },
+        {
+          "name": "R2_MainLevel_Night",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_MainLevel_Night"
+        },
+        {
+          "name": "R2_ZG_01a",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_01a"
+        },
+        {
+          "name": "R2_ZG_01a_Night",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_01a_Night"
+        },
+        {
+          "name": "R2_ZG_01b",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_01b"
+        },
+        {
+          "name": "R2_ZG_01b_Night",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_01b_Night"
+        },
+        {
+          "name": "R2_ZG_02",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_02"
+        },
+        {
+          "name": "R2_ZG_02_Night",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_02_Night"
+        },
+        {
+          "name": "R2_ZG_03",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_03"
+        },
+        {
+          "name": "R2_ZG_03_Night",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_03_Night"
+        },
+        {
+          "name": "R2_ZG_04",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_04"
+        },
+        {
+          "name": "R2_ZG_04_Nights",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_04_Nights"
+        },
+        {
+          "name": "R2_ZG_05",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_05"
+        },
+        {
+          "name": "R2_ZG_05_Night",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_05_Night"
+        },
+        {
+          "name": "R2_ZG_06",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_06"
+        },
+        {
+          "name": "R2_ZG_06_Night",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_06_Night"
+        },
+        {
+          "name": "R2_ZG_07",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_07"
+        },
+        {
+          "name": "R2_ZG_08",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_08"
+        },
+        {
+          "name": "R2_ZG_08_Night",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_08_Night"
+        },
+        {
+          "name": "R2_ZG_09",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_09"
+        },
+        {
+          "name": "R2_ZG_10",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_10"
+        },
+        {
+          "name": "R2_ZG_10_Night",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_10_Night"
+        },
+        {
+          "name": "R2_ZG_House",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_House"
+        },
+        {
+          "name": "R2_ZG_House_Night",
+          "path": "/Game/DVIZ_R2HOUSE/DVIZ_R2HOUSE/Levels/R2_ZG_House_Night"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Raided_Forest_Camp": {
+      "scene_name": "Raided_Forest_Camp",
+      "launch_directory": "RaidedCampsite",
+      "content_path": "F:\\Raw\\Raided_Forest_Camp\\Content",
+      "launch_directory_path": "F:\\Raw\\Raided_Forest_Camp\\Content\\RaidedCampsite",
+      "base_game_path": "/Game/RaidedCampsite",
+      "maps": [
+        {
+          "name": "Lvl_Demomap",
+          "path": "/Game/RaidedCampsite/Levels/Lvl_Demomap"
+        },
+        {
+          "name": "Lvl_Showroom",
+          "path": "/Game/RaidedCampsite/Levels/Lvl_Showroom"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Realistic_Looking_Cliff_and_Rock_Pack": {
+      "scene_name": "Realistic_Looking_Cliff_and_Rock_Pack",
+      "launch_directory": "Cliff_Rock_Pack01",
+      "content_path": "F:\\Raw\\Realistic_Looking_Cliff_and_Rock_Pack\\Content",
+      "launch_directory_path": "F:\\Raw\\Realistic_Looking_Cliff_and_Rock_Pack\\Content\\Cliff_Rock_Pack01",
+      "base_game_path": "/Game/Cliff_Rock_Pack01",
+      "maps": [],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Residential_Houses_Modular_Pack": {
+      "scene_name": "Residential_Houses_Modular_Pack",
+      "launch_directory": "ResidentialHouses",
+      "content_path": "F:\\Raw\\Residential_Houses_Modular_Pack\\Content",
+      "launch_directory_path": "F:\\Raw\\Residential_Houses_Modular_Pack\\Content\\ResidentialHouses",
+      "base_game_path": "/Game/ResidentialHouses",
+      "maps": [
+        {
+          "name": "AssetZoo",
+          "path": "/Game/ResidentialHouses/Maps/AssetZoo"
+        },
+        {
+          "name": "BackgroundHouses",
+          "path": "/Game/ResidentialHouses/Maps/BlueprintTemp/SubLevels/BackgroundHouses"
+        },
+        {
+          "name": "BackgroundHouses",
+          "path": "/Game/ResidentialHouses/Maps/SubLevels/BackgroundHouses"
+        },
+        {
+          "name": "BackgroundLandscape",
+          "path": "/Game/ResidentialHouses/Maps/SubLevels/BackgroundLandscape"
+        },
+        {
+          "name": "BlueprintHouses",
+          "path": "/Game/ResidentialHouses/Maps/BlueprintHouses"
+        },
+        {
+          "name": "BlueprintTemp",
+          "path": "/Game/ResidentialHouses/Maps/BlueprintTemp/BlueprintTemp"
+        },
+        {
+          "name": "FurnitureAssets",
+          "path": "/Game/ResidentialHouses/Maps/FurnitureAssets"
+        },
+        {
+          "name": "Houses",
+          "path": "/Game/ResidentialHouses/Maps/BlueprintTemp/SubLevels/Houses"
+        },
+        {
+          "name": "Houses",
+          "path": "/Game/ResidentialHouses/Maps/SubLevels/Houses"
+        },
+        {
+          "name": "Houses_Outside",
+          "path": "/Game/ResidentialHouses/Maps/BlueprintTemp/SubLevels/Houses_Outside"
+        },
+        {
+          "name": "Houses_Outside",
+          "path": "/Game/ResidentialHouses/Maps/SubLevels/Houses_Outside"
+        },
+        {
+          "name": "ResidentialHouses",
+          "path": "/Game/ResidentialHouses/Maps/ResidentialHouses"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Resistance_Holdout": {
+      "scene_name": "Resistance_Holdout",
+      "launch_directory": "ResistanceHoldout",
+      "content_path": "F:\\Raw\\Resistance_Holdout\\Content",
+      "launch_directory_path": "F:\\Raw\\Resistance_Holdout\\Content\\ResistanceHoldout",
+      "base_game_path": "/Game/ResistanceHoldout",
+      "maps": [
+        {
+          "name": "Demonstration",
+          "path": "/Game/ResistanceHoldout/Maps/Demonstration"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Restaurant_Crime_Scene": {
+      "scene_name": "Restaurant_Crime_Scene",
+      "launch_directory": "RestaurantCrimeScene",
+      "content_path": "F:\\Raw\\Restaurant_Crime_Scene\\Content",
+      "launch_directory_path": "F:\\Raw\\Restaurant_Crime_Scene\\Content\\RestaurantCrimeScene",
+      "base_game_path": "/Game/RestaurantCrimeScene",
+      "maps": [
+        {
+          "name": "Demonstration",
+          "path": "/Game/RestaurantCrimeScene/Maps/Demonstration"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Retro_Futurist_Modular_Pack": {
+      "scene_name": "Retro_Futurist_Modular_Pack",
+      "launch_directory": "_Retro_city",
+      "content_path": "F:\\Raw\\Retro_Futurist_Modular_Pack\\Content",
+      "launch_directory_path": "F:\\Raw\\Retro_Futurist_Modular_Pack\\Content\\_Retro_city",
+      "base_game_path": "/Game/_Retro_city",
+      "maps": [
+        {
+          "name": "L_letters",
+          "path": "/Game/_Retro_city/Maps/L_letters"
+        },
+        {
+          "name": "L_showcasemap_Day",
+          "path": "/Game/_Retro_city/Maps/L_showcasemap_Day"
+        },
+        {
+          "name": "L_showcasemap_night",
+          "path": "/Game/_Retro_city/Maps/L_showcasemap_night"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Retro_Office_Environment": {
+      "scene_name": "Retro_Office_Environment",
+      "launch_directory": "Retro_Office",
+      "content_path": "F:\\Raw\\Retro_Office_Environment\\Content",
+      "launch_directory_path": "F:\\Raw\\Retro_Office_Environment\\Content\\Retro_Office",
+      "base_game_path": "/Game/Retro_Office",
+      "maps": [
+        {
+          "name": "Demonstation",
+          "path": "/Game/Retro_Office/Maps/Demonstation"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Rocky_Desert": {
+      "scene_name": "Rocky_Desert",
+      "launch_directory": "RockyDesert",
+      "content_path": "F:\\Raw\\Rocky_Desert\\Content",
+      "launch_directory_path": "F:\\Raw\\Rocky_Desert\\Content\\RockyDesert",
+      "base_game_path": "/Game/RockyDesert",
+      "maps": [
+        {
+          "name": "Demo",
+          "path": "/Game/RockyDesert/Maps/Demo"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Ruins": {
+      "scene_name": "Ruins",
+      "launch_directory": "Ruins",
+      "content_path": "F:\\Raw\\Ruins\\Content",
+      "launch_directory_path": "F:\\Raw\\Ruins\\Content\\Ruins",
+      "base_game_path": "/Game/Ruins",
+      "maps": [
+        {
+          "name": "Demonstration",
+          "path": "/Game/Ruins/Maps/Demonstration"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Ryokan_[Japanese_Courtyard]": {
+      "scene_name": "Ryokan_[Japanese_Courtyard]",
+      "launch_directory": "Ryokan",
+      "content_path": "F:\\Raw\\Ryokan_[Japanese_Courtyard]\\Content",
+      "launch_directory_path": "F:\\Raw\\Ryokan_[Japanese_Courtyard]\\Content\\Ryokan",
+      "base_game_path": "/Game/Ryokan",
+      "maps": [
+        {
+          "name": "JapaneseCourtyard_01_Day",
+          "path": "/Game/Ryokan/Maps/JapaneseCourtyard_01_Day"
+        },
+        {
+          "name": "JapaneseCourtyard_01_Night",
+          "path": "/Game/Ryokan/Maps/JapaneseCourtyard_01_Night"
+        },
+        {
+          "name": "Ryokan_Asset_Zoo",
+          "path": "/Game/Ryokan/Maps/Ryokan_Asset_Zoo"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "SCI-FI_Laboratory": {
+      "scene_name": "SCI-FI_Laboratory",
+      "launch_directory": "Sci_fi_laboratory",
+      "content_path": "F:\\Raw\\SCI-FI_Laboratory\\Content",
+      "launch_directory_path": "F:\\Raw\\SCI-FI_Laboratory\\Content\\Sci_fi_laboratory",
+      "base_game_path": "/Game/Sci_fi_laboratory",
+      "maps": [
+        {
+          "name": "Sci_fi_laboratory",
+          "path": "/Game/Sci_fi_laboratory/Maps/Sci_fi_laboratory"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "SCI_FI_METAVERSE_FUTURISTIC_CITY_426": {
+      "scene_name": "SCI_FI_METAVERSE_FUTURISTIC_CITY_426",
+      "launch_directory": "CITY_PACK",
+      "content_path": "F:\\Raw\\SCI_FI_METAVERSE_FUTURISTIC_CITY_426\\Content",
+      "launch_directory_path": "F:\\Raw\\SCI_FI_METAVERSE_FUTURISTIC_CITY_426\\Content\\CITY_PACK",
+      "base_game_path": "/Game/CITY_PACK",
+      "maps": [
+        {
+          "name": "APARTMENT",
+          "path": "/Game/CITY_PACK/INTERIORS/SCI_FI_APARTMENT/MAPS/APARTMENT"
+        },
+        {
+          "name": "BIG_CITY_NIGHT_1",
+          "path": "/Game/CITY_PACK/BIG_CITY/MAPS/BIG_CITY_NIGHT_1"
+        },
+        {
+          "name": "BIG_CITY_NIGHT_OPENNING",
+          "path": "/Game/CITY_PACK/BIG_CITY/MAPS/BIG_CITY_NIGHT_OPENNING"
+        },
+        {
+          "name": "Dj_Hall",
+          "path": "/Game/CITY_PACK/INTERIORS/DJ_HALL_DISCO/Maps/Dj_Hall"
+        },
+        {
+          "name": "HOSPITAL",
+          "path": "/Game/CITY_PACK/INTERIORS/HOSPITAL/MAPS/HOSPITAL"
+        },
+        {
+          "name": "LABORATORY",
+          "path": "/Game/CITY_PACK/INTERIORS/SCI_FI_LABORATORY/MAP/LABORATORY"
+        },
+        {
+          "name": "LIBRARY",
+          "path": "/Game/CITY_PACK/INTERIORS/LIBRARY/MAPS/LIBRARY"
+        },
+        {
+          "name": "POWER_GENERATOR_ROOM",
+          "path": "/Game/CITY_PACK/INTERIORS/GENERATOR_ROOM/MAPS/POWER_GENERATOR_ROOM"
+        },
+        {
+          "name": "Probs_Scene",
+          "path": "/Game/CITY_PACK/INTERIORS/DJ_HALL_DISCO/Maps/Probs_Scene"
+        },
+        {
+          "name": "TERMINAL",
+          "path": "/Game/CITY_PACK/INTERIORS/TERMINAL/MAPS/TERMINAL"
+        },
+        {
+          "name": "WEAPON_CENTER",
+          "path": "/Game/CITY_PACK/INTERIORS/WEAPON_CENTER/MAPS/WEAPON_CENTER"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "SICKA_DYNASTY": {
+      "scene_name": "SICKA_DYNASTY",
+      "launch_directory": "SICKA_DYNASTY",
+      "content_path": "F:\\Raw\\SICKA_DYNASTY\\Content",
+      "launch_directory_path": "F:\\Raw\\SICKA_DYNASTY\\Content\\SICKA_DYNASTY",
+      "base_game_path": "/Game/SICKA_DYNASTY",
+      "maps": [
+        {
+          "name": "MAP_BuildingsPrefabs",
+          "path": "/Game/SICKA_DYNASTY/Maps/MAP_BuildingsPrefabs"
+        },
+        {
+          "name": "MAP_Demo",
+          "path": "/Game/SICKA_DYNASTY/Maps/MAP_Demo"
+        },
+        {
+          "name": "MAP_Showcase",
+          "path": "/Game/SICKA_DYNASTY/Maps/MAP_Showcase"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "SICKA_MANSION_5.0": {
+      "scene_name": "SICKA_MANSION_5.0",
+      "launch_directory": "SICKA_mansion",
+      "content_path": "F:\\Raw\\SICKA_MANSION_5.0\\Content",
+      "launch_directory_path": "F:\\Raw\\SICKA_MANSION_5.0\\Content\\SICKA_mansion",
+      "base_game_path": "/Game/SICKA_mansion",
+      "maps": [
+        {
+          "name": "MAP_Cellar",
+          "path": "/Game/SICKA_mansion/Maps/MAP_Cellar"
+        },
+        {
+          "name": "MAP_Mansion",
+          "path": "/Game/SICKA_mansion/Maps/MAP_Mansion"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Safe_House": {
+      "scene_name": "Safe_House",
+      "launch_directory": "Safe_House",
+      "content_path": "F:\\Raw\\Safe_House\\Content",
+      "launch_directory_path": "F:\\Raw\\Safe_House\\Content\\Safe_House",
+      "base_game_path": "/Game/Safe_House",
+      "maps": [
+        {
+          "name": "Assets_Presentaion",
+          "path": "/Game/Safe_House/maps/Assets_Presentaion"
+        },
+        {
+          "name": "Safe_House",
+          "path": "/Game/Safe_House/maps/Safe_House"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Salt_Landscape_427": {
+      "scene_name": "Salt_Landscape_427",
+      "launch_directory": "SaltLandscape",
+      "content_path": "F:\\Raw\\Salt_Landscape_427\\Content",
+      "launch_directory_path": "F:\\Raw\\Salt_Landscape_427\\Content\\SaltLandscape",
+      "base_game_path": "/Game/SaltLandscape",
+      "maps": [],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Sand_Dunes_Landscape": {
+      "scene_name": "Sand_Dunes_Landscape",
+      "launch_directory": "TheDunes",
+      "content_path": "F:\\Raw\\Sand_Dunes_Landscape\\Content",
+      "launch_directory_path": "F:\\Raw\\Sand_Dunes_Landscape\\Content\\TheDunes",
+      "base_game_path": "/Game/TheDunes",
+      "maps": [
+        {
+          "name": "SandLand",
+          "path": "/Game/TheDunes/Maps/SandLand/SandLand"
+        },
+        {
+          "name": "SandLand(1)",
+          "path": "/Game/TheDunes/Maps/SandLand/SandLand(1)"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Sandstorm_Environment_Planet_X_5.0": {
+      "scene_name": "Sandstorm_Environment_Planet_X_5.0",
+      "launch_directory": "Planet-X-I",
+      "content_path": "F:\\Raw\\Sandstorm_Environment_Planet_X_5.0\\Content",
+      "launch_directory_path": "F:\\Raw\\Sandstorm_Environment_Planet_X_5.0\\Content\\Planet-X-I",
+      "base_game_path": "/Game/Planet-X-I",
+      "maps": [
+        {
+          "name": "Demonstration",
+          "path": "/Game/Planet-X-I/Map/Demonstration/Demonstration"
+        },
+        {
+          "name": "Demonstration_Lighting",
+          "path": "/Game/Planet-X-I/Map/Demonstration_Lighting/Demonstration_Lighting"
+        },
+        {
+          "name": "Demonstration_Snow",
+          "path": "/Game/Planet-X-I/Map/Demonstration_Snow/Demonstration_Snow"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Sci_Fi_Modular_Environment_426": {
+      "scene_name": "Sci_Fi_Modular_Environment_426",
+      "launch_directory": "SciFiModularEnvironment",
+      "content_path": "F:\\Raw\\Sci_Fi_Modular_Environment_426\\Content",
+      "launch_directory_path": "F:\\Raw\\Sci_Fi_Modular_Environment_426\\Content\\SciFiModularEnvironment",
+      "base_game_path": "/Game/SciFiModularEnvironment",
+      "maps": [
+        {
+          "name": "demo",
+          "path": "/Game/SciFiModularEnvironment/Maps/demo"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Sci_Fi_Orion_Mars_Med_Lab": {
+      "scene_name": "Sci_Fi_Orion_Mars_Med_Lab",
+      "launch_directory": "SciFiOrionMarsLivingQuarters",
+      "content_path": "F:\\Raw\\Sci_Fi_Orion_Mars_Med_Lab\\Content",
+      "launch_directory_path": "F:\\Raw\\Sci_Fi_Orion_Mars_Med_Lab\\Content\\SciFiOrionMarsLivingQuarters",
+      "base_game_path": "/Game/SciFiOrionMarsLivingQuarters",
+      "maps": [],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Sci_Fi_Power_Station_427": {
+      "scene_name": "Sci_Fi_Power_Station_427",
+      "launch_directory": "VL_SciPowSt",
+      "content_path": "F:\\Raw\\Sci_Fi_Power_Station_427\\Content",
+      "launch_directory_path": "F:\\Raw\\Sci_Fi_Power_Station_427\\Content\\VL_SciPowSt",
+      "base_game_path": "/Game/VL_SciPowSt",
+      "maps": [
+        {
+          "name": "L_DemoMap",
+          "path": "/Game/VL_SciPowSt/Maps/L_DemoMap"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Sci_fi_City_Environment": {
+      "scene_name": "Sci_fi_City_Environment",
+      "launch_directory": "Sci_Fi_City",
+      "content_path": "F:\\Raw\\Sci_fi_City_Environment\\Content",
+      "launch_directory_path": "F:\\Raw\\Sci_fi_City_Environment\\Content\\Sci_Fi_City",
+      "base_game_path": "/Game/Sci_Fi_City",
+      "maps": [
+        {
+          "name": "Sci_Fi_City",
+          "path": "/Game/Sci_Fi_City/Maps/Sci_Fi_City"
+        },
+        {
+          "name": "hall",
+          "path": "/Game/Sci_Fi_City/Maps/hall"
+        },
+        {
+          "name": "hall_combo",
+          "path": "/Game/Sci_Fi_City/Maps/hall_combo"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    },
+    "Sci_fi_Port_Environment": {
+      "scene_name": "Sci_fi_Port_Environment",
+      "launch_directory": "Sci_Fi_Port",
+      "content_path": "F:\\Raw\\Sci_fi_Port_Environment\\Content",
+      "launch_directory_path": "F:\\Raw\\Sci_fi_Port_Environment\\Content\\Sci_Fi_Port",
+      "base_game_path": "/Game/Sci_Fi_Port",
+      "maps": [
+        {
+          "name": "level_1",
+          "path": "/Game/Sci_Fi_Port/Maps/level_1"
+        }
+      ],
+      "last_updated": "2026-01-16 12:47:48",
+      "low_actor": false,
+      "baked": false
+    }
+  }
+}

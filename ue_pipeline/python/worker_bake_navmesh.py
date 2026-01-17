@@ -2,7 +2,10 @@ import unreal
 import sys
 import os
 import time
+import json
+import sqlite3
 from pathlib import Path
+from datetime import datetime
 
 _current_dir = os.path.dirname(os.path.abspath(__file__))
 if _current_dir not in sys.path:
@@ -12,6 +15,73 @@ import ue_api
 from worker_common import load_json as _load_json, resolve_manifest_path_from_env as _resolve_manifest_path_from_env
 from logger import logger
 from assets_manager import save_current_level
+
+
+def update_scene_low_actor_status(map_path: str, is_low_actor: bool):
+    """更新场景的low_actor状态到数据库"""
+    try:
+        # 从地图路径提取场景名 /Game/LaunchDir/Maps/MapName -> LaunchDir
+        path_parts = map_path.strip('/').split('/')
+        if len(path_parts) < 2 or path_parts[0] != 'Game':
+            logger.warning(f"Invalid map path format: {map_path}")
+            return
+        
+        launch_dir = path_parts[1]  # 启动目录名
+        
+        # 获取数据库路径
+        script_dir = Path(__file__).parent.parent
+        repo_root = script_dir.parent
+        db_dir = repo_root / 'database'
+        db_path = db_dir / 'scenes.db'
+        json_path = db_dir / 'scenes.json'
+        
+        if not db_path.exists():
+            logger.warning(f"Database not found: {db_path}")
+            return
+        
+        # 更新SQLite数据库
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        try:
+            # 通过launch_directory查找场景
+            cursor.execute('SELECT scene_name FROM scenes WHERE launch_directory = ?', (launch_dir,))
+            row = cursor.fetchone()
+            
+            if not row:
+                logger.warning(f"Scene not found in database: {launch_dir}")
+                return
+            
+            scene_name = row[0]
+            
+            # 更新low_actor状态
+            cursor.execute('''
+                UPDATE scenes SET low_actor = ?, last_updated = ?
+                WHERE scene_name = ?
+            ''', (1 if is_low_actor else 0, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), scene_name))
+            
+            conn.commit()
+            logger.info(f"Updated database: {scene_name} low_actor={is_low_actor}")
+            
+            # 同步更新JSON文件
+            if json_path.exists():
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                if scene_name in data.get('scenes', {}):
+                    data['scenes'][scene_name]['low_actor'] = is_low_actor
+                    data['scenes'][scene_name]['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    data['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    with open(json_path, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, indent=2, ensure_ascii=False)
+                    
+                    logger.info(f"Updated JSON database")
+        finally:
+            conn.close()
+            
+    except Exception as e:
+        logger.warning(f"Failed to update database: {e}")
 
 
 def main(argv=None) -> int:
@@ -105,9 +175,13 @@ def main(argv=None) -> int:
             # Load map
             if not ue_api.load_map(map_path):
                 logger.error(f"Failed to load map: {map_path}")
+                logger.error(f"Map file does not exist or cannot be loaded")
+                logger.error(f"Aborting task - no point continuing if map doesn't exist")
                 failed_count += 1
-                failed_maps.append({"map": map_path, "error": "Failed to load map"})
-                continue
+                failed_maps.append({"map": map_path, "error": "Map file not found"})
+                # 如果地图不存在，直接退出UE编辑器并返回错误码
+                unreal.SystemLibrary.quit_editor()
+                return 1
 
             # Count StaticMeshActor instances
             logger.info("Counting StaticMeshActors...")
@@ -115,6 +189,9 @@ def main(argv=None) -> int:
             is_low_mesh = mesh_count < 50
             logger.info(f"StaticMeshActor count: {mesh_count}")
             logger.info(f"LowMesh status: {is_low_mesh}")
+            
+            # Update database with low_actor status
+            update_scene_low_actor_status(map_path, is_low_mesh)
 
             # Record file modification time before bake
             level_path = map_path.replace("/Game/", "/Content/") + ".umap"
