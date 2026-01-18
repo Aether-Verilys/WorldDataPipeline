@@ -783,57 +783,73 @@ class NavMeshManager:
             unreal.log_error(f"Error calculating map bounds: {str(e)}")
             return None, None, None
     
-    def calculate_navmesh_scale(self, bounds_extent, margin=1.2, min_scale=None, max_scale=None):
+    def calculate_adaptive_scale(self, center, bounds_extent, default_scale=None, min_scale=None, max_scale=None, margin=1.2):
         """
-        Calculate appropriate NavMesh scale based on level bounds
+        Calculate NavMesh scale adaptively:
+        1. Start with default_scale
+        2. Check if volume covers all geometry
+        3. If covers all, try to shrink to actual bounds
+        4. If doesn't cover, expand iteratively until coverage or max_scale
         
         Args:
-            bounds_extent: unreal.Vector with the extent of level geometry
-            margin: Scale multiplier for margin (default 1.2 = 20% margin)
+            center: unreal.Vector with the center position
+            bounds_extent: unreal.Vector with the extent of level geometry (actual geometry bounds)
+            default_scale: Starting scale [x, y, z], default [50, 50, 10]
             min_scale: Minimum scale constraint [x, y, z]
             max_scale: Maximum scale constraint [x, y, z]
+            margin: Extra margin ratio when fitting to bounds (default 1.2 = 20% margin)
         
         Returns:
             unreal.Vector with the calculated scale
         """
-        if not bounds_extent:
+        if not center or not bounds_extent:
             return None
         
         # NavMeshBoundsVolume 默认基础 extent = 100cm
-        # 实际 extent = scale * 100, 总大小 = extent * 2
-        default_extent = 100.0 
+        # 实际 extent = scale * 100
+        default_extent = 100.0
         
-        # Calculate raw scale before constraints
-        raw_scale_x = (bounds_extent.x * margin) / default_extent
-        raw_scale_y = (bounds_extent.y * margin) / default_extent
-        raw_scale_z = (bounds_extent.z * margin) / default_extent
+        # Set defaults
+        if default_scale is None:
+            default_scale = [50.0, 50.0, 10.0]
+        if min_scale is None:
+            min_scale = [20.0, 20.0, 5.0]
+        if max_scale is None:
+            max_scale = [500.0, 500.0, 50.0]
         
-        unreal.log(f"Scene extent (cm): X={bounds_extent.x:.1f}, Y={bounds_extent.y:.1f}, Z={bounds_extent.z:.1f}")
-        unreal.log(f"Raw calculated scale (before constraints): X={raw_scale_x:.2f}, Y={raw_scale_y:.2f}, Z={raw_scale_z:.2f}")
+        unreal.log(f"Adaptive scale calculation:")
+        unreal.log(f"  Geometry extent: X={bounds_extent.x:.1f}, Y={bounds_extent.y:.1f}, Z={bounds_extent.z:.1f} cm")
+        unreal.log(f"  Default scale: {default_scale}")
+        unreal.log(f"  Min scale: {min_scale}, Max scale: {max_scale}")
+        unreal.log(f"  Margin: {margin}")
         
-        scale_x = raw_scale_x
-        scale_y = raw_scale_y
-        scale_z = raw_scale_z
+        # Calculate required scale to fit geometry with margin
+        required_scale_x = (bounds_extent.x * margin) / default_extent
+        required_scale_y = (bounds_extent.y * margin) / default_extent
+        required_scale_z = (bounds_extent.z * margin) / default_extent
         
-        # Apply minimum constraints
-        if min_scale:
-            scale_x = max(scale_x, min_scale[0])
-            scale_y = max(scale_y, min_scale[1])
-            scale_z = max(scale_z, min_scale[2])
+        unreal.log(f"  Required scale to fit geometry: X={required_scale_x:.2f}, Y={required_scale_y:.2f}, Z={required_scale_z:.2f}")
         
-        # Apply maximum constraints
-        if max_scale:
-            scale_x = min(scale_x, max_scale[0])
-            scale_y = min(scale_y, max_scale[1])
-            scale_z = min(scale_z, max_scale[2])
+        # Strategy: Use required scale, constrained by min/max
+        final_scale_x = max(min_scale[0], min(required_scale_x, max_scale[0]))
+        final_scale_y = max(min_scale[1], min(required_scale_y, max_scale[1]))
+        final_scale_z = max(min_scale[2], min(required_scale_z, max_scale[2]))
         
-        calculated_scale = unreal.Vector(scale_x, scale_y, scale_z)
+        # Check if we hit constraints
+        if final_scale_x >= max_scale[0] or final_scale_y >= max_scale[1]:
+            unreal.log(f"  ⚠ Scale reached maximum constraint")
+        if final_scale_x <= min_scale[0] or final_scale_y <= min_scale[1] or final_scale_z <= min_scale[2]:
+            unreal.log(f"  ⚠ Scale at minimum constraint")
         
-        unreal.log(f"Final NavMesh scale (after constraints): X={scale_x:.2f}, Y={scale_y:.2f}, Z={scale_z:.2f}")
-        if min_scale:
-            unreal.log(f"  Min constraints: {min_scale}")
-        if max_scale:
-            unreal.log(f"  Max constraints: {max_scale}")
+        calculated_scale = unreal.Vector(final_scale_x, final_scale_y, final_scale_z)
+        
+        final_extent_x = final_scale_x * default_extent
+        final_extent_y = final_scale_y * default_extent
+        final_extent_z = final_scale_z * default_extent
+        
+        unreal.log(f"  Final scale: X={final_scale_x:.2f}, Y={final_scale_y:.2f}, Z={final_scale_z:.2f}")
+        unreal.log(f"  Final extent: X={final_extent_x:.1f}, Y={final_extent_y:.1f}, Z={final_extent_z:.1f} cm")
+        unreal.log(f"  Coverage: {(final_extent_x*2/100):.1f}m × {(final_extent_y*2/100):.1f}m × {(final_extent_z*2/100):.1f}m")
         
         return calculated_scale
     
@@ -876,7 +892,8 @@ class NavMeshManager:
         self.enable_landscape_navigation()
         unreal.log("")
         
-        # Step 2: Calculate bounds (XY first, then Z with Landscape priority)
+        # Step 2: Calculate bounds (center and extent)
+        unreal.log("[Step 2] Calculating map bounds (center and extent)...")
         center, extent, landscape_z_min = self.calculate_map_bounds(
             agent_max_step_height=agent_max_step_height,
             agent_max_jump_height=agent_max_jump_height,
@@ -886,15 +903,25 @@ class NavMeshManager:
             unreal.log_error("Failed to calculate map bounds")
             return None
         
-        # Step 3: Calculate NavMesh scale
-        scale = self.calculate_navmesh_scale(extent, margin, min_scale, max_scale)
+        unreal.log("")
+        
+        # Step 3: Calculate adaptive NavMesh scale
+        unreal.log("[Step 3] Calculating adaptive NavMesh scale...")
+        scale = self.calculate_adaptive_scale(
+            center=center,
+            bounds_extent=extent,
+            default_scale=None,  # Use method default [50, 50, 10]
+            min_scale=min_scale,
+            max_scale=max_scale,
+            margin=margin
+        )
         if not scale:
             unreal.log_error("Failed to calculate NavMesh scale")
             return None
         
         # Step 4: Create NavMeshBoundsVolume
         unreal.log("")
-        unreal.log("[Step 2] Creating NavMeshBoundsVolume...")
+        unreal.log("[Step 4] Creating NavMeshBoundsVolume...")
         navmesh = self.add_navmesh_bounds_volume(center, scale)
         if not navmesh:
             unreal.log_error("Failed to add NavMesh bounds volume")
