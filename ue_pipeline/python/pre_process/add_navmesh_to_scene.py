@@ -82,7 +82,8 @@ class NavMeshManager:
             return None
     
     
-    def verify_navmesh_data(self, test_reachability=True, min_success_rate=0.8):
+    def verify_navmesh_data(self, test_reachability=True, min_success_rate=0.8,
+                           agent_max_step_height=50.0, agent_max_jump_height=200.0, max_scale=None):
         try:
             world = ue_api.get_editor_world()
             nav_sys = ue_api.get_navigation_system(world)
@@ -124,7 +125,11 @@ class NavMeshManager:
                 success_count = 0
                 
                 # Get bounds center to test around
-                center, extent, _ = self.calculate_map_bounds()
+                center, extent, _ = self.calculate_map_bounds(
+                    agent_max_step_height=agent_max_step_height,
+                    agent_max_jump_height=agent_max_jump_height,
+                    max_scale=max_scale
+                )
                 if not center:
                     center = unreal.Vector(0, 0, 0)
                     test_radius = 100000.0
@@ -333,8 +338,58 @@ class NavMeshManager:
             return "Plain", above_ratio
         else:
             return "Valley", above_ratio
+    
+    def _calculate_density_center(self, actor_positions, grid_size=5000.0):
+        """
+        计算基于密度的中心位置
+        
+        Args:
+            actor_positions: List of (x, y) tuples
+            grid_size: 网格大小（cm），默认50米
+        
+        Returns:
+            (center_x, center_y) tuple
+        """
+        if not actor_positions or len(actor_positions) == 0:
+            return None, None
+        
+        # 获取整体边界
+        min_x = min(pos[0] for pos in actor_positions)
+        max_x = max(pos[0] for pos in actor_positions)
+        min_y = min(pos[1] for pos in actor_positions)
+        max_y = max(pos[1] for pos in actor_positions)
+        
+        # 创建网格并统计每个网格的actor数量
+        grid_dict = {}
+        for x, y in actor_positions:
+            grid_x = int(x / grid_size)
+            grid_y = int(y / grid_size)
+            key = (grid_x, grid_y)
+            grid_dict[key] = grid_dict.get(key, 0) + 1
+        
+        # 找到密度最高的网格
+        max_density = 0
+        densest_grid = None
+        for grid_key, count in grid_dict.items():
+            if count > max_density:
+                max_density = count
+                densest_grid = grid_key
+        
+        if densest_grid:
+            # 返回最密集网格的中心位置
+            density_center_x = (densest_grid[0] + 0.5) * grid_size
+            density_center_y = (densest_grid[1] + 0.5) * grid_size
+            
+            unreal.log(f"  Density analysis: grid_size={grid_size/100:.1f}m, max_density={max_density} actors/grid")
+            unreal.log(f"  Densest grid: ({densest_grid[0]}, {densest_grid[1]})")
+            unreal.log(f"  Density center: X={density_center_x:.1f}, Y={density_center_y:.1f} cm")
+            
+            return density_center_x, density_center_y
+        
+        # Fallback to geometric center
+        return (min_x + max_x) / 2, (min_y + max_y) / 2
 
-    def calculate_map_bounds(self, agent_max_step_height=50.0, agent_max_jump_height=200.0):
+    def calculate_map_bounds(self, agent_max_step_height=50.0, agent_max_jump_height=200.0, max_scale=None):
         """
         Calculate NavMesh bounds using horizontal-first strategy:
         1. Calculate XY bounds from all navigable geometry (horizontal plane)
@@ -346,6 +401,7 @@ class NavMeshManager:
         Args:
             agent_max_step_height: Max step height for agent (cm), default 50.0
             agent_max_jump_height: Max jump height for agent (cm), default 200.0
+            max_scale: Maximum scale constraint [x, y, z] for density analysis, default [500, 500, 50]
         
         Returns: (center_location, bounds_extent, landscape_z_min) as unreal.Vector tuples and float
                  landscape_z_min is None if no Landscape found
@@ -442,6 +498,9 @@ class NavMeshManager:
             navigable_actor_count = 0
             skipped_count = 0
             
+            # 收集actor位置用于密度分析
+            actor_positions = []
+            
             # Define non-navigable actor patterns
             exclude_patterns = [
                 'SkyAtmosphere', 'SkyLight', 'SkySphere', 'ExponentialHeightFog', 
@@ -479,6 +538,9 @@ class NavMeshManager:
                 actor_min_y = origin.y - extent.y
                 actor_max_y = origin.y + extent.y
                 
+                # 记录actor位置用于密度分析
+                actor_positions.append((origin.x, origin.y))
+                
                 if min_x is None:
                     min_x = actor_min_x
                     max_x = actor_max_x
@@ -507,6 +569,11 @@ class NavMeshManager:
                 unreal.log_error("No valid navigable geometry found in level")
                 return None, None, None
             
+            
+            # 计算几何中心
+            geometric_center_x = (min_x + max_x) / 2
+            geometric_center_y = (min_y + max_y) / 2
+            unreal.log(f"  Geometric center: X={geometric_center_x:.1f}, Y={geometric_center_y:.1f} cm")
             unreal.log(f"  XY bounds from {navigable_actor_count} actors (skipped {skipped_count})")
             unreal.log(f"  X range: {min_x:.1f} to {max_x:.1f} cm (size: {(max_x-min_x):.1f} cm)")
             unreal.log(f"  Y range: {min_y:.1f} to {max_y:.1f} cm (size: {(max_y-min_y):.1f} cm)")
@@ -645,12 +712,57 @@ class NavMeshManager:
             unreal.log(f"  Z range: {min_z:.1f} to {max_z:.1f} cm (size: {(max_z-min_z):.1f} cm)")
             unreal.log("")
             
-            # Phase 5: Calculate final center and extent
-            unreal.log("[Phase 5] Final NavMesh bounds:")
+            # Phase 5: Determine final center and calculate bounds
+            unreal.log("[Phase 5] Determining final NavMesh center and bounds...")
+            
+            # 设置默认max_scale
+            if max_scale is None:
+                max_scale = [500.0, 500.0, 50.0]
+            
+            # 检查是否需要基于密度调整XY中心
+            final_center_x = geometric_center_x
+            final_center_y = geometric_center_y
+            
+            # 计算当前场景的XY extent
+            xy_extent_x = (max_x - min_x) / 2
+            xy_extent_y = (max_y - min_y) / 2
+            
+            # 从max_scale计算volume最大尺寸
+            # NavMesh默认extent=100cm，max_scale表示最大scale倍数
+            default_navmesh_extent = 100.0
+            max_volume_extent_x = default_navmesh_extent * max_scale[0]
+            max_volume_extent_y = default_navmesh_extent * max_scale[1]
+            
+            # 判断场景是否超出volume最大尺寸
+            scene_exceeds_volume_x = xy_extent_x > max_volume_extent_x
+            scene_exceeds_volume_y = xy_extent_y > max_volume_extent_y
+            
+            if scene_exceeds_volume_x or scene_exceeds_volume_y:
+                unreal.log(f"  Scene size exceeds max volume size:")
+                unreal.log(f"    Scene extent: X={xy_extent_x:.1f} cm, Y={xy_extent_y:.1f} cm")
+                unreal.log(f"    Max volume extent: X={max_volume_extent_x:.1f} cm, Y={max_volume_extent_y:.1f} cm")
+                unreal.log(f"  Analyzing actor density to adjust center...")
+                
+                # 使用密度分析调整中心
+                density_center_x, density_center_y = self._calculate_density_center(actor_positions)
+                
+                if density_center_x is not None and density_center_y is not None:
+                    final_center_x = density_center_x
+                    final_center_y = density_center_y
+                    unreal.log(f"  ✓ Center adjusted to density center")
+                    unreal.log(f"    Geometric center: X={geometric_center_x:.1f}, Y={geometric_center_y:.1f} cm")
+                    unreal.log(f"    Density center:   X={final_center_x:.1f}, Y={final_center_y:.1f} cm")
+                    unreal.log(f"    Offset: ΔX={final_center_x - geometric_center_x:.1f}, ΔY={final_center_y - geometric_center_y:.1f} cm")
+                else:
+                    unreal.log(f"  ⚠ Density analysis failed, using geometric center")
+            else:
+                unreal.log(f"  Scene fits within max volume size, using geometric center")
+            
+            unreal.log("")
             
             center = unreal.Vector(
-                (min_x + max_x) / 2,
-                (min_y + max_y) / 2,
+                final_center_x,
+                final_center_y,
                 reference_z_center  # Use aligned Z center
             )
             
@@ -663,7 +775,6 @@ class NavMeshManager:
             unreal.log(f"  Center: X={center.x:.1f}, Y={center.y:.1f}, Z={center.z:.1f} cm")
             unreal.log(f"  Extent: X={extent.x:.1f}, Y={extent.y:.1f}, Z={extent.z:.1f} cm")
             unreal.log(f"  Coverage: {(extent.x*2/100):.1f}m × {(extent.y*2/100):.1f}m × {(extent.z*2/100):.1f}m")
-            unreal.log(f"  Area: {(extent.x*2/100 * extent.y*2/100):.1f} m²")
             unreal.log("=" * 60)
             
             return center, extent, landscape_z_min
@@ -768,7 +879,8 @@ class NavMeshManager:
         # Step 2: Calculate bounds (XY first, then Z with Landscape priority)
         center, extent, landscape_z_min = self.calculate_map_bounds(
             agent_max_step_height=agent_max_step_height,
-            agent_max_jump_height=agent_max_jump_height
+            agent_max_jump_height=agent_max_jump_height,
+            max_scale=max_scale
         )
         if not center or not extent:
             unreal.log_error("Failed to calculate map bounds")
