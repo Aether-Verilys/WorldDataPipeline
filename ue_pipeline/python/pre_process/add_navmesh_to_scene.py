@@ -1,5 +1,4 @@
 import unreal
-import time
 import ue_api
 
 
@@ -10,12 +9,6 @@ class NavMeshManager:
         self.editor_actor_subsystem = ue_api.get_actor_subsystem()
     
     def count_static_mesh_actors(self) -> int:
-        """
-        Count StaticMeshActor instances in current level
-        
-        Returns:
-            int: Number of StaticMeshActor instances found
-        """
         try:
             actor_subsystem = ue_api.get_actor_subsystem()
             all_actors = actor_subsystem.get_all_level_actors()
@@ -88,167 +81,8 @@ class NavMeshManager:
             unreal.log_error(f"Error adding NavMeshBoundsVolume: {str(e)}")
             return None
     
-    def batch_add_navmesh_to_maps(self, map_list, location=None, scale=None):
-        results = {
-            'total': len(map_list),
-            'success': 0,
-            'failed': 0,
-            'skipped': 0,
-            'failed_maps': []
-        }
-        
-        unreal.log("=" * 60)
-        unreal.log("Batch Adding NavMesh to Maps")
-        unreal.log("=" * 60)
-        unreal.log(f"Total maps: {len(map_list)}")
-        unreal.log(f"Location: {location}")
-        unreal.log(f"Scale: {scale}")
-        unreal.log("")
-        
-        for i, map_path in enumerate(map_list, 1):
-            unreal.log(f"[{i}/{len(map_list)}] Processing: {map_path}")
-            
-            # Load map
-            if not ue_api.load_map(map_path):
-                results['failed'] += 1
-                results['failed_maps'].append(map_path)
-                continue
-            
-            # Add NavMesh
-            navmesh = self.add_navmesh_bounds_volume(location, scale)
-            if navmesh:
-                # Check if it was newly created or already existed
-                if self.check_navmesh_exists():
-                    results['success'] += 1
-                    unreal.log(f"  NavMesh added/verified")
-            else:
-                results['failed'] += 1
-                results['failed_maps'].append(map_path)
-                unreal.log_warning(f"  Failed to add NavMesh")
-            
-            unreal.log("")
-        
-        unreal.log("=" * 60)
-        unreal.log("Batch Add NavMesh Complete")
-        unreal.log(f"Success: {results['success']}/{results['total']}")
-        unreal.log(f"Failed: {results['failed']}/{results['total']}")
-        if results['failed_maps']:
-            unreal.log("Failed maps:")
-            for map_path in results['failed_maps']:
-                unreal.log(f"  - {map_path}")
-        unreal.log("=" * 60)
-        
-        return results
-    
-
-    
-    def wait_for_navmesh_build(self, timeout_seconds=120):
-        """
-        Wait for NavMesh to finish building
-        Returns True if build completed, False if timeout
-        Default timeout increased to 120s for large scenes with Landscape
-        """
-        try:
-            unreal.log(f"Waiting for NavMesh build to complete (timeout: {timeout_seconds}s)...")
-            world = ue_api.get_editor_world()
-            nav_sys = ue_api.get_navigation_system(world)
-            
-            if not nav_sys:
-                unreal.log_warning("NavigationSystem not found")
-                return False
-            
-            # Try to find the is_navigation_being_built method with various signatures
-            check_fn = getattr(nav_sys, "is_navigation_being_built_or_locked", None)
-            if not callable(check_fn):
-                check_fn = getattr(unreal.NavigationSystemV1, "is_navigation_being_built_or_locked", None)
-            
-            if not callable(check_fn):
-                # Fallback: just wait a fixed time
-                fallback_time = 10.0
-                unreal.log(f"is_navigation_being_built API not available, waiting {fallback_time} seconds...")
-                time.sleep(fallback_time)
-                return True
-            
-            # Phase 1: Wait for build to START (max 15 seconds)
-            # We must use time.sleep to allow some OS-level thread scheduling, 
-            # although Python blocks the GameThread, brief sleeps might allow task dispatching on some threads.
-            # Also, we need to wait for RecastNavMesh to be spawned by the system.
-            unreal.log("Waiting for NavMesh build to start...")
-            start_wait_begin = time.time()
-            started = False
-            
-            while time.time() - start_wait_begin < 15.0:
-                is_building = False
-                try:
-                    is_building = check_fn(world)
-                except TypeError:
-                    try:
-                        is_building = check_fn()
-                    except:
-                        pass
-                
-                if is_building:
-                    started = True
-                    break
-                
-                # Check if RecastNavMesh exists yet
-                actor_subsystem = ue_api.get_actor_subsystem()
-                all_actors = actor_subsystem.get_all_level_actors()
-                has_recast = any(isinstance(a, unreal.RecastNavMesh) for a in all_actors)
-                if not has_recast:
-                     # Force command again if not found
-                     unreal.SystemLibrary.execute_console_command(world, "RebuildNavigation")
-                
-                time.sleep(0.5)
-            
-            if not started:
-                unreal.log_warning("NavMesh build did not report 'started' status within 15s.")
-                # It's possible it finished very quickly or the flag is unreliable.
-                # proceed to completion check / verification
-            else:
-                unreal.log(f"NavMesh build started after {time.time() - start_wait_begin:.1f}s.")
-
-            # Phase 2: Wait for build to FINISH
-            build_wait_begin = time.time()
-            while time.time() - build_wait_begin < timeout_seconds:
-                is_building = False
-                try:
-                    is_building = check_fn(world)
-                except TypeError:
-                    try:
-                        is_building = check_fn()
-                    except:
-                        pass
-                
-                if not is_building:
-                    elapsed = time.time() - build_wait_begin
-                    unreal.log(f"NavMesh build completed in {elapsed:.1f} seconds")
-                    return True
-                
-                time.sleep(0.5)
-            
-            unreal.log_warning(f"NavMesh build timeout after {timeout_seconds} seconds")
-            return False
-            
-        except Exception as e:
-            unreal.log_error(f"Error waiting for NavMesh build: {str(e)}")
-            return False
-            
-        except Exception as e:
-            unreal.log_error(f"Error waiting for NavMesh build: {str(e)}")
-            return False
     
     def verify_navmesh_data(self, test_reachability=True, min_success_rate=0.8):
-        """
-        Strictly verify that NavMesh has valid navigable areas
-        Checks: NavigationSystem exists, NavMeshBoundsVolume exists, RecastNavMesh exists, random point reachability
-        
-        Args:
-            test_reachability: Whether to test random point reachability
-            min_success_rate: Minimum success rate for reachability tests (default 0.8 = 80%)
-        
-        Returns True if NavMesh is valid and has data
-        """
         try:
             world = ue_api.get_editor_world()
             nav_sys = ue_api.get_navigation_system(world)
@@ -339,10 +173,6 @@ class NavMeshManager:
             return False
     
     def enable_landscape_navigation(self):
-        """
-        Enable navigation generation on all Landscape actors in the level
-        This is required for NavMesh to be generated on Landscape surfaces
-        """
         try:
             actor_subsystem = ue_api.get_actor_subsystem()
             all_actors = actor_subsystem.get_all_level_actors()
@@ -408,6 +238,102 @@ class NavMeshManager:
             unreal.log_error(f"Error enabling Landscape navigation: {str(e)}")
             return False
     
+    def _is_navigable_actor(self, actor):
+        """检查 actor 是否是可导航的"""
+        if isinstance(actor, unreal.StaticMeshActor):
+            return True
+        
+        actor_class_name = actor.get_class().get_name()
+        if 'Landscape' in actor_class_name:
+            return True
+        
+        try:
+            components = actor.get_components_by_class(unreal.StaticMeshComponent)
+            return components and len(components) > 0
+        except Exception:
+            return False
+    
+    def _should_skip_actor(self, actor, exclude_patterns):
+        """检查是否应该跳过该 actor"""
+        actor_class_name = actor.get_class().get_name()
+        actor_name = actor.get_name()
+        
+        # 检查类名模式
+        if any(pattern in actor_class_name for pattern in exclude_patterns):
+            return True
+        
+        # 检查名称模式
+        skip_name_patterns = ['Sky', 'sky', 'Atmosphere', 'atmosphere']
+        if any(pattern in actor_name for pattern in skip_name_patterns):
+            return True
+        
+        return False
+    
+    def _get_actor_bounds_safe(self, actor):
+        """安全获取 actor 的边界，失败返回 None"""
+        try:
+            return actor.get_actor_bounds(False)
+        except Exception:
+            return None, None
+    
+    def _is_valid_bounds(self, extent, max_reasonable_extent):
+        """检查边界是否有效且合理"""
+        # 跳过零尺寸
+        if extent.x < 1 and extent.y < 1 and extent.z < 1:
+            return False
+        
+        # 跳过过大的 actor
+        if (extent.x > max_reasonable_extent or 
+            extent.y > max_reasonable_extent or 
+            extent.z > max_reasonable_extent):
+            return False
+        
+        return True
+    
+    def _collect_actor_z_centers(self, all_actors, exclude_patterns, max_reasonable_extent):
+        """收集所有可导航 actor 的 Z 中心位置"""
+        z_centers = []
+        
+        for actor in all_actors:
+            if self._should_skip_actor(actor, exclude_patterns):
+                continue
+            
+            # 跳过 Landscape 本身
+            if 'Landscape' in actor.get_class().get_name():
+                continue
+            
+            if not self._is_navigable_actor(actor):
+                continue
+            
+            origin, extent = self._get_actor_bounds_safe(actor)
+            if not origin or not extent:
+                continue
+            
+            if not self._is_valid_bounds(extent, max_reasonable_extent):
+                continue
+            
+            z_centers.append(origin.z)
+        
+        return z_centers
+    
+    def _analyze_terrain_type(self, actor_z_centers, ground_plane_z):
+        """分析地形类型（平原或山谷）"""
+        if len(actor_z_centers) == 0:
+            return "Plain (default)", 0.0
+        
+        above_ground = sum(1 for z in actor_z_centers if z > ground_plane_z)
+        total_objects = len(actor_z_centers)
+        above_ratio = above_ground / total_objects
+        
+        unreal.log(f"  Ground plane reference: Z={ground_plane_z:.1f} cm")
+        unreal.log(f"  Object distribution: {above_ground} above, {total_objects - above_ground} below ground ({above_ratio*100:.1f}% above)")
+        unreal.log("")
+        
+        if above_ratio > 0.5:
+            return "Plain", above_ratio
+        else:
+            return "Valley", above_ratio
+
     def calculate_map_bounds(self, agent_max_step_height=50.0, agent_max_jump_height=200.0):
         """
         Calculate NavMesh bounds using horizontal-first strategy:
@@ -527,87 +453,55 @@ class NavMeshManager:
             ]
             
             for actor in all_actors:
-                actor_class_name = actor.get_class().get_name()
-                actor_name = actor.get_name()
-                
-                # Skip non-navigable actors
-                if any(pattern in actor_class_name for pattern in exclude_patterns):
+                # 跳过不可导航的 actor
+                if self._should_skip_actor(actor, exclude_patterns):
                     skipped_count += 1
                     continue
                 
-                if any(pattern in actor_name for pattern in ['Sky', 'sky', 'Atmosphere', 'atmosphere']):
+                if not self._is_navigable_actor(actor):
                     skipped_count += 1
                     continue
                 
-                # Check if actor can affect navigation
-                try:
-                    is_navigable = False
-                    
-                    # Include StaticMeshActor and actors with StaticMeshComponent
-                    if isinstance(actor, unreal.StaticMeshActor):
-                        is_navigable = True
-                    elif 'Landscape' in actor_class_name:
-                        is_navigable = True
-                    else:
-                        try:
-                            components = actor.get_components_by_class(unreal.StaticMeshComponent)
-                            if components and len(components) > 0:
-                                is_navigable = True
-                        except Exception:
-                            pass
-                    
-                    if not is_navigable:
-                        skipped_count += 1
-                        continue
-                    
-                    # Get actor bounds
-                    origin, extent = actor.get_actor_bounds(False)
-                    
-                    # Skip actors with zero extent
-                    if extent.x < 1 and extent.y < 1 and extent.z < 1:
-                        skipped_count += 1
-                        continue
-                    
-                    # Skip unreasonably large actors
-                    if (extent.x > max_reasonable_extent or 
-                        extent.y > max_reasonable_extent or 
-                        extent.z > max_reasonable_extent):
-                        skipped_count += 1
-                        continue
-                    
-                    # Update XY bounds (horizontal)
-                    actor_min_x = origin.x - extent.x
-                    actor_max_x = origin.x + extent.x
-                    actor_min_y = origin.y - extent.y
-                    actor_max_y = origin.y + extent.y
-                    
-                    if min_x is None:
-                        min_x = actor_min_x
-                        max_x = actor_max_x
-                        min_y = actor_min_y
-                        max_y = actor_max_y
-                    else:
-                        min_x = min(min_x, actor_min_x)
-                        max_x = max(max_x, actor_max_x)
-                        min_y = min(min_y, actor_min_y)
-                        max_y = max(max_y, actor_max_y)
-                    
-                    # Track Z bounds from geometry (for later use)
-                    actor_min_z = origin.z - extent.z
-                    actor_max_z = origin.z + extent.z
-                    
-                    if geometry_z_min is None:
-                        geometry_z_min = actor_min_z
-                        geometry_z_max = actor_max_z
-                    else:
-                        geometry_z_min = min(geometry_z_min, actor_min_z)
-                        geometry_z_max = max(geometry_z_max, actor_max_z)
-                    
-                    navigable_actor_count += 1
-                    
-                except Exception as e:
+                # 获取 actor 边界
+                origin, extent = self._get_actor_bounds_safe(actor)
+                if not origin or not extent:
                     skipped_count += 1
                     continue
+                
+                # 验证边界有效性
+                if not self._is_valid_bounds(extent, max_reasonable_extent):
+                    skipped_count += 1
+                    continue
+                
+                # 更新 XY 边界
+                actor_min_x = origin.x - extent.x
+                actor_max_x = origin.x + extent.x
+                actor_min_y = origin.y - extent.y
+                actor_max_y = origin.y + extent.y
+                
+                if min_x is None:
+                    min_x = actor_min_x
+                    max_x = actor_max_x
+                    min_y = actor_min_y
+                    max_y = actor_max_y
+                else:
+                    min_x = min(min_x, actor_min_x)
+                    max_x = max(max_x, actor_max_x)
+                    min_y = min(min_y, actor_min_y)
+                    max_y = max(max_y, actor_max_y)
+                
+                # 跟踪 Z 边界
+                actor_min_z = origin.z - extent.z
+                actor_max_z = origin.z + extent.z
+                
+                if geometry_z_min is None:
+                    geometry_z_min = actor_min_z
+                    geometry_z_max = actor_max_z
+                else:
+                    geometry_z_min = min(geometry_z_min, actor_min_z)
+                    geometry_z_max = max(geometry_z_max, actor_max_z)
+                
+                navigable_actor_count += 1
             
             if min_x is None or max_x is None:
                 unreal.log_error("No valid navigable geometry found in level")
@@ -633,76 +527,21 @@ class NavMeshManager:
                 # Case 1: Landscape exists - analyze object distribution to choose alignment
                 unreal.log("  Landscape detected - analyzing object distribution...")
                 
-                # Determine ground plane reference: use Landscape actor position Z (true ground level)
-                # This is the actual surface level where objects sit, not the bottom of landscape bounds
                 ground_plane_z = landscape_origin_z if landscape_origin_z is not None else 0.0
                 
-                # Collect Z center positions of all navigable actors
-                actor_z_centers = []
-                for actor in all_actors:
-                    actor_class_name = actor.get_class().get_name()
-                    actor_name = actor.get_name()
-                    
-                    # Skip non-navigable actors and Landscape itself
-                    if any(pattern in actor_class_name for pattern in exclude_patterns):
-                        continue
-                    if 'Landscape' in actor_class_name:
-                        continue
-                    if any(pattern in actor_name for pattern in ['Sky', 'sky', 'Atmosphere', 'atmosphere']):
-                        continue
-                    
-                    try:
-                        is_navigable = False
-                        if isinstance(actor, unreal.StaticMeshActor):
-                            is_navigable = True
-                        else:
-                            try:
-                                components = actor.get_components_by_class(unreal.StaticMeshComponent)
-                                if components and len(components) > 0:
-                                    is_navigable = True
-                            except Exception:
-                                pass
-                        
-                        if not is_navigable:
-                            continue
-                        
-                        origin, extent = actor.get_actor_bounds(False)
-                        
-                        # Skip actors with zero extent or oversized
-                        if extent.x < 1 and extent.y < 1 and extent.z < 1:
-                            continue
-                        if (extent.x > max_reasonable_extent or 
-                            extent.y > max_reasonable_extent or 
-                            extent.z > max_reasonable_extent):
-                            continue
-                        
-                        # Record center Z position
-                        actor_z_centers.append(origin.z)
-                    except Exception:
-                        continue
+                # 收集所有可导航 actor 的 Z 中心位置
+                actor_z_centers = self._collect_actor_z_centers(all_actors, exclude_patterns, max_reasonable_extent)
                 
-                # Analyze distribution: how many objects are above vs below ground plane
-                terrain_type = "Unknown"
+                # 分析地形类型
                 if len(actor_z_centers) > 0:
-                    above_ground = sum(1 for z in actor_z_centers if z > ground_plane_z)
-                    below_ground = sum(1 for z in actor_z_centers if z <= ground_plane_z)
-                    total_objects = len(actor_z_centers)
-                    above_ratio = above_ground / total_objects if total_objects > 0 else 0
+                    terrain_type, above_ratio = self._analyze_terrain_type(actor_z_centers, ground_plane_z)
                     
-                    unreal.log(f"  Ground plane reference: Z={ground_plane_z:.1f} cm")
-                    unreal.log(f"  Object distribution: {above_ground} above, {below_ground} below ground ({above_ratio*100:.1f}% above)")
-                    unreal.log("")
-                    
-                    # Terrain Classification
-                    if above_ratio > 0.5:
-                        terrain_type = "Plain"
+                    if terrain_type == "Plain":
                         reference_z_center = ground_plane_z
                         unreal.log(f"  Terrain Type: PLAIN")
                         unreal.log(f"     Most objects ({above_ratio*100:.1f}%) are above ground")
                         unreal.log(f"     Alignment: Ground-level (Z={reference_z_center:.1f} cm)")
-                    else:
-                        terrain_type = "Valley"
-                        # For valley terrain, align to lowest point to cover all objects below ground
+                    else:  # Valley
                         reference_z_center = landscape_z_min
                         unreal.log(f"  Terrain Type: VALLEY")
                         unreal.log(f"     Most objects ({(1-above_ratio)*100:.1f}%) are below ground")
@@ -717,48 +556,25 @@ class NavMeshManager:
                 # Case 2: No Landscape - find most common Z level (ground plane)
                 unreal.log("  No Landscape - finding dominant ground plane...")
                 
-                # Collect Z_min values from all navigable actors
+                # 收集所有可导航 actor 的 Z_min 值
                 z_values = []
                 for actor in all_actors:
-                    actor_class_name = actor.get_class().get_name()
-                    actor_name = actor.get_name()
-                    
-                    # Skip non-navigable actors
-                    if any(pattern in actor_class_name for pattern in exclude_patterns):
-                        continue
-                    if any(pattern in actor_name for pattern in ['Sky', 'sky', 'Atmosphere', 'atmosphere']):
+                    if self._should_skip_actor(actor, exclude_patterns):
                         continue
                     
-                    try:
-                        is_navigable = False
-                        if isinstance(actor, unreal.StaticMeshActor):
-                            is_navigable = True
-                        else:
-                            try:
-                                components = actor.get_components_by_class(unreal.StaticMeshComponent)
-                                if components and len(components) > 0:
-                                    is_navigable = True
-                            except Exception:
-                                pass
-                        
-                        if not is_navigable:
-                            continue
-                        
-                        origin, extent = actor.get_actor_bounds(False)
-                        
-                        # Skip actors with zero extent or oversized
-                        if extent.x < 1 and extent.y < 1 and extent.z < 1:
-                            continue
-                        if (extent.x > max_reasonable_extent or 
-                            extent.y > max_reasonable_extent or 
-                            extent.z > max_reasonable_extent):
-                            continue
-                        
-                        # Record bottom Z position
-                        actor_z_min = origin.z - extent.z
-                        z_values.append(actor_z_min)
-                    except Exception:
+                    if not self._is_navigable_actor(actor):
                         continue
+                    
+                    origin, extent = self._get_actor_bounds_safe(actor)
+                    if not origin or not extent:
+                        continue
+                    
+                    if not self._is_valid_bounds(extent, max_reasonable_extent):
+                        continue
+                    
+                    # 记录底部 Z 位置
+                    actor_z_min = origin.z - extent.z
+                    z_values.append(actor_z_min)
                 
                 # Find most clustered Z level (dominant ground plane)
                 if len(z_values) > 0:
