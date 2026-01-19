@@ -33,10 +33,21 @@ class BosSceneDownloader:
         # 如果提供了配置文件，从配置文件加载
         if config_path:
             config = self.load_config(config_path)
-            self.source_bucket = config.get('target_bucket', 'world-data')  # 使用之前的target作为这里的source
-            self.source_prefix = config.get('target_prefix', 'raw').strip('/')
+            self.source_bucket = config.get('source_bucket', 'world-data')
+            self.source_prefix = config.get('source_prefix', 'raw').strip('/')
             self.local_content_path = Path(config.get('local_content_path', '')) if config.get('local_content_path') else None
             self.configured_scenes = config.get('scenes', [])  # 从配置读取场景列表
+            
+            # 如果配置文件中指定了 ue_config_path，使用它来获取 Content 路径
+            if not self.local_content_path and config.get('ue_config_path'):
+                ue_config_path = config.get('ue_config_path')
+                # 相对路径转绝对路径
+                if not Path(ue_config_path).is_absolute():
+                    config_dir = Path(config_path).parent.parent  # 从 ue_pipeline/config 向上到工作区根目录
+                    ue_config_path = str(config_dir / ue_config_path)
+                # 不再在这里设置 ue_config_path 参数，而是在下面统一处理
+                if not ue_config_path:  # 避免覆盖外部传入的参数
+                    ue_config_path = ue_config_path
         else:
             self.source_bucket = source_bucket or 'world-data'
             self.source_prefix = (source_prefix or 'raw').strip('/')
@@ -50,8 +61,10 @@ class BosSceneDownloader:
             
             # Handle "default" value - use ue_template project
             if project_path == "default":
-                script_dir = Path(__file__).parent.parent
-                project_path = str(script_dir / "ue_template" / "project" / "WorldData.uproject")
+                # 从当前文件向上找到工作区根目录
+                script_dir = Path(__file__).resolve().parent  # .../ue_pipeline/python/bos
+                workspace_root = script_dir.parent.parent.parent  # D:\WorldDataPipeline
+                project_path = str(workspace_root / "ue_template" / "project" / "WorldData.uproject")
                 print(f"✓ 使用默认项目路径: {project_path}")
             
             if project_path:
@@ -63,16 +76,20 @@ class BosSceneDownloader:
                     print(f"✓ 从UE配置中获取Content路径: {content_dir}")
         
         # 如果还是没有路径，尝试使用默认的ue_config.json
-        if not self.local_content_path:
-            default_ue_config = Path(__file__).parent / 'config' / 'ue_config.json'
+        if not self.local_content_path and not ue_config_path:
+            # 从当前文件路径向上找到 ue_pipeline/config/ue_config.json
+            script_dir = Path(__file__).resolve().parent  # .../ue_pipeline/python/bos
+            default_ue_config = script_dir.parent.parent / 'config' / 'ue_config.json'  # .../ue_pipeline/config/ue_config.json
+            
             if default_ue_config.exists():
                 ue_config = self.load_config(str(default_ue_config))
                 project_path = ue_config.get('project_path')
                 
                 # Handle "default" value - use ue_template project
                 if project_path == "default":
-                    script_dir = Path(__file__).parent.parent
-                    project_path = str(script_dir / "ue_template" / "project" / "WorldData.uproject")
+                    # 从 ue_pipeline 向上找到工作区根目录，然后找 ue_template
+                    workspace_root = script_dir.parent.parent.parent  # D:\WorldDataPipeline
+                    project_path = str(workspace_root / "ue_template" / "project" / "WorldData.uproject")
                     print(f"✓ 使用默认项目路径: {project_path}")
                 
                 if project_path:
@@ -81,6 +98,12 @@ class BosSceneDownloader:
                     if content_dir.exists():
                         self.local_content_path = content_dir
                         print(f"✓ 从默认UE配置中获取Content路径: {content_dir}")
+                    else:
+                        print(f"✗ Content目录不存在: {content_dir}")
+                else:
+                    print(f"✗ UE配置中未找到project_path")
+            else:
+                print(f"✗ 未找到默认UE配置: {default_ue_config}")
     
     def load_config(self, config_path: str) -> dict:
         """加载配置文件"""
@@ -93,30 +116,30 @@ class BosSceneDownloader:
     
     def list_available_scenes(self) -> list:
         """
-        列出BOS中可用的场景
+        列出BOS中可用的场景（只扫描一级目录，不递归）
         
         Returns:
-            场景名称列表
+            场景名称列表 ['scene1', 'scene2', ...]
         """
         bos_path = f"bos:/{self.source_bucket}/{self.source_prefix}/"
         
         try:
             cmd = ['bcecmd', 'bos', 'ls', bos_path, '-a']
-            print(f"执行命令: {' '.join(cmd)}")
             
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                encoding='utf-8'
+                encoding='utf-8',
+                timeout=10  # 快速超时
             )
             
             if result.returncode != 0:
                 print(f"✗ 列出场景失败: {result.stderr}")
                 return []
             
-            # 解析输出
-            scenes = []
+            # 解析输出，获取场景名称（只扫描一级目录）
+            scene_names = []
             lines = result.stdout.strip().split('\n')
             
             for line in lines:
@@ -129,10 +152,13 @@ class BosSceneDownloader:
                     # 去掉 "PRE  " 前缀（5个字符）
                     if scene_name.startswith('PRE  '):
                         scene_name = scene_name[5:]
-                    scenes.append(scene_name)
+                    scene_names.append(scene_name)
             
-            return scenes
+            return scene_names
             
+        except subprocess.TimeoutExpired:
+            print("✗ 列出场景超时")
+            return []
         except FileNotFoundError:
             print("✗ 未找到 bcecmd 命令")
             return []
@@ -185,19 +211,58 @@ class BosSceneDownloader:
             
             return False
     
-    def download_scene(self, scene_name: str, target_path: Optional[Path] = None, 
-                      dry_run: bool = False) -> bool:
+    def download_scene(self, scene_name: str = None, target_path: Optional[Path] = None, 
+                      dry_run: bool = False, interactive: bool = False) -> bool:
         """
         下载场景到本地Content目录
         
         Args:
-            scene_name: 场景名称
+            scene_name: 场景名称（如果为None且interactive=True，则交互式选择）
             target_path: 目标Content路径，如果不指定则使用配置的路径
             dry_run: 是否只预览
+            interactive: 是否交互式模式
             
         Returns:
             是否成功
         """
+        # 如果是交互式模式且没有指定场景名
+        if interactive and scene_name is None:
+            print("\n" + "=" * 80)
+            print("BOS 场景下载工具")
+            print("=" * 80)
+            
+            print(f"\n配置信息:")
+            print(f"  BOS Bucket: {self.source_bucket}")
+            print(f"  BOS Prefix: {self.source_prefix}")
+            print(f"  本地目录: {self.local_content_path or '未配置'}")
+            
+            # 列出可用场景（只列出目录名，不统计文件）
+            print(f"\n正在扫描 BOS 中的场景...")
+            scenes = self.list_available_scenes()
+            
+            if scenes:
+                print(f"\n找到 {len(scenes)} 个可用场景:\n")
+                for i, scene_name in enumerate(scenes, 1):
+                    print(f"  {i}. {scene_name}")
+            else:
+                print("\n未找到任何场景")
+                return False
+            
+            print(f"\n请输入要下载的场景名称")
+            
+            try:
+                scene_name = input("\n场景名称: ").strip()
+                if not scene_name:
+                    print("\n✗ 错误: 场景名称不能为空")
+                    return False
+            except (KeyboardInterrupt, EOFError):
+                print("\n\n已取消下载")
+                return False
+        
+        if not scene_name:
+            print("✗ 未指定场景名称")
+            return False
+        
         # 确定目标路径
         if target_path:
             content_path = Path(target_path)
@@ -212,49 +277,45 @@ class BosSceneDownloader:
             print(f"✗ 本地Content目录不存在: {content_path}")
             return False
         
-        # 构建BOS源路径，尝试带PRE前缀和不带前缀两种情况
-        source_path_no_prefix = f"bos:/{self.source_bucket}/{self.source_prefix}/{scene_name}/Content/"
-        source_path_with_prefix = f"bos:/{self.source_bucket}/{self.source_prefix}/PRE  {scene_name}/Content/"
+        # 构建BOS源路径：下载整个场景文件夹
+        # bos:/world-data/raw/Hong_Kong_Street/ 下载到 Content/Hong_Kong_Street/
+        source_path = f"bos:/{self.source_bucket}/{self.source_prefix}/{scene_name}/"
         
-        # 先检查哪个路径存在
-        source_path = None
-        for test_path in [source_path_no_prefix, source_path_with_prefix]:
-            check_cmd = ['bcecmd', 'bos', 'ls', test_path]
-            check_result = subprocess.run(
-                check_cmd,
-                capture_output=True,
-                text=True,
-                encoding='utf-8'
-            )
-            if check_result.returncode == 0:
-                source_path = test_path
-                break
-        
-        if not source_path:
-            print(f"✗ 未找到场景: {scene_name}")
-            print(f"  尝试过的路径:")
-            print(f"    - {source_path_no_prefix}")
-            print(f"    - {source_path_with_prefix}")
-            return False
+        # 目标路径应该是 Content 目录（bcecmd 会自动创建场景文件夹）
+        target_scene_path = content_path / scene_name
         
         print(f"\n{'='*70}")
         print(f"下载场景: {scene_name}")
         print(f"{'='*70}")
         print(f"源路径: {source_path}")
-        print(f"目标路径: {content_path}")
+        print(f"目标路径: {target_scene_path}")
         
         if dry_run:
             print(f"[预览模式] 将执行下载")
             return True
         
         try:
-            # 获取详细文件列表
-            check_cmd = ['bcecmd', 'bos', 'ls', source_path, '-r']
+            # 检查源路径是否存在
+            check_cmd = ['bcecmd', 'bos', 'ls', source_path]
             check_result = subprocess.run(
                 check_cmd,
                 capture_output=True,
                 text=True,
                 encoding='utf-8'
+            )
+            
+            if check_result.returncode != 0:
+                print(f"✗ 源路径不存在: {source_path}")
+                return False
+            
+            # 获取详细文件列表统计
+            check_cmd = ['bcecmd', 'bos', 'ls', source_path, '-r']
+            check_result = subprocess.run(
+                check_cmd,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                timeout=30
             )
             
             # 统计文件数量
@@ -268,32 +329,30 @@ class BosSceneDownloader:
             
             print(f"✓ 源路径包含 {file_count} 个对象")
             
-            # 使用 bcecmd 下载
-            # 注意：bcecmd下载时需要指定本地路径
-            target_str = str(content_path.absolute()).replace('\\', '/')
+            # 使用 bcecmd 下载整个场景文件夹（显示进度）
+            # bcecmd bos cp bos:/bucket/prefix/scene/ local/Content/scene/ -r -y
+            target_str = str(target_scene_path.absolute()).replace('\\', '/')
             cmd = ['bcecmd', 'bos', 'cp', source_path, target_str, '-r', '-y']
             
             print(f"\n执行命令: {' '.join(cmd)}")
+            print(f"\n开始下载...\n")
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                encoding='utf-8'
-            )
+            # 不捕获输出，让进度条直接显示在终端
+            result = subprocess.run(cmd)
             
             if result.returncode != 0:
-                print(f"✗ 下载失败: {result.stderr}")
+                print(f"\n✗ 下载失败")
                 return False
             
-            print(f"✓ 下载成功")
-            if result.stdout:
-                print(result.stdout)
+            print(f"\n✓ 下载成功")
             
             return True
             
+        except KeyboardInterrupt:
+            print(f"\n\n✗ 用户取消下载")
+            return False
         except Exception as e:
-            print(f"✗ 下载失败: {e}")
+            print(f"\n✗ 下载失败: {e}")
             return False
 
 

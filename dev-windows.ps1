@@ -90,21 +90,55 @@ function ue-export {
 
 function ue-upload {
     Write-Host ""
-    Write-Host "[Upload] Uploading baked scenes to BOS..." -ForegroundColor Yellow
-    Write-Host "  Target: " -NoNewline -ForegroundColor Gray
-    Write-Host "bos:/world-data/raw/" -ForegroundColor Cyan
+    Write-Host "[Upload] Upload scene to BOS..." -ForegroundColor Yellow
+    
+    # 读取 bos.json 获取上传配置
+    $BOS_CONFIG = Join-Path $REPO_ROOT "ue_pipeline\config\bos.json"
+    if (Test-Path $BOS_CONFIG) {
+        try {
+            $config = Get-Content $BOS_CONFIG -Raw -Encoding UTF8 | ConvertFrom-Json
+            $upload_config = $config.operations.upload
+            $bucket = $upload_config.target_bucket
+            $prefix = $upload_config.target_prefix
+            Write-Host "  Target: " -NoNewline -ForegroundColor Gray
+            Write-Host "bos://$bucket/$prefix/" -ForegroundColor Cyan
+        } catch {
+            Write-Host "  Target: " -NoNewline -ForegroundColor Gray
+            Write-Host "bos:/world-data/baked/" -ForegroundColor Cyan
+        }
+    } else {
+        Write-Host "  Target: " -NoNewline -ForegroundColor Gray
+        Write-Host "bos:/world-data/baked/" -ForegroundColor Cyan
+    }
+    
     Write-Host ""
-    python app.py upload_scenes
+    
+    if ($args.Count -eq 0) {
+        # 交互式模式
+        python app.py upload_scene
+    } elseif ($args[0] -eq "--list" -or $args[0] -eq "-l") {
+        # 列出场景
+        python app.py upload_scene --list
+    } elseif ($args[0] -eq "--scene") {
+        # 指定场景名
+        python app.py upload_scene --scene $args[1]
+    } elseif ($args[0] -eq "--dry-run") {
+        # 模拟运行
+        python app.py upload_scene --dry-run
+    } else {
+        # 直接传递场景名
+        python app.py upload_scene --scene $args[0]
+    }
 }
 
 function ue-download {
     if ($args.Count -eq 0) {
         Write-Host ""
-        Write-Host "[Download] Listing available scenes..." -ForegroundColor Yellow
+        Write-Host "[Download] Interactive Mode" -ForegroundColor Yellow
         Write-Host "  Source: " -NoNewline -ForegroundColor Gray
         Write-Host "bos:/world-data/raw/" -ForegroundColor Cyan
         Write-Host ""
-        python app.py download_scene --list
+        python app.py download_scene
     } elseif ($args[0] -eq "--list" -or $args[0] -eq "-l") {
         Write-Host ""
         Write-Host "[Download] Listing available scenes..." -ForegroundColor Yellow

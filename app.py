@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import platform
 import sys
@@ -20,16 +21,26 @@ def setup_bos_client():
     """
     设置全局BOS客户端
     在应用启动时调用一次，后续所有模块共享同一个客户端实例
+    注意：部分命令（如 upload_scene）使用 bcecmd，不需要 BOS SDK
     """
-    # 尝试从配置文件初始化
-    bos_config_path = 'config/bos_config.json'
-    full_path = repo_root / bos_config_path
-    
-    if full_path.exists():
-        initialize_bos(config_file=str(full_path))
-    else:
-        # 如果没有配置文件，尝试从环境变量初始化
-        initialize_bos()
+    try:
+        # 尝试从配置文件初始化
+        bos_config_path = 'config/bos_config.json'
+        full_path = repo_root / bos_config_path
+        
+        if full_path.exists():
+            initialize_bos(config_file=str(full_path))
+        else:
+            # 如果没有配置文件，尝试从环境变量初始化
+            initialize_bos()
+    except ImportError as e:
+        # BOS SDK未安装或有问题，某些功能（如 upload_scene）仍可工作
+        _sys.stderr.write(f"警告: BOS SDK 初始化失败: {e}\n")
+        _sys.stderr.write("提示: 使用 bcecmd 的命令（如 upload_scene）仍可正常工作\n")
+        _sys.stderr.flush()
+    except Exception as e:
+        _sys.stderr.write(f"警告: BOS 客户端初始化失败: {e}\n")
+        _sys.stderr.flush()
 
 
 def setup_ue_config_env(system_type: str | None = None):
@@ -140,8 +151,28 @@ def main():
     )
     
     parser_upload = subparsers.add_parser(
-        'upload_scenes',
-        help='Upload baked scenes to BOS'
+        'upload_scene',
+        help='Upload a scene to BOS (interactive or specify --scene)'
+    )
+    parser_upload.add_argument(
+        '--list', '-l',
+        action='store_true',
+        help='List all available scenes in the project'
+    )
+    parser_upload.add_argument(
+        '--scene',
+        type=str,
+        help='Scene name to upload (e.g., LevelPrototyping). If not provided, will prompt for input'
+    )
+    parser_upload.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Dry run mode (show what would be done without executing)'
+    )
+    parser_upload.add_argument(
+        '--local-path',
+        type=str,
+        help='Override local scene path (default: from project_path/Content/{scene})'
     )
 
     parser_download = subparsers.add_parser(
@@ -214,25 +245,91 @@ def main():
             sys.argv = ['run_render_job_headless.py', args.manifest]
         return render_main()
     
-    elif args.command == 'upload_scenes':
-        from ue_pipeline.run_upload_scenes import main as upload_main
-        sys.argv = ['run_upload_scenes.py']
-        return upload_main()
+    elif args.command == 'upload_scene':
+        # 如果是列出场景，直接调用 main 函数
+        if args.list:
+            from ue_pipeline.upload_scene import list_available_scenes, check_scene_in_database
+            
+            print("\n" + "=" * 80)
+            print("可用场景列表")
+            print("=" * 80)
+            
+            scenes = list_available_scenes(show_details=True)
+            
+            if scenes:
+                print(f"\n找到 {len(scenes)} 个场景:\n")
+                print(f"{'序号':<6} {'场景名称':<30} {'文件数':<10} {'大小':<15} {'数据库':<10}")
+                print("-" * 80)
+                
+                for i, scene in enumerate(scenes, 1):
+                    size_mb = scene['total_size'] / 1024 / 1024
+                    
+                    # 检查数据库
+                    db_info = check_scene_in_database(scene['name'])
+                    if db_info:
+                        if db_info['bos_exists']:
+                            db_status = "已上传"
+                        else:
+                            db_status = "未上传"
+                    else:
+                        db_status = "-"
+                    
+                    print(f"{i:<6} {scene['name']:<30} {scene['file_count']:<10} {size_mb:>10.2f} MB   {db_status:<10}")
+                
+                print(f"\n提示: 使用 --scene <场景名> 上传指定场景")
+            else:
+                print("\n未找到任何场景")
+            
+            return 0
+        else:
+            from ue_pipeline.upload_scene import upload_scene_with_config
+            return upload_scene_with_config(
+                scene_name=args.scene,
+                dry_run=args.dry_run,
+                local_path_override=args.local_path
+            )
     
     elif args.command == 'download_scene':
         from ue_pipeline.python.bos.download_scene import BosSceneDownloader
+        from pathlib import Path
         
-        downloader = BosSceneDownloader()
+        # 加载 bos.json 配置
+        bos_config_path = Path(__file__).parent / 'ue_pipeline' / 'config' / 'bos.json'
+        if bos_config_path.exists():
+            with open(bos_config_path, 'r', encoding='utf-8') as f:
+                bos_config = json.load(f)
+                download_config = bos_config.get('operations', {}).get('download', {})
+        else:
+            download_config = {}
+        
+        # 初始化下载器，传入配置
+        downloader = BosSceneDownloader(
+            source_bucket=download_config.get('source_bucket'),
+            source_prefix=download_config.get('source_prefix'),
+            ue_config_path=download_config.get('ue_config_path')
+        )
         
         if args.list:
             # 列出所有可用场景
+            print("\n" + "=" * 80)
+            print("BOS 可用场景列表")
+            print("=" * 80)
+            
+            print(f"\n配置信息:")
+            print(f"  BOS Bucket: {downloader.source_bucket}")
+            print(f"  BOS Prefix: {downloader.source_prefix}")
+            
+            print(f"\n正在扫描 BOS 中的场景...")
             scenes = downloader.list_available_scenes()
+            
             if scenes:
-                print(f"\n找到 {len(scenes)} 个可用场景:")
+                print(f"\n找到 {len(scenes)} 个场景:\n")
                 for i, scene in enumerate(scenes, 1):
                     print(f"  {i}. {scene}")
+                
+                print(f"\n提示: 使用 --scene <场景名> 下载指定场景")
             else:
-                print("未找到任何场景")
+                print("\n未找到任何场景")
             return 0
         
         elif args.search:
@@ -253,15 +350,9 @@ def main():
             return 0 if success else 1
         
         else:
-            # 无参数，显示帮助并列出场景
-            print("用法: python app.py download_scene [--scene SCENE_NAME | --list | --search KEYWORD]")
-            print("\n可用场景:")
-            scenes = downloader.list_available_scenes()
-            for i, scene in enumerate(scenes[:10], 1):  # 只显示前10个
-                print(f"  {i}. {scene}")
-            if len(scenes) > 10:
-                print(f"  ... 还有 {len(scenes) - 10} 个场景")
-            return 0
+            # 交互式模式
+            success = downloader.download_scene(interactive=True)
+            return 0 if success else 1
     
     elif args.command == 'copy_scene':
         from ue_pipeline.python.bos.copy_scenes import BosSceneCopier

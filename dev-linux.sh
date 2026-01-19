@@ -73,12 +73,41 @@ ue-export() {
 }
 
 ue-upload() {
-    python app.py upload_scenes
+    echo ""
+    echo "[Upload] Upload scene to BOS..."
+    
+    # 读取 bos.json 获取上传配置
+    BOS_CONFIG="$REPO_ROOT/ue_pipeline/config/bos.json"
+    if [ -f "$BOS_CONFIG" ]; then
+        TARGET=$(python -c "import json; config=json.load(open('$BOS_CONFIG')); print(f\"bos://{config['operations']['upload']['target_bucket']}/{config['operations']['upload']['target_prefix']}/\")" 2>/dev/null || echo "bos:/world-data/baked/")
+        echo "  Target: $TARGET"
+    else
+        echo "  Target: bos:/world-data/baked/"
+    fi
+    
+    echo ""
+    
+    if [ $# -eq 0 ]; then
+        # 交互式模式
+        python app.py upload_scene
+    elif [ "$1" = "--list" ] || [ "$1" = "-l" ]; then
+        # 列出场景
+        python app.py upload_scene --list
+    elif [ "$1" = "--scene" ]; then
+        # 指定场景名
+        python app.py upload_scene --scene "$2"
+    elif [ "$1" = "--dry-run" ]; then
+        # 模拟运行
+        python app.py upload_scene --dry-run
+    else
+        # 直接传递场景名
+        python app.py upload_scene --scene "$1"
+    fi
 }
 
 ue-download() {
     if [ $# -eq 0 ]; then
-        python app.py download_scene --list
+        python app.py download_scene
     elif [ "$1" = "--list" ] || [ "$1" = "-l" ]; then
         python app.py download_scene --list
     elif [ "$1" = "--search" ] || [ "$1" = "-s" ]; then
