@@ -475,6 +475,7 @@ def _export_camera_if_enabled(
     sequence_path: str,
     camera_export_cfg: Optional[Dict[str, Any]],
     ue_config: Dict[str, Any],
+    actor_blueprint_class_path: str,
 ) -> None:
     """
     如果启用了camera_export，自动导出相机数据
@@ -501,6 +502,9 @@ def _export_camera_if_enabled(
             "sequence": sequence_path,
             "camera_export": camera_export_cfg,
             "ue_config": ue_config,
+            "sequence_config": {
+                "actor_blueprint_class_path": actor_blueprint_class_path,
+            },
         }
         
         # 调用导出函数
@@ -511,6 +515,7 @@ def _export_camera_if_enabled(
             logger.info(f"  Output: {result.get('output_dir')}")
             logger.info(f"  Extrinsic: {result.get('extrinsic_csv')}")
             logger.info(f"  Transform: {result.get('transform_csv')}")
+            logger.info(f"  Intrinsic: {result.get('intrinsic_csv')}")
         else:
             logger.warning(f"Camera export returned unexpected status: {result}")
             
@@ -737,6 +742,7 @@ def generate_all_sequences(
                 sequence_path=asset_path,
                 camera_export_cfg=camera_export_cfg,
                 ue_config=ue_config,
+                actor_blueprint_class_path=actor_blueprint_class_path,
             )
             
         except Exception as e:

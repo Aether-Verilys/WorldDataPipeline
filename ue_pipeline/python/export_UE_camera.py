@@ -73,6 +73,135 @@ def get_transform_channels(sequence, binding_name):
     return None
 
 
+def get_camera_component_from_blueprint(actor_blueprint_class_path):
+    if not actor_blueprint_class_path:
+        logger.warning("No blueprint class path provided")
+        return None
+    
+    try:
+        # 加载蓝图类
+        blueprint_class = unreal.EditorAssetLibrary.load_blueprint_class(actor_blueprint_class_path)
+        if not blueprint_class:
+            logger.warning(f"Failed to load blueprint class: {actor_blueprint_class_path}")
+            return None
+        
+        # 获取类的默认对象 (CDO)
+        cdo = unreal.get_default_object(blueprint_class)
+        if not cdo:
+            logger.warning(f"Failed to get CDO from blueprint class: {actor_blueprint_class_path}")
+            return None
+        
+        logger.info(f"Loaded blueprint CDO: {actor_blueprint_class_path}")
+        
+        # 从CDO中查找相机组件
+        camera_component = _find_camera_component_in_actor(cdo)
+        if camera_component:
+            # logger.info(f"Found camera component in blueprint CDO")
+            return camera_component
+        else:
+            logger.warning(f"No camera component found in blueprint CDO")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error loading camera from blueprint: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def _find_camera_component_in_actor(actor):
+    if actor is None:
+        return None
+    
+    # 首先检查根组件是否是相机
+    try:
+        root_component = actor.get_editor_property("root_component")
+        if root_component and _is_camera_component(root_component):
+            return root_component
+    except Exception:
+        pass
+    
+    # 查找所有相机类型组件
+    camera_classes = []
+    for cls_name in ("CineCameraComponent", "CameraComponent"):
+        cls = getattr(unreal, cls_name, None)
+        if cls:
+            camera_classes.append(cls)
+    
+    components = []
+    for cls in camera_classes:
+        try:
+            getter = getattr(actor, "get_components_by_class", None)
+            if callable(getter):
+                components.extend(list(getter(cls)))
+        except Exception:
+            pass
+    
+    # 返回第一个找到的相机组件
+    if components:
+        return components[0]
+    
+    return None
+
+
+def _is_camera_component(component):
+    """检查组件是否是相机组件"""
+    if component is None:
+        return False
+    
+    camera_class_names = ["CineCameraComponent", "CameraComponent"]
+    for cls_name in camera_class_names:
+        cls = getattr(unreal, cls_name, None)
+        if cls and isinstance(component, cls):
+            return True
+    return False
+
+
+def get_camera_intrinsics(camera_component):
+    if camera_component is None:
+        logger.warning("Camera component is None, using default intrinsics")
+        return {
+            "fov": 90.0,
+            "aspect_ratio": 16.0/9.0,
+            "width": 1920,
+            "height": 1080,
+            "sensor_width": 24.576,
+        }
+    
+    intrinsics = {}
+    
+    try:
+        # FOV (Field of View)
+        fov = camera_component.get_editor_property("field_of_view")
+        intrinsics["fov"] = float(fov) if fov is not None else 90.0
+    except Exception:
+        intrinsics["fov"] = 90.0
+    
+    try:
+        # Aspect Ratio
+        aspect_ratio = camera_component.get_editor_property("aspect_ratio")
+        intrinsics["aspect_ratio"] = float(aspect_ratio) if aspect_ratio is not None else 16.0/9.0
+    except Exception:
+        intrinsics["aspect_ratio"] = 16.0/9.0
+    
+    # 从PostProcess设置中获取sensor_width (Depth of Field -> Sensor Width)
+    try:
+        post_process_settings = camera_component.get_editor_property("post_process_settings")
+        if post_process_settings:
+            sensor_width = post_process_settings.get_editor_property("depth_of_field_sensor_width")
+            intrinsics["sensor_width"] = float(sensor_width) if sensor_width is not None else 24.576
+        else:
+            intrinsics["sensor_width"] = 24.576
+    except Exception:
+        intrinsics["sensor_width"] = 24.576
+    
+    # 默认分辨率
+    intrinsics["width"] = 1920
+    intrinsics["height"] = 1080
+    
+    return intrinsics
+
+
 # 从缓存的keys中采样值
 def sample_channel_cached(cached_keys, frame_number):
     """
@@ -162,7 +291,7 @@ def compute_camera_extrinsic(camera_loc, camera_rot):
 
 
 # 主导出函数
-def export_camera_data(sequence_path, binding_name_camera, output_dir):
+def export_camera_data(sequence_path, binding_name_camera, output_dir, actor_blueprint_class_path=None):
     """
     导出相机数据（Transform和外参矩阵）
     
@@ -170,6 +299,7 @@ def export_camera_data(sequence_path, binding_name_camera, output_dir):
         sequence_path: Level Sequence路径
         binding_name_camera: Camera binding名称（如BP_Cameraman0）
         output_dir: 输出目录
+        actor_blueprint_class_path: Actor蓝图类路径（用于读取内参）
     """
     package_path, sequence_name = _split_ue_asset_path(sequence_path)
 
@@ -222,7 +352,30 @@ def export_camera_data(sequence_path, binding_name_camera, output_dir):
 
     output_extrinsic_csv = os.path.join(output_dir, f"{sequence_name}_extrinsic.csv")
     output_transform_csv = os.path.join(output_dir, f"{sequence_name}_transform.csv")
+    output_intrinsic_csv = os.path.join(output_dir, f"{sequence_name}_intrinsic.csv")
 
+    # 从蓝图类的CDO获取相机组件并读取内参
+    camera_component = None
+    if actor_blueprint_class_path:
+        camera_component = get_camera_component_from_blueprint(actor_blueprint_class_path)
+    else:
+        logger.warning("No actor_blueprint_class_path provided, using default intrinsics")
+    
+    intrinsics = get_camera_intrinsics(camera_component)
+
+    # 导出内参表（单行CSV，包含所有内参）
+    with open(output_intrinsic_csv, 'w', newline='') as f_intr:
+        writer_intr = csv.writer(f_intr)
+        writer_intr.writerow(["fov", "aspect_ratio", "width", "height", "sensor_width"])
+        writer_intr.writerow([
+            intrinsics["fov"],
+            intrinsics["aspect_ratio"],
+            intrinsics["width"],
+            intrinsics["height"],
+            intrinsics["sensor_width"]
+        ])
+    
+    logger.info(f"内参表导出完成 → {output_intrinsic_csv}")
 
     # 同时打开两个CSV文件，在一次循环中写入所有数据
     with open(output_extrinsic_csv, 'w', newline='') as f_ext, \
@@ -266,8 +419,8 @@ def export_camera_data(sequence_path, binding_name_camera, output_dir):
             # 写入 Transform CSV
             writer_trans.writerow([frame, loc_x, loc_y, loc_z, rot_x, rot_y, rot_z])
 
-    # logger.info(f"外参矩阵导出完成 → {output_extrinsic_csv}")
-    # logger.info(f"Transform数据导出完成 → {output_transform_csv}")
+    logger.info(f"外参矩阵导出完成 → {output_extrinsic_csv}")
+    logger.info(f"Transform数据导出完成 → {output_transform_csv}")
 
 
 # Manifest-driven API
@@ -325,16 +478,28 @@ def export_camera_from_manifest(manifest: dict) -> dict:
     if not binding_camera:
         raise ValueError("No camera binding specified in manifest")
     
+    # 获取蓝图路径（用于读取相机内参）
+    actor_blueprint_path = None
+    sequence_config = manifest.get("sequence_config", {})
+    if sequence_config:
+        actor_blueprint_path = sequence_config.get("actor_blueprint_class_path")
+    
+    if actor_blueprint_path:
+        logger.info(f"[ExportCamera] Blueprint path: {actor_blueprint_path}")
+    else:
+        logger.warning("[ExportCamera] No actor_blueprint_class_path in manifest, will use default intrinsics")
+    
     logger.info(f"[ExportCamera] Output directory: {output_dir}")
     
-    export_camera_data(package_path, binding_camera, output_dir)
+    export_camera_data(package_path, binding_camera, output_dir, actor_blueprint_path)
     
     return {
         "status": "success",
         "sequence": package_path,
         "output_dir": output_dir,
         "extrinsic_csv": os.path.normpath(os.path.join(output_dir, f"{sequence_name}_extrinsic.csv")),
-        "transform_csv": os.path.normpath(os.path.join(output_dir, f"{sequence_name}_transform.csv"))
+        "transform_csv": os.path.normpath(os.path.join(output_dir, f"{sequence_name}_transform.csv")),
+        "intrinsic_csv": os.path.normpath(os.path.join(output_dir, f"{sequence_name}_intrinsic.csv"))
     }
 
 

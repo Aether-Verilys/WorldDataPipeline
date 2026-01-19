@@ -13,7 +13,8 @@
     "Overview",
     "prop",
     "test",
-    "Test"
+    "Test",
+    "Presentation"
   ],
   "description": "场景结构扫描配置 - 用于识别Content目录和排除特定地图"
 }
