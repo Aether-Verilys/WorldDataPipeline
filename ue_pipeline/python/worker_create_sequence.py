@@ -216,8 +216,8 @@ def _build_nav_points_with_retry(
     roam_cfg: Dict[str, Any],
     map_path: str,
     run_id: int,
-    parent_config: Dict[str, Any] = None,
-) -> NavPathResult:
+    parent_config: Optional[Dict[str, Any]] = None,
+) -> tuple[list, Dict[str, Any]]:
     seed_cfg = roam_cfg.get("seed", None)
     actual_seed: Optional[int] = None
     if seed_cfg is not None:
@@ -261,7 +261,7 @@ def _build_nav_points_with_retry(
             # Pass map_path for cache naming
             nav_points = build_multi_leg_nav_path(nav, world, nav_roam_cfg_for_path, map_path)
             logger.info(f"NavRoam generated {len(nav_points)} raw points")
-            return NavPathResult(nav_points=nav_points, actual_seed=actual_seed)
+            return nav_points, nav_roam_cfg_for_path
 
         except RuntimeError as e:
             error_msg = str(e)
@@ -395,19 +395,46 @@ def _build_transform_keys_from_samples(
     key_interval_frames: int,
     camera_pitch_from_slope: bool,
     max_camera_pitch: float,
+    strafe_sample_ranges: Optional[list] = None,
 ) -> KeyGenResult:
     keys = []
+    locked_yaw = None  # Track locked yaw during strafe
+    strafe_lock_count = 0  # Count locked samples
+    
     for i, p in enumerate(samples):
         frame = i * key_interval_frames
         if frame > total_frames:
             frame = total_frames
         t = float(frame) / float(fps)
 
+        # Check if this sample is in a strafe segment
+        in_strafe = False
+        if strafe_sample_ranges:
+            for seg in strafe_sample_ranges:
+                if seg["start"] <= i <= seg["end"]:
+                    in_strafe = True
+                    # Lock yaw at the start of strafe
+                    if i == seg["start"] and i > 0:
+                        locked_yaw = _yaw_degrees_xy(samples[i - 1], samples[i])
+                        print(f"[YawLock] Sample {i} (leg {seg['leg']}): START strafe, lock yaw={locked_yaw:.1f}°")
+                    break
+        
         # 计算yaw（水平朝向）
-        if i < len(samples) - 1:
-            yaw = _yaw_degrees_xy(p, samples[i + 1])
+        if in_strafe and locked_yaw is not None:
+            # During strafe: keep yaw locked (no rotation)
+            yaw = locked_yaw
+            strafe_lock_count += 1
         else:
-            yaw = _yaw_degrees_xy(samples[i - 1], p) if i > 0 else 0.0
+            # Normal movement: calculate yaw from trajectory
+            if i < len(samples) - 1:
+                yaw = _yaw_degrees_xy(p, samples[i + 1])
+            else:
+                yaw = _yaw_degrees_xy(samples[i - 1], p) if i > 0 else 0.0
+            
+            # Reset lock when exiting strafe
+            if locked_yaw is not None and not in_strafe:
+                print(f"[YawLock] Sample {i}: END strafe, unlock (was {locked_yaw:.1f}°, now {yaw:.1f}°)")
+                locked_yaw = None
 
         # 计算pitch（相机俯仰角，根据坡度）
         pitch = 0.0
@@ -648,7 +675,7 @@ def generate_all_sequences(
 
             transform_key_interp = str(base_transform_key_interp or "auto").lower()
 
-            nav_result = _build_nav_points_with_retry(
+            nav_points, updated_roam_cfg = _build_nav_points_with_retry(
                 nav=nav,
                 world=world,
                 roam_cfg=roam_cfg,
@@ -656,9 +683,11 @@ def generate_all_sequences(
                 run_id=run_id,
                 parent_config=seq_cfg,
             )
+            actual_seed = updated_roam_cfg.get("seed")
+            strafe_segments = updated_roam_cfg.get("_strafe_segments", [])
 
-            if len(nav_result.nav_points) < 2:
-                error_msg = f"NavRoam produced too few points ({len(nav_result.nav_points)}). "
+            if len(nav_points) < 2:
+                error_msg = f"NavRoam produced too few points ({len(nav_points)}). "
                 error_msg += "Possible causes: "
                 error_msg += "(1) NavMesh coverage too small, "
                 error_msg += "(2) random_point_radius_cm too small, "
@@ -666,7 +695,7 @@ def generate_all_sequences(
                 raise RuntimeError(error_msg)
 
             fixed_result = _apply_fixed_speed_if_configured(
-                nav_points=nav_result.nav_points,
+                nav_points=nav_points,
                 fps=fps,
                 duration_seconds=duration_seconds,
                 total_frames=total_frames,
@@ -681,6 +710,25 @@ def generate_all_sequences(
                 total_frames=fixed_result.total_frames,
                 z_offset_cm=z_offset_cm,
             )
+            
+            # Map strafe segments from nav_points indices to sample indices
+            strafe_sample_ranges = []
+            if strafe_segments and len(nav_points) > 0 and len(sample_result.samples) > 1:
+                for seg in strafe_segments:
+                    # Approximate mapping: seg["start_idx"] in nav_points -> sample index
+                    start_ratio = seg["start_idx"] / len(nav_points)
+                    end_ratio = seg["end_idx"] / len(nav_points)
+                    start_sample = int(start_ratio * len(sample_result.samples))
+                    end_sample = int(end_ratio * len(sample_result.samples))
+                    strafe_sample_ranges.append({
+                        "start": max(0, start_sample),
+                        "end": min(len(sample_result.samples) - 1, end_sample),
+                        "leg": seg["leg"],
+                    })
+                logger.info(f"Mapped {len(strafe_sample_ranges)} strafe segments to sample indices")
+                logger.info("Strafe yaw-locked sample ranges:")
+                for sr in strafe_sample_ranges:
+                    logger.info(f"  Leg {sr['leg']}: samples [{sr['start']}..{sr['end']}]")
 
             # Prefer linear interpolation for safety (avoid cubic overshoot through walls)
             if interp_override:
@@ -696,6 +744,7 @@ def generate_all_sequences(
                 key_interval_frames=sample_result.key_interval_frames,
                 camera_pitch_from_slope=camera_pitch_from_slope,
                 max_camera_pitch=max_camera_pitch,
+                strafe_sample_ranges=strafe_sample_ranges,
             )
             logger.info(f"NavRoam generated {len(key_result.transform_keys)} keys")
 
@@ -731,7 +780,7 @@ def generate_all_sequences(
                 {
                     "name": sequence_name,
                     "path": asset_path,
-                    "seed": nav_result.actual_seed,
+                    "seed": actual_seed,
                 }
             )
             

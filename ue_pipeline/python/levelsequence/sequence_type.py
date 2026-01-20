@@ -78,3 +78,10 @@ class SampleResult:
 @dataclass
 class KeyGenResult:
     transform_keys: list
+
+
+@dataclass
+class StrafeResult:
+    strafe_points: list
+    strafe_distance_cm: float
+    strafe_time_sec: float

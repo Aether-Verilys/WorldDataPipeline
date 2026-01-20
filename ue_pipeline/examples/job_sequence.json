@@ -24,7 +24,12 @@
       "project_to_nav": true,
       "z_offset_cm": 170.0,
       "use_connectivity_analysis": true,
-      "connectivity_sample_density": 1.0
+      "connectivity_sample_density": 1.0,
+      "strafe_enabled": true,
+      "strafe_probability": 0.5,
+      "strafe_distance_cm": 1000.0,
+      "strafe_direction": "random",
+      "strafe_min_interval_legs": 2
     },
     "force_zero_pitch_roll": true,
     "max_yaw_rate_deg_per_sec": 30.0,
@@ -36,25 +41,5 @@
     "camera_component_name": "Camera",
     "actor_blueprint_class_path": "/Game/FirstPerson/Blueprints/BP_Cameraman",
     "actor_binding_mode": "sequence_spawnable"
-  },
-  "ue_config": {
-    "editor_cmd": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
-    "project_path": "default",
-    "output_base_dir": "default",
-    "exclude_map_names": [
-      "Overview"
-    ],
-    "scenes": {
-      "LevelPrototyping": {
-        "maps": [
-          {
-            "name": "Lvl_FirstPerson",
-            "path": "/Game/LevelPrototyping/Lvl_FirstPerson",
-            "low_mesh": false,
-            "bake_navmesh": true
-          }
-        ]
-      }
-    }
   }
 }

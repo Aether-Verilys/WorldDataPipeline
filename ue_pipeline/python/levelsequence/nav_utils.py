@@ -237,6 +237,164 @@ def find_path_points(nav, world, start: unreal.Vector, end: unreal.Vector):
     return []
 
 
+def generate_lateral_strafe(
+    nav,
+    world,
+    origin: unreal.Vector,
+    forward_direction: unreal.Vector,
+    strafe_config: dict,
+    project: bool = True,
+) -> dict:
+    """
+    Generate a round-trip lateral strafe movement using navigation raycast.
+    
+    Uses NavigationSystemV1.navigation_raycast() to detect obstacles and adjust
+    strafe distance to stop before collision.
+    
+    Returns a dict with:
+        - strafe_points: list of points for the strafe path (origin -> strafe_point -> origin)
+        - strafe_distance_cm: actual achieved strafe distance
+        - strafe_time_sec: time for the entire round-trip
+    """
+    strafe_distance_cm = float(strafe_config.get("strafe_distance_cm", 200.0))
+    strafe_direction = strafe_config.get("strafe_direction", "random").lower()
+    actor_speed_cm_per_sec = float(strafe_config.get("actor_speed_cm_per_sec", 200.0))
+    min_distance_threshold_cm = 50.0  # Minimum strafe distance before giving up
+    safety_margin_cm = 20.0  # Stop this far before obstacle
+    
+    # Normalize forward direction (ignore Z)
+    forward_2d = unreal.Vector(forward_direction.x, forward_direction.y, 0.0)
+    forward_len = math.sqrt(forward_2d.x**2 + forward_2d.y**2)
+    if forward_len < 0.001:
+        # No clear forward direction, skip strafe
+        return {"strafe_points": [], "strafe_distance_cm": 0.0, "strafe_time_sec": 0.0}
+    
+    forward_normalized = unreal.Vector(
+        forward_2d.x / forward_len,
+        forward_2d.y / forward_len,
+        0.0
+    )
+    
+    # Calculate perpendicular vector (90° rotation in XY plane)
+    # Left: (-y, x), Right: (y, -x)
+    if strafe_direction == "left":
+        perpendicular = unreal.Vector(-forward_normalized.y, forward_normalized.x, 0.0)
+    elif strafe_direction == "right":
+        perpendicular = unreal.Vector(forward_normalized.y, -forward_normalized.x, 0.0)
+    else:  # "random" or "both"
+        # Randomly choose left or right
+        if random.random() < 0.5:
+            perpendicular = unreal.Vector(-forward_normalized.y, forward_normalized.x, 0.0)
+        else:
+            perpendicular = unreal.Vector(forward_normalized.y, -forward_normalized.x, 0.0)
+    
+    try:
+        # Project origin to NavMesh
+        origin_on_nav = project_to_nav(nav, world, origin) if project else origin
+        
+        # Calculate desired strafe endpoint
+        strafe_offset = unreal.Vector(
+            perpendicular.x * strafe_distance_cm,
+            perpendicular.y * strafe_distance_cm,
+            0.0
+        )
+        desired_target = unreal.Vector(
+            origin_on_nav.x + strafe_offset.x,
+            origin_on_nav.y + strafe_offset.y,
+            origin_on_nav.z  # Keep same Z height
+        )
+        
+        # Use navigation raycast to check if path is clear
+        nav_system = unreal.NavigationSystemV1.get_navigation_system(world)
+        if nav_system is None:
+            print("[NavUtils] Strafe failed: NavigationSystemV1 not available")
+            return {"strafe_points": [], "strafe_distance_cm": 0.0, "strafe_time_sec": 0.0}
+        
+        hit_location = unreal.NavigationSystemV1.navigation_raycast(
+            world_context_object=world,
+            ray_start=origin_on_nav,
+            ray_end=desired_target,
+            filter_class=None,
+            querier=None
+        )
+        
+        # Determine actual strafe target
+        if hit_location is None:
+            # Path is clear, use full distance
+            strafe_target = desired_target
+            actual_strafe_dist = strafe_distance_cm
+            print(f"[NavUtils] Strafe raycast: clear path, full distance {strafe_distance_cm:.0f}cm")
+        else:
+            # Path blocked, use hit location minus safety margin
+            hit_dist = distance_cm(origin_on_nav, hit_location)
+            safe_dist = max(min_distance_threshold_cm, hit_dist - safety_margin_cm)
+            
+            if safe_dist < min_distance_threshold_cm:
+                print(f"[NavUtils] Strafe blocked too close (hit at {hit_dist:.0f}cm), skipping")
+                return {"strafe_points": [], "strafe_distance_cm": 0.0, "strafe_time_sec": 0.0}
+            
+            # Calculate safe target point
+            scale = safe_dist / strafe_distance_cm
+            strafe_target = unreal.Vector(
+                origin_on_nav.x + strafe_offset.x * scale,
+                origin_on_nav.y + strafe_offset.y * scale,
+                origin_on_nav.z
+            )
+            actual_strafe_dist = safe_dist
+            print(f"[NavUtils] Strafe raycast: blocked at {hit_dist:.0f}cm, using safe distance {safe_dist:.0f}cm")
+        
+        # Project final target to NavMesh
+        if project:
+            strafe_target = project_to_nav(nav, world, strafe_target)
+        
+        # Validate minimum distance
+        final_dist = distance_cm(origin_on_nav, strafe_target)
+        if final_dist < min_distance_threshold_cm:
+            print(f"[NavUtils] Strafe final distance too short ({final_dist:.0f}cm), skipping")
+            return {"strafe_points": [], "strafe_distance_cm": 0.0, "strafe_time_sec": 0.0}
+        
+        # Create linear path: origin -> strafe_target -> origin
+        # Use 10-20 intermediate points for smooth animation (based on distance)
+        num_steps = max(10, int(final_dist / 50.0))  # One point per ~50cm
+        
+        path_to_strafe = [origin_on_nav]
+        for step in range(1, num_steps + 1):
+            t = float(step) / float(num_steps)
+            interp_point = unreal.Vector(
+                origin_on_nav.x + (strafe_target.x - origin_on_nav.x) * t,
+                origin_on_nav.y + (strafe_target.y - origin_on_nav.y) * t,
+                origin_on_nav.z + (strafe_target.z - origin_on_nav.z) * t,
+            )
+            path_to_strafe.append(interp_point)
+        
+        # Return path (same points in reverse)
+        path_from_strafe = list(reversed(path_to_strafe))
+        
+        # Combine paths (avoid duplicate middle point)
+        round_trip_points = path_to_strafe + path_from_strafe[1:]
+        
+        # Calculate total distance and time
+        total_strafe_distance = 0.0
+        for i in range(len(round_trip_points) - 1):
+            total_strafe_distance += distance_cm(round_trip_points[i], round_trip_points[i + 1])
+        
+        strafe_time_sec = total_strafe_distance / actor_speed_cm_per_sec
+        
+        print(f"[NavUtils] Strafe success: target={strafe_distance_cm:.0f}cm, actual={final_dist:.0f}cm, "
+              f"path_length={total_strafe_distance:.0f}cm, time={strafe_time_sec:.2f}s")
+        
+        return {
+            "strafe_points": round_trip_points,
+            "strafe_distance_cm": final_dist,
+            "strafe_time_sec": strafe_time_sec,
+        }
+        
+    except Exception as e:
+        print(f"[NavUtils] Strafe failed with exception: {e}")
+        traceback.print_exc()
+        return {"strafe_points": [], "strafe_distance_cm": 0.0, "strafe_time_sec": 0.0}
+
+
 def subdivide_polyline(points, step_cm: float):
     if len(points) < 2:
         return points
@@ -374,6 +532,18 @@ def build_multi_leg_nav_path(nav, world, cfg: dict, map_path: str | None = None)
     current = a
     accumulated_time_sec = 0.0
     leg = 0
+    last_strafe_leg = -999  # Track last leg where strafe occurred
+    strafe_segments = []  # Track which point ranges are strafe movements
+    
+    # Extract strafe configuration
+    strafe_enabled = bool(cfg.get("strafe_enabled", False))
+    strafe_probability = float(cfg.get("strafe_probability", 0.2))
+    strafe_min_interval_legs = int(cfg.get("strafe_min_interval_legs", 2))
+    strafe_cfg = {
+        "strafe_distance_cm": float(cfg.get("strafe_distance_cm", 200.0)),
+        "strafe_direction": cfg.get("strafe_direction", "random"),
+        "actor_speed_cm_per_sec": actor_speed_cm_per_sec,
+    }
     
     while accumulated_time_sec < target_duration_sec and leg < max_legs:
         leg_pts = None
@@ -429,6 +599,55 @@ def build_multi_leg_nav_path(nav, world, cfg: dict, map_path: str | None = None)
         accumulated_time_sec += leg_time_sec
         leg += 1
         
+        # Check if we should add a strafe movement after this leg
+        if strafe_enabled and accumulated_time_sec < target_duration_sec:
+            # Check interval requirement
+            legs_since_last_strafe = leg - last_strafe_leg
+            if legs_since_last_strafe >= strafe_min_interval_legs:
+                # Roll for strafe probability
+                if random.random() < strafe_probability:
+                    # Calculate forward direction from this leg
+                    if len(leg_pts) >= 2:
+                        leg_start = leg_pts[0]
+                        leg_end = leg_pts[-1]
+                        forward_vec = unreal.Vector(
+                            leg_end.x - leg_start.x,
+                            leg_end.y - leg_start.y,
+                            0.0  # Ignore Z for direction
+                        )
+                        
+                        # Generate strafe movement
+                        strafe_result = generate_lateral_strafe(
+                            nav, world, current, forward_vec, strafe_cfg, project
+                        )
+                        
+                        if strafe_result["strafe_points"]:
+                            strafe_pts = strafe_result["strafe_points"]
+                            strafe_time = strafe_result["strafe_time_sec"]
+                            
+                            # Record strafe segment metadata
+                            strafe_start_idx = len(points)
+                            
+                            # Add strafe points (skip first if duplicate)
+                            if distance_cm(points[-1], strafe_pts[0]) < 0.1:
+                                strafe_pts = strafe_pts[1:]
+                            
+                            points.extend(strafe_pts)
+                            strafe_end_idx = len(points)
+                            
+                            # Store strafe segment range
+                            strafe_segments.append({
+                                "start_idx": strafe_start_idx,
+                                "end_idx": strafe_end_idx,
+                                "leg": leg,
+                            })
+                            
+                            current = strafe_pts[-1]  # Update current position
+                            accumulated_time_sec += strafe_time
+                            last_strafe_leg = leg
+                            
+                            print(f"[WorkerCreateSequence] ✓ Added strafe after leg {leg}: +{strafe_time:.2f}s (points {strafe_start_idx}-{strafe_end_idx})")
+        
         print(f"[WorkerCreateSequence] NavRoam: accumulated_time={accumulated_time_sec:.2f}s / {target_duration_sec:.1f}s ({accumulated_time_sec/target_duration_sec*100:.1f}%), legs={leg}")
 
     points = subdivide_polyline(points, min_step_cm)
@@ -439,6 +658,12 @@ def build_multi_leg_nav_path(nav, world, cfg: dict, map_path: str | None = None)
     total_distance_cm = sum(distance_cm(points[i], points[i+1]) for i in range(len(points)-1))
     final_time_sec = total_distance_cm / actor_speed_cm_per_sec
     print(f"[WorkerCreateSequence] NavRoam complete: legs={leg}, points={len(points)}, distance={total_distance_cm:.0f}cm ({total_distance_cm/100:.1f}m), estimated_time={final_time_sec:.2f}s")
+    if strafe_segments:
+        print(f"[WorkerCreateSequence] NavRoam: {len(strafe_segments)} strafe segments included")
+    
+    # Store strafe metadata in config for downstream processing
+    cfg["_strafe_segments"] = strafe_segments
+    
     return points
 
 

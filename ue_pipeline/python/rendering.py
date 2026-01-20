@@ -470,20 +470,24 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
     ue_config = manifest.get("ue_config", {})
     
     if base_output_path:
-        # Extract scene folder name from map_path
-        # Map path format: /Game/LevelPrototyping/test
-        # We want "LevelPrototyping" (the scene folder, not the map name)
+        # Extract scene folder name from sequence_path (not map_path)
+        # Sequence path format: /Game/SceneName/Sequence/test_001
+        # We want "SceneName" (the scene root folder)
         scene_folder = "UnknownScene"
         
-        if map_path:
-            # Split path and get the second-to-last part (scene folder)
-            # /Game/LevelPrototyping/test -> ["", "Game", "LevelPrototyping", "test"]
-            path_parts = map_path.split("/")
-            if len(path_parts) >= 3:
-                # Get the folder containing the map (second to last)
-                scene_folder = path_parts[-2]
+        if sequence_path:
+            # Split path: /Game/JapaneseVilliage/Sequence/JapaneseVilliage001
+            # -> ['', 'Game', 'JapaneseVilliage', 'Sequence', 'JapaneseVilliage001']
+            path_parts = sequence_path.split("/")
+            if len(path_parts) >= 4:
+                # Get the scene folder (third element after split, index 2)
+                # This is the folder between /Game/ and /Sequence/
+                scene_folder = path_parts[2]
+            elif len(path_parts) >= 3:
+                # Fallback: use second part if structure is shorter
+                scene_folder = path_parts[2]
             else:
-                # Fallback to last part if path is too short
+                # Last resort
                 scene_folder = path_parts[-1] if path_parts else "UnknownScene"
         
         # Extract sequence name from sequence_path
