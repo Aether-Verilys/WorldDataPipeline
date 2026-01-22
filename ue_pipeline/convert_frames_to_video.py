@@ -116,16 +116,28 @@ def extract_config_data(config: dict, framerate: int):
 def build_output_path(base_output_path: str, project_path: str, map_path: str, sequence_path: str, ue_config: dict) -> tuple:
     """Build output directory path and extract names"""
     
-    # Extract scene folder name from map_path
-    # Map path format: /Game/LevelPrototyping/test
-    # We want "LevelPrototyping" (the scene folder, not the map name)
-    path_parts = map_path.split("/")
-    if len(path_parts) >= 3:
-        # Get the folder containing the map (second to last)
-        scene_folder = path_parts[-2]
-    else:
-        # Fallback to last part if path is too short
-        scene_folder = path_parts[-1] if path_parts else "UnknownScene"
+    # Import shared utility for extracting scene folder
+    try:
+        script_dir = Path(__file__).parent  # ue_pipeline/
+        repo_root = script_dir.parent       # WorldDataPipeline/
+        
+        # Add both repo root and python dir to sys.path
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        if str(script_dir / 'python') not in sys.path:
+            sys.path.insert(0, str(script_dir / 'python'))
+        
+        from ue_pipeline.python.job_utils import extract_scene_folder_from_sequence_path
+        
+        scene_folder = extract_scene_folder_from_sequence_path(sequence_path)
+    except Exception as e:
+        print(f"\033[93mWarning: Failed to import path utility, using fallback: {e}\033[0m")
+        # Fallback: inline extraction
+        scene_folder = "UnknownScene"
+        if sequence_path:
+            path_parts = sequence_path.split("/")
+            if len(path_parts) >= 3:
+                scene_folder = path_parts[2]
     
     # Extract map name for reference
     map_name = map_path.split('/')[-1]
@@ -134,6 +146,7 @@ def build_output_path(base_output_path: str, project_path: str, map_path: str, s
     sequence_name = sequence_path.split('/')[-1]
     
     # Construct output directory path: base/scene_folder/sequence_name
+    # This matches the logic in rendering.py
     output_dir = Path(base_output_path) / scene_folder / sequence_name
     
     return output_dir, map_name, sequence_name

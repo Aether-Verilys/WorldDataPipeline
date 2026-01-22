@@ -1,7 +1,6 @@
 {
   "job_type": "render",
   "job_id": "job-render-001",
-  "map": "/Game/RockyDesert/Maps/Demo",
   "rendering": {
     "preset": "/Game/CameraController/Pending_MoviePipelinePrimaryConfig",
     "framerate": 30,

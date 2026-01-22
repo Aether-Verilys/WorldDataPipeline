@@ -227,3 +227,38 @@ def merge_configs(manifest: dict) -> dict:
     
     return manifest
 
+
+def extract_scene_folder_from_sequence_path(sequence_path: str) -> str:
+    """
+    从序列路径中提取场景文件夹名称
+    
+    Sequence path format: /Game/SceneName/Sequence/SequenceName
+    Returns: SceneName (the folder between /Game/ and /Sequence/)
+    
+    Examples:
+        /Game/Hong_Kong_Street/Sequence/Demo001 -> Hong_Kong_Street
+        /Game/JapaneseVilliage/Sequence/JapaneseVilliage001 -> JapaneseVilliage
+    
+    Args:
+        sequence_path: UE asset path to the sequence
+        
+    Returns:
+        Scene folder name, or "UnknownScene" if extraction fails
+    """
+    if not sequence_path:
+        return "UnknownScene"
+    
+    # Split path: /Game/Hong_Kong_Street/Sequence/Demo001
+    # -> ['', 'Game', 'Hong_Kong_Street', 'Sequence', 'Demo001']
+    path_parts = sequence_path.split("/")
+    
+    if len(path_parts) >= 4:
+        # Get the scene folder (third element after split, index 2)
+        # This is the folder between /Game/ and /Sequence/
+        return path_parts[2]
+    elif len(path_parts) >= 3:
+        # Fallback: use third part if structure is shorter
+        return path_parts[2]
+    else:
+        # Last resort
+        return path_parts[-1] if path_parts else "UnknownScene"

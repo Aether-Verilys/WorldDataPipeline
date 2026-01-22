@@ -470,25 +470,25 @@ def render_sequence_from_manifest(manifest: dict) -> dict:
     ue_config = manifest.get("ue_config", {})
     
     if base_output_path:
-        # Extract scene folder name from sequence_path (not map_path)
-        # Sequence path format: /Game/SceneName/Sequence/test_001
-        # We want "SceneName" (the scene root folder)
-        scene_folder = "UnknownScene"
-        
-        if sequence_path:
-            # Split path: /Game/JapaneseVilliage/Sequence/JapaneseVilliage001
-            # -> ['', 'Game', 'JapaneseVilliage', 'Sequence', 'JapaneseVilliage001']
-            path_parts = sequence_path.split("/")
-            if len(path_parts) >= 4:
-                # Get the scene folder (third element after split, index 2)
-                # This is the folder between /Game/ and /Sequence/
-                scene_folder = path_parts[2]
-            elif len(path_parts) >= 3:
-                # Fallback: use second part if structure is shorter
-                scene_folder = path_parts[2]
-            else:
-                # Last resort
-                scene_folder = path_parts[-1] if path_parts else "UnknownScene"
+        # Extract scene folder name from sequence_path using shared utility
+        try:
+            # Import here to avoid circular dependency
+            import sys
+            from pathlib import Path
+            script_dir = Path(__file__).parent
+            if str(script_dir) not in sys.path:
+                sys.path.insert(0, str(script_dir))
+            from job_utils import extract_scene_folder_from_sequence_path
+            
+            scene_folder = extract_scene_folder_from_sequence_path(sequence_path)
+        except Exception as e:
+            unreal.log_warning(f"[Rendering] Failed to import path utility, using fallback: {e}")
+            # Fallback: inline extraction
+            scene_folder = "UnknownScene"
+            if sequence_path:
+                path_parts = sequence_path.split("/")
+                if len(path_parts) >= 3:
+                    scene_folder = path_parts[2]
         
         # Extract sequence name from sequence_path
         # Sequence path format: /Game/LevelPrototyping/Sequence/test_001

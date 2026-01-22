@@ -6,7 +6,8 @@
   "map": "/Game/LevelPrototyping/test",
   
   "sequence_config": {
-    "sequence_count": 1
+    "sequence_count": 1,
+    "duration_seconds": 60
   },
   
   "ue_config": {

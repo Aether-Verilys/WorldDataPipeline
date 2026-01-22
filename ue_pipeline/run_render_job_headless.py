@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-UE Render Job Executor (Headless Mode)
-Execute a render job using command-line MRQ execution
-"""
 import argparse
 import json
 import os
@@ -22,40 +17,8 @@ if str(repo_root) not in sys.path:
 
 from ue_pipeline.python.logger import logger
 from ue_pipeline.python import job_utils
-
-def scan_local_sequences(project_path: str, sequence_dir: str) -> list:
-    """
-    Scan local file system for level sequence assets.
-    Converts /Game/SceneName/Sequence to Content/SceneName/Sequence
-    """
-    # Convert UE asset path to local file system path
-    # /Game/SceneName/Sequence -> Content/SceneName/Sequence
-    ue_path_parts = sequence_dir.split('/')
-    if len(ue_path_parts) >= 2 and ue_path_parts[1] == 'Game':
-        relative_path = '/'.join(ue_path_parts[2:])  # Remove /Game
-        project_dir = Path(project_path).parent
-        content_dir = project_dir / 'Content' / relative_path
-        
-        logger.info(f"Scanning local directory: {content_dir}")
-        
-        if not content_dir.exists():
-            logger.error(f"Directory does not exist: {content_dir}")
-            return []
-        
-        # Find all .uasset files (LevelSequence assets)
-        sequences = []
-        for uasset_file in content_dir.glob('*.uasset'):
-            # Convert back to UE asset path
-            # Content/SceneName/Sequence/MySeq.uasset -> /Game/SceneName/Sequence/MySeq
-            asset_name = uasset_file.stem
-            ue_asset_path = f"{sequence_dir}/{asset_name}"
-            sequences.append(ue_asset_path)
-            logger.info(f"  Found: {ue_asset_path}")
-        
-        return sorted(sequences)
-    else:
-        logger.error(f"Invalid UE asset path format: {sequence_dir}")
-        return []
+from ue_pipeline.python.scene_registry import SceneRegistry
+from ue_pipeline.python import scene_scanner
 
 
 def run_batch_render(ue_editor: str, project: str, manifest: dict, worker: str, job_id: str, full_config: dict, output_base_dir: str) -> int:
@@ -67,7 +30,7 @@ def run_batch_render(ue_editor: str, project: str, manifest: dict, worker: str, 
     sequence_dir = manifest.get('sequence_dir')
     logger.info(f"Scanning for sequences in: {sequence_dir}")
     
-    sequences = scan_local_sequences(project, sequence_dir)
+    sequences = scene_scanner.scan_local_sequences(project, sequence_dir)
     
     if not sequences:
         logger.error("No sequences found")
@@ -172,14 +135,6 @@ def get_render_config(manifest: dict, ue_config: dict) -> dict:
         'map': map_path,
         'preset': config_preset
     }
-
-
-def ensure_output_directory(output_path: str):
-    if output_path:
-        abs_output_path = os.path.abspath(output_path)
-        if not os.path.exists(abs_output_path):
-            os.makedirs(abs_output_path, exist_ok=True)
-            logger.info(f"Created output directory: {abs_output_path}")
 
 
 def wait_for_ue_render_processes(timeout_minutes: int = 120) -> bool:
@@ -387,7 +342,6 @@ def run_ue_job(ue_editor: str, project: str, merged_manifest: dict, worker: str,
     # Use the already merged manifest (no template field)
     manifest = merged_manifest.copy()
     
-    # Inject full ue_config into manifest for worker to use
     manifest['ue_config'] = full_config
     
     # Inject output_base_dir into rendering section for worker
@@ -404,12 +358,10 @@ def run_ue_job(ue_editor: str, project: str, merged_manifest: dict, worker: str,
         with os.fdopen(temp_manifest_fd, 'w', encoding='utf-8') as f:
             json.dump(manifest, f, indent=2)
         
-        # Set manifest path as environment variable for Python script to read
         os.environ['UE_RENDER_MANIFEST'] = temp_manifest_path
         
         abs_project = os.path.abspath(project)
         
-        # Build UE command-line arguments
         ue_args = [
             ue_editor,
             abs_project,
@@ -630,10 +582,130 @@ def main():
     # Load full config for scene lookup
     full_config = job_utils.load_default_ue_config()
     
-    # Check if sequence is provided or should scan directory
-    sequence = manifest.get('sequence', '')
-    sequences_to_render = []
+    # 检查是否指定了map参数
+    map_path = manifest.get('map', '').strip()
+    sequence = manifest.get('sequence', '').strip()
     
+    # 如果没有map参数或为空，从本地工程扫描场景
+    if not map_path:
+        logger.separator(width=60, char='-')
+        logger.info("未指定地图参数，扫描当前工程场景...")
+        logger.separator(width=60, char='-')
+        logger.blank(1)
+        
+        # 加载扫描配置
+        scan_config = scene_scanner.load_scan_config()
+        
+        # 初始化数据库
+        db_path = os.environ.get('SCENE_REGISTRY_DB', 'database/scene_registry.db')
+        registry = SceneRegistry(db_path)
+        
+        # 扫描本地工程并选择场景
+        scene_name, maps = scene_scanner.select_scene_from_local_project(registry, project, scan_config)
+        logger.blank(1)
+        
+        # 依次处理每个地图
+        total_maps = len(maps)
+        failed_maps = []
+        
+        for map_idx, map_info in enumerate(maps, 1):
+            map_name = map_info['map_name']
+            map_path = map_info['map_path']
+            
+            logger.separator(width=60, char='=')
+            logger.info(f"处理地图 {map_idx}/{total_maps}: {map_name}")
+            logger.separator(width=60, char='=')
+            logger.kv("场景:", scene_name)
+            logger.kv("地图:", map_name)
+            logger.kv("路径:", map_path)
+            logger.blank(1)
+            
+            # 获取序列目录
+            map_parts = map_path.split('/')
+            if len(map_parts) >= 3:
+                scene_folder = map_parts[2]
+                sequence_dir = f"/Game/{scene_folder}/Sequence"
+                
+                logger.info(f"扫描序列目录: {sequence_dir}")
+                all_sequences = scene_scanner.scan_local_sequences(project, sequence_dir)
+                
+                if not all_sequences:
+                    logger.warning(f"未找到任何序列，跳过地图: {map_name}")
+                    failed_maps.append((map_name, "no sequences found"))
+                    continue
+                
+                # 根据地图名过滤序列（序列名前缀匹配地图名）
+                # 例如：地图 Demo 匹配序列 Demo001, Demo002
+                #      地图 Models(1) 匹配序列 Models(1)001
+                sequences = []
+                for seq_path in all_sequences:
+                    seq_name = seq_path.split('/')[-1]  # 获取序列名称
+                    # 检查序列名是否以地图名开头
+                    if seq_name.startswith(map_name):
+                        sequences.append(seq_path)
+                
+                if not sequences:
+                    logger.warning(f"未找到属于地图 '{map_name}' 的序列，跳过")
+                    logger.info(f"  提示: 序列名称应以地图名 '{map_name}' 开头")
+                    failed_maps.append((map_name, f"no sequences matching '{map_name}*'"))
+                    continue
+                
+                logger.info(f"找到 {len(sequences)} 个属于此地图的序列 (共扫描 {len(all_sequences)} 个)")
+                for seq in sequences:
+                    logger.info(f"  - {seq}")
+                logger.blank(1)
+                
+                # 依次渲染每个序列
+                for seq_idx, seq_path in enumerate(sequences, 1):
+                    logger.separator(width=60, char='-')
+                    logger.info(f"渲染序列 {seq_idx}/{len(sequences)}")
+                    logger.kv("序列:", seq_path)
+                    logger.separator(width=60, char='-')
+                    logger.blank(1)
+                    
+                    # 创建此序列的manifest
+                    seq_manifest = manifest.copy()
+                    seq_manifest['map'] = map_path
+                    seq_manifest['sequence'] = seq_path
+                    seq_manifest.pop('batch_mode', None)
+                    seq_manifest.pop('sequence_dir', None)
+                    
+                    # 渲染序列
+                    seq_job_id = f"{job_id}_map{map_idx}_seq{seq_idx}"
+                    exit_code = run_ue_job(ue_editor, project, seq_manifest, worker, 
+                                          seq_job_id, full_config, output_base_dir)
+                    
+                    if exit_code != 0:
+                        logger.error(f"序列渲染失败: {seq_path}")
+                        failed_maps.append((map_name, f"sequence {seq_path} failed"))
+                        break  # 此地图失败，跳到下一个地图
+                    
+                    logger.blank(1)
+            else:
+                logger.error(f"无效的地图路径格式: {map_path}")
+                failed_maps.append((map_name, "invalid map path"))
+                continue
+            
+            logger.blank(1)
+        
+        # 打印总结
+        logger.separator(width=60, char='=')
+        logger.header("渲染作业完成")
+        logger.separator(width=60, char='=')
+        logger.kv("场景:", scene_name)
+        logger.kv("总地图数:", total_maps)
+        logger.kv("成功:", total_maps - len(failed_maps))
+        logger.kv("失败:", len(failed_maps))
+        
+        if failed_maps:
+            logger.blank(1)
+            logger.info("失败的地图:")
+            for map_name, reason in failed_maps:
+                logger.info(f"  - {map_name}: {reason}")
+        
+        sys.exit(1 if failed_maps else 0)
+    
+    # 原有逻辑：指定了map参数
     if sequence:
         # Single sequence mode
         logger.info("Single sequence mode")
@@ -643,12 +715,6 @@ def main():
     else:
         # Batch mode: scan Sequence directory
         logger.info("Batch mode: scanning for sequences...")
-        
-        # Get map from manifest
-        map_path = manifest.get('map')
-        if not map_path:
-            logger.error("No 'map' specified in manifest")
-            sys.exit(1)
         
         # Derive Sequence directory from map path
         # e.g., /Game/RockyDesert/Maps/Demo -> /Game/RockyDesert/Sequence
@@ -685,7 +751,7 @@ def main():
     job_utils.validate_paths(ue_config, [worker])
     
     # Ensure output directory exists
-    ensure_output_directory(output_base_dir)
+    scene_scanner.ensure_output_directory(output_base_dir)
     
     # Run the job
     if sequence:
