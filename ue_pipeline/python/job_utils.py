@@ -3,6 +3,7 @@ import json
 import sys
 from pathlib import Path
 from ue_pipeline.python.logger import logger
+from ue_pipeline.python.worker_common import auto_append_date_to_output_dirs
 
 def load_manifest(manifest_path: str) -> dict:
     if not os.path.exists(manifest_path):
@@ -12,6 +13,10 @@ def load_manifest(manifest_path: str) -> dict:
     try:
         with open(manifest_path, 'r', encoding='utf-8') as f:
             manifest = json.load(f)
+        
+        # Automatically append current date to output directories
+        manifest = auto_append_date_to_output_dirs(manifest)
+        
         return manifest
     except Exception as e:
         logger.error(f"Cannot parse manifest: {e}")

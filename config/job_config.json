@@ -1,10 +1,12 @@
 {
-  "job_type": "render",
+  "job_type": "create_sequence",
   "job_id": "job-001",
-  "template": "ue_pipeline/examples/job_render.json",
-
+  "template": "ue_pipeline/examples/job_sequence.json",
   
-  "ue_config": {
-    "output_base_dir": "output/2026-01-20"
+  "map": "/Game/LevelPrototyping/test",
+  
+  "sequence_config": {
+    "sequence_count": 2,
+    "duration_seconds": 120
   }
 }

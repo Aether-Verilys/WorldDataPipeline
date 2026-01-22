@@ -1,7 +1,7 @@
 {
   "editor_cmd": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
   "project_path": "default",
-  "output_base_dir": "default",
+  "output_base_dir": "output",
   "exclude_map_names": [
     "Overview"
   ],

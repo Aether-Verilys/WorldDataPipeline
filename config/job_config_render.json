@@ -3,9 +3,5 @@
   "job_id": "job-001",
   "template": "ue_pipeline/examples/job_render.json",
   
-  "map": "/Game/LevelPrototyping/test",
-  
-  "ue_config": {
-    "output_base_dir": "output/2026-01-20"
-  }
+  "map": "/Game/LevelPrototyping/test"
 }

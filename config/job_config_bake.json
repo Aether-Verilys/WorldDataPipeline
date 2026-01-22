@@ -7,9 +7,5 @@
     "maps": [
       "/Game/Ruins/Maps/Demonstration"
     ]
-  },
-  
-  "ue_config": {
-    "output_base_dir": "output/2026-01-14"
   }
 }

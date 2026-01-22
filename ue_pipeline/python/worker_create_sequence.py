@@ -16,14 +16,9 @@ import unreal
 
 from logger import logger
 
-from ue_api import get_editor_world, get_actor_subsystem, load_map, load_blueprint_class
+from ue_api import get_editor_world, load_map, load_blueprint_class
 from worker_common import load_json as _load_json, resolve_manifest_path_from_env as _resolve_manifest_path_from_env
 
-# Setup import paths for UE direct execution environment
-try:
-    import levelsequence.nav_utils
-except ImportError:
-    pass
 
 from validators import validate_prerequisites
 from assets_manager import (
@@ -56,6 +51,13 @@ from levelsequence.sequence_type import (
     SampleResult,
     SequenceJobConfig,
 )
+from levelsequence.sequence_generation_config import (
+    GenerationContext,
+    TimingConfig,
+    CameraConfig,
+    PathConfig,
+    ExportConfig,
+)
 
 # Try to import levelsequence helpers
 try:
@@ -68,12 +70,119 @@ except ImportError:
     get_spawn_point_with_connectivity = None
     logger.warning("levelsequence.navmesh_connectivity not available")
 
+def generate_all_sequences(
+    *,
+    batch_count: int,
+    start_index: int,
+    map_path: str,
+    map_name: str,
+    output_dir: str,
+    actor_blueprint_class_path: str,
+    nav_roam_cfg: Dict[str, Any],
+    force_zero_pitch_roll: bool,
+    max_yaw_rate_deg_per_sec: Optional[float],
+    base_transform_key_interp: str,
+    sequence_config: Dict[str, Any],
+    camera_export_cfg: Optional[Dict[str, Any]],
+    ue_config: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    completed_sequences = []
 
-def _is_instance_of(actor: Any, cls: Any) -> bool:
-    try:
-        return cls is not None and actor is not None and isinstance(actor, cls)
-    except Exception:
-        return False
+    world, nav = _prepare_sequence_generation_run(
+        map_path=map_path,
+        actor_blueprint_class_path=actor_blueprint_class_path,
+        output_dir=output_dir,
+        nav_roam_cfg=nav_roam_cfg,
+    )
+
+    # Normalize config once  
+    seq_cfg = sequence_config or {}
+    roam_cfg = nav_roam_cfg or {}
+    
+    # Pre-compute connectivity analysis ONCE before batch loop
+    # Cache will be reused for all sequences in this batch run
+    use_connectivity_analysis = bool(roam_cfg.get("use_connectivity_analysis", True))
+    if use_connectivity_analysis and NAVMESH_CONNECTIVITY_AVAILABLE and get_spawn_point_with_connectivity is not None:
+        logger.info("========================================")
+        logger.info("PRE-COMPUTING CONNECTIVITY ANALYSIS")
+        logger.info("========================================")
+        try:
+            origin = get_spawn_point_with_connectivity(nav, world, map_path, roam_cfg)
+            logger.info(f"✓ Connectivity analysis completed, spawn point: ({origin.x:.2f}, {origin.y:.2f}, {origin.z:.2f})")
+            logger.info("Cache will be reused for all sequences in this batch run")
+        except Exception as e:
+            logger.warning(f"Connectivity analysis pre-computation failed: {e}")
+        logger.info("========================================")
+
+    fps = int(seq_cfg.get("fps", 30))
+    base_duration_seconds = float(seq_cfg.get("duration_seconds", 60.0))
+    fixed_speed_cfg = seq_cfg.get("fixed_speed_cm_per_sec", None)
+    strict_duration = bool(seq_cfg.get("strict_duration", False))
+
+    camera_pitch_from_slope = bool(seq_cfg.get("camera_pitch_from_slope", False))
+    max_camera_pitch = float(seq_cfg.get("max_camera_pitch_deg", 25.0))
+    max_pitch_rate = float(seq_cfg.get("max_pitch_rate_deg_per_sec", 20.0))
+
+    z_offset_cm = float(roam_cfg.get("z_offset_cm", 0.0))
+    interp_override = roam_cfg.get("interpolation", None)
+
+    # Create independent configuration objects
+    context = GenerationContext(
+        nav=nav,
+        world=world,
+        map_path=map_path,
+        map_name=map_name,
+        output_dir=output_dir,
+        actor_blueprint_class_path=actor_blueprint_class_path,
+    )
+    
+    timing = TimingConfig(
+        fps=fps,
+        base_duration_seconds=base_duration_seconds,
+        fixed_speed_cfg=fixed_speed_cfg,
+        strict_duration=strict_duration,
+    )
+    
+    camera = CameraConfig(
+        camera_pitch_from_slope=camera_pitch_from_slope,
+        max_camera_pitch=max_camera_pitch,
+        max_pitch_rate=max_pitch_rate,
+        force_zero_pitch_roll=force_zero_pitch_roll,
+        max_yaw_rate_deg_per_sec=max_yaw_rate_deg_per_sec,
+    )
+    
+    path = PathConfig(
+        roam_cfg=roam_cfg,
+        seq_cfg=seq_cfg,
+        z_offset_cm=z_offset_cm,
+        interp_override=interp_override,
+        base_transform_key_interp=base_transform_key_interp,
+    )
+    
+    export = ExportConfig(
+        camera_export_cfg=camera_export_cfg,
+        ue_config=ue_config,
+    )
+
+    for batch_idx in range(batch_count):
+        try:
+            sequence_info = _generate_single_sequence(
+                batch_idx=batch_idx,
+                batch_count=batch_count,
+                start_index=start_index,
+                context=context,
+                timing=timing,
+                camera=camera,
+                path=path,
+                export=export,
+            )
+            completed_sequences.append(sequence_info)
+        except Exception as e:
+            logger.error(f"in batch {batch_idx + 1}: {e}")
+            traceback.print_exc()
+            continue
+    
+    return completed_sequences
 
 
 def _yaw_degrees_xy(a: unreal.Vector, b: unreal.Vector) -> float:
@@ -101,45 +210,6 @@ def _calculate_pitch_from_slope(a: unreal.Vector, b: unreal.Vector, max_pitch_de
 
     return float(slope_angle)
 
-def _find_first_startpoint(mode: str = "player_start"):
-    mode = (mode or "player_start").lower()
-    # 使用 EditorActorSubsystem 获取所有场景Actor
-    actor_subsystem = get_actor_subsystem()
-    actors = actor_subsystem.get_all_level_actors()
-
-    player_start_cls = getattr(unreal, "PlayerStart", None)
-    target_point_cls = getattr(unreal, "TargetPoint", None)
-
-    if mode in ("player_start", "playerstart"):
-        for a in actors:
-            if _is_instance_of(a, player_start_cls):
-                return a
-
-    if mode in ("target_point", "targetpoint"):
-        for a in actors:
-            if _is_instance_of(a, target_point_cls):
-                return a
-
-    # Fallback: any actor whose name/label contains 'start'
-    for a in actors:
-        try:
-            if a is None:
-                continue
-            name = (a.get_name() or "")
-            label_fn = getattr(a, "get_actor_label", None)
-            label = label_fn() if callable(label_fn) else ""
-            s = f"{name} {label}".lower()
-            if "start" in s:
-                return a
-        except Exception:
-            continue
-
-    # Last resort: return the first PlayerStart/TargetPoint if any
-    for a in actors:
-        if _is_instance_of(a, player_start_cls) or _is_instance_of(a, target_point_cls):
-            return a
-    return None
-
 
 def _find_existing_max_index(output_dir: str, map_name: str) -> int:
     """Find existing max sequence index in output dir for naming continuity."""
@@ -161,13 +231,6 @@ def _find_existing_max_index(output_dir: str, map_name: str) -> int:
         logger.warning(f"Failed to check existing sequences: {e}")
         return 0
     return existing_max_index
-
-
-def _as_float(v: Any, default: float = 0.0) -> float:
-    try:
-        return float(v)
-    except Exception:
-        return float(default)
 
 
 def _resolve_manifest_path(argv: List[str]) -> str:
@@ -215,7 +278,6 @@ def _build_nav_points_with_retry(
     world: Any,
     roam_cfg: Dict[str, Any],
     map_path: str,
-    run_id: int,
     parent_config: Optional[Dict[str, Any]] = None,
 ) -> tuple[list, Dict[str, Any]]:
     seed_cfg = roam_cfg.get("seed", None)
@@ -275,6 +337,245 @@ def _build_nav_points_with_retry(
             raise
 
     raise RuntimeError("Failed to generate nav path after retries")
+
+
+def _generate_single_sequence(
+    *,
+    batch_idx: int,
+    batch_count: int,
+    start_index: int,
+    context: GenerationContext,
+    timing: TimingConfig,
+    camera: CameraConfig,
+    path: PathConfig,
+    export: ExportConfig,
+) -> Dict[str, Any]:
+    """Generate a single sequence with all required setup and configuration.
+    
+    Args:
+        batch_idx: Current batch index (0-based).
+        batch_count: Total number of sequences to generate.
+        start_index: Starting index for sequence naming.
+        context: Generation context (nav, world, paths).
+        timing: Timing and speed configuration.
+        camera: Camera behavior configuration.
+        path: Path generation and interpolation configuration.
+        export: Camera export configuration.
+    
+    Returns:
+        Dictionary with sequence info (name, path, seed).
+    """
+    logger.info("========================================")
+    logger.info(f"Generating sequence {batch_idx + 1}/{batch_count}")
+    logger.info("========================================")
+    
+    # Step 1: Create sequence asset
+    sequence_number = start_index + batch_idx + 1
+    sequence_name = f"{context.map_name}_{sequence_number:03d}"
+    sequence, asset_path = _create_sequence_asset(sequence_name, context.output_dir)
+    
+    # Step 2: Initialize playback settings
+    duration_seconds = timing.base_duration_seconds
+    total_frames = int(timing.fps * duration_seconds)
+    _initialize_playback_range(sequence, total_frames, duration_seconds, timing.fps)
+    
+    # Step 3: Generate navigation path
+    nav_points, actual_seed, strafe_segments = _generate_navigation_path(
+        nav=context.nav,
+        world=context.world,
+        roam_cfg=path.roam_cfg,
+        map_path=context.map_path,
+        seq_cfg=path.seq_cfg,
+    )
+    
+    # Step 4: Apply speed configuration and resample path
+    fixed_result = _apply_fixed_speed_if_configured(
+        nav_points=nav_points,
+        fps=timing.fps,
+        duration_seconds=duration_seconds,
+        total_frames=total_frames,
+        sequence=sequence,
+        fixed_speed_cfg=timing.fixed_speed_cfg,
+        strict_duration=timing.strict_duration,
+    )
+    
+    sample_result = _resample_nav_points(
+        nav_points=fixed_result.nav_points,
+        fps=timing.fps,
+        total_frames=fixed_result.total_frames,
+        z_offset_cm=path.z_offset_cm,
+    )
+    
+    # Step 5: Map strafe segments to sample indices
+    strafe_sample_ranges = _map_strafe_segments_to_samples(
+        strafe_segments=strafe_segments,
+        nav_points=nav_points,
+        samples=sample_result.samples,
+    )
+    
+    # Step 6: Determine interpolation mode
+    transform_key_interp = _determine_interpolation_mode(
+        base_interp=path.base_transform_key_interp,
+        interp_override=path.interp_override,
+    )
+    
+    if camera.camera_pitch_from_slope:
+        logger.info(f"Camera pitch from slope enabled (max pitch: {camera.max_camera_pitch:.1f}°)")
+    
+    # Step 7: Build transform keys from samples
+    key_result = _build_transform_keys_from_samples(
+        samples=sample_result.samples,
+        fps=timing.fps,
+        total_frames=fixed_result.total_frames,
+        key_interval_frames=sample_result.key_interval_frames,
+        camera_pitch_from_slope=camera.camera_pitch_from_slope,
+        max_camera_pitch=camera.max_camera_pitch,
+        strafe_sample_ranges=strafe_sample_ranges,
+    )
+    logger.info(f"NavRoam generated {len(key_result.transform_keys)} keys")
+    
+    # Step 8: Setup actor binding and tracks
+    actor_binding = ensure_actor_binding(
+        sequence=sequence,
+        actor_blueprint_class_path=context.actor_blueprint_class_path,
+        load_blueprint_class_fn=load_blueprint_class,
+    )
+    
+    _add_camera_cuts(
+        sequence=sequence,
+        actor_binding=actor_binding,
+        total_frames=fixed_result.total_frames,
+    )
+    
+    _write_transform_keys_to_binding(
+        actor_binding=actor_binding,
+        fps=timing.fps,
+        total_frames=fixed_result.total_frames,
+        transform_keys_cfg=key_result.transform_keys,
+        transform_key_interp=transform_key_interp,
+        force_zero_pitch_roll=camera.force_zero_pitch_roll,
+        max_yaw_rate_deg_per_sec=camera.max_yaw_rate_deg_per_sec,
+        camera_pitch_from_slope=camera.camera_pitch_from_slope,
+        max_pitch_rate=camera.max_pitch_rate,
+    )
+    
+    # Step 9: Save and export
+    save_asset(sequence)
+    logger.info(f"Sequence {batch_idx + 1}/{batch_count} completed")
+    
+    _export_camera_if_enabled(
+        sequence_path=asset_path,
+        camera_export_cfg=export.camera_export_cfg,
+        ue_config=export.ue_config,
+        actor_blueprint_class_path=context.actor_blueprint_class_path,
+    )
+    
+    return {
+        "name": sequence_name,
+        "path": asset_path,
+        "seed": actual_seed,
+    }
+
+
+def _create_sequence_asset(sequence_name: str, output_dir: str) -> tuple[Any, str]:
+    """Create a new level sequence asset."""
+    sequence = create_level_sequence(sequence_name, output_dir)
+    if not sequence:
+        logger.error("Failed to create LevelSequence asset")
+        raise RuntimeError("Failed to create LevelSequence asset")
+    
+    asset_path = sequence.get_path_name()
+    return sequence, asset_path
+
+
+def _initialize_playback_range(
+    sequence: Any,
+    total_frames: int,
+    duration_seconds: float,
+    fps: int,
+) -> None:
+    """Initialize the sequence playback range."""
+    try:
+        sequence.set_playback_start(0)
+        sequence.set_playback_end(total_frames)
+        logger.info(f"Set initial playback range: 0-{total_frames} frames ({duration_seconds:.2f}s @ {fps} fps)")
+    except Exception as e:
+        logger.warning(f"Could not set initial playback range: {e}")
+
+
+def _generate_navigation_path(
+    *,
+    nav: Any,
+    world: Any,
+    roam_cfg: Dict[str, Any],
+    map_path: str,
+    seq_cfg: Dict[str, Any],
+) -> tuple[list, Optional[int], list]:
+    """Generate navigation path and return points, seed, and strafe segments."""
+    nav_points, updated_roam_cfg = _build_nav_points_with_retry(
+        nav=nav,
+        world=world,
+        roam_cfg=roam_cfg,
+        map_path=map_path,
+        parent_config=seq_cfg,
+    )
+    
+    actual_seed = updated_roam_cfg.get("seed")
+    strafe_segments = updated_roam_cfg.get("_strafe_segments", [])
+    
+    if len(nav_points) < 2:
+        error_msg = f"NavRoam produced too few points ({len(nav_points)}). "
+        error_msg += "Possible causes: "
+        error_msg += "(1) NavMesh coverage too small, "
+        error_msg += "(2) random_point_radius_cm too small, "
+        error_msg += "(3) NavMesh disconnected/fragmented"
+        raise RuntimeError(error_msg)
+    
+    return nav_points, actual_seed, strafe_segments
+
+
+def _map_strafe_segments_to_samples(
+    *,
+    strafe_segments: list,
+    nav_points: list,
+    samples: list,
+) -> list:
+    """Map strafe segments from nav_points indices to sample indices."""
+    strafe_sample_ranges = []
+    
+    if not strafe_segments or len(nav_points) == 0 or len(samples) <= 1:
+        return strafe_sample_ranges
+    
+    for seg in strafe_segments:
+        start_ratio = seg["start_idx"] / len(nav_points)
+        end_ratio = seg["end_idx"] / len(nav_points)
+        start_sample = int(start_ratio * len(samples))
+        end_sample = int(end_ratio * len(samples))
+        strafe_sample_ranges.append({
+            "start": max(0, start_sample),
+            "end": min(len(samples) - 1, end_sample),
+            "leg": seg["leg"],
+        })
+    
+    logger.info(f"Mapped {len(strafe_sample_ranges)} strafe segments to sample indices")
+    logger.info("Strafe yaw-locked sample ranges:")
+    for sr in strafe_sample_ranges:
+        logger.info(f"  Leg {sr['leg']}: samples [{sr['start']}..{sr['end']}]")
+    
+    return strafe_sample_ranges
+
+
+def _determine_interpolation_mode(
+    base_interp: str,
+    interp_override: Any,
+) -> str:
+    """Determine the interpolation mode to use for transform keys."""
+    transform_key_interp = str(base_interp or "auto").lower()
+    
+    if interp_override:
+        transform_key_interp = (str(interp_override) or transform_key_interp).lower()
+    
+    return transform_key_interp
 
 
 def _apply_fixed_speed_if_configured(
@@ -457,16 +758,13 @@ def _build_transform_keys_from_samples(
     return KeyGenResult(transform_keys=keys)
 
 
-def _add_camera_cuts_if_enabled(
+def _add_camera_cuts(
     *,
-    add_camera: bool,
     sequence: Any,
     actor_binding: Any,
     total_frames: int,
 ) -> None:
-    if not add_camera:
-        return
-
+    """Add camera cuts track bound to the spawnable actor."""
     movie_scene = sequence.get_movie_scene()
     logger.info("Adding camera cuts bound to spawnable actor...")
     try:
@@ -583,223 +881,6 @@ def _write_transform_keys_to_binding(
     except Exception as e:
         logger.warning(f"Failed to write transform keys: {e}")
         traceback.print_exc()
-
-
-def generate_all_sequences(
-    *,
-    batch_count: int,
-    start_index: int,
-    map_path: str,
-    map_name: str,
-    output_dir: str,
-    actor_blueprint_class_path: str,
-    nav_roam_cfg: Dict[str, Any],
-    force_zero_pitch_roll: bool,
-    max_yaw_rate_deg_per_sec: Optional[float],
-    base_transform_key_interp: str,
-    sequence_config: Dict[str, Any],
-    camera_export_cfg: Optional[Dict[str, Any]],
-    ue_config: Dict[str, Any],
-) -> List[Dict[str, Any]]:
-    completed_sequences = []
-
-    import time
-    run_id = int(time.time())
-
-    world, nav = _prepare_sequence_generation_run(
-        map_path=map_path,
-        actor_blueprint_class_path=actor_blueprint_class_path,
-        output_dir=output_dir,
-        nav_roam_cfg=nav_roam_cfg,
-    )
-
-    # Normalize config once (invariant across batches)
-    seq_cfg = sequence_config or {}
-    roam_cfg = nav_roam_cfg or {}
-    
-    # Pre-compute connectivity analysis ONCE before batch loop
-    # Cache will be reused for all sequences in this batch run
-    use_connectivity_analysis = bool(roam_cfg.get("use_connectivity_analysis", True))
-    if use_connectivity_analysis and NAVMESH_CONNECTIVITY_AVAILABLE and get_spawn_point_with_connectivity is not None:
-        logger.info("========================================")
-        logger.info("PRE-COMPUTING CONNECTIVITY ANALYSIS")
-        logger.info("========================================")
-        try:
-            origin = get_spawn_point_with_connectivity(nav, world, map_path, roam_cfg)
-            logger.info(f"✓ Connectivity analysis completed, spawn point: ({origin.x:.2f}, {origin.y:.2f}, {origin.z:.2f})")
-            logger.info("Cache will be reused for all sequences in this batch run")
-        except Exception as e:
-            logger.warning(f"Connectivity analysis pre-computation failed: {e}")
-        logger.info("========================================")
-
-    fps = int(seq_cfg.get("fps", 30))
-    base_duration_seconds = float(seq_cfg.get("duration_seconds", 60.0))
-    add_camera = bool(seq_cfg.get("add_camera", False))
-    fixed_speed_cfg = seq_cfg.get("fixed_speed_cm_per_sec", None)
-    strict_duration = bool(seq_cfg.get("strict_duration", False))
-
-    camera_pitch_from_slope = bool(seq_cfg.get("camera_pitch_from_slope", False))
-    max_camera_pitch = float(seq_cfg.get("max_camera_pitch_deg", 25.0))
-    max_pitch_rate = float(seq_cfg.get("max_pitch_rate_deg_per_sec", 20.0))
-
-    z_offset_cm = float(roam_cfg.get("z_offset_cm", 0.0))
-    interp_override = roam_cfg.get("interpolation", None)
-
-    for batch_idx in range(batch_count):
-        try:
-            logger.info("========================================")
-            logger.info(f"Generating sequence {batch_idx + 1}/{batch_count}")
-            logger.info("========================================")
-            
-            # 生成当前批次的sequence名称（从已存在的最大编号+1开始）
-            sequence_number = start_index + batch_idx + 1
-            sequence_name = f"{map_name}_{sequence_number:03d}"
-
-            sequence = create_level_sequence(sequence_name, output_dir)
-            if not sequence:
-                logger.error("Failed to create LevelSequence asset")
-                raise RuntimeError("Failed to create LevelSequence asset")
-            
-            asset_path = sequence.get_path_name()
-
-            # Per-batch derived values
-            duration_seconds = base_duration_seconds
-            total_frames = int(fps * duration_seconds)
-
-            try:
-                sequence.set_playback_start(0)
-                sequence.set_playback_end(total_frames)
-                logger.info(f"Set initial playback range: 0-{total_frames} frames ({duration_seconds:.2f}s @ {fps} fps)")
-            except Exception as e:
-                logger.warning(f"Could not set initial playback range: {e}")
-
-            transform_key_interp = str(base_transform_key_interp or "auto").lower()
-
-            nav_points, updated_roam_cfg = _build_nav_points_with_retry(
-                nav=nav,
-                world=world,
-                roam_cfg=roam_cfg,
-                map_path=map_path,
-                run_id=run_id,
-                parent_config=seq_cfg,
-            )
-            actual_seed = updated_roam_cfg.get("seed")
-            strafe_segments = updated_roam_cfg.get("_strafe_segments", [])
-
-            if len(nav_points) < 2:
-                error_msg = f"NavRoam produced too few points ({len(nav_points)}). "
-                error_msg += "Possible causes: "
-                error_msg += "(1) NavMesh coverage too small, "
-                error_msg += "(2) random_point_radius_cm too small, "
-                error_msg += "(3) NavMesh disconnected/fragmented, "
-                raise RuntimeError(error_msg)
-
-            fixed_result = _apply_fixed_speed_if_configured(
-                nav_points=nav_points,
-                fps=fps,
-                duration_seconds=duration_seconds,
-                total_frames=total_frames,
-                sequence=sequence,
-                fixed_speed_cfg=fixed_speed_cfg,
-                strict_duration=strict_duration,
-            )
-
-            sample_result = _resample_nav_points(
-                nav_points=fixed_result.nav_points,
-                fps=fps,
-                total_frames=fixed_result.total_frames,
-                z_offset_cm=z_offset_cm,
-            )
-            
-            # Map strafe segments from nav_points indices to sample indices
-            strafe_sample_ranges = []
-            if strafe_segments and len(nav_points) > 0 and len(sample_result.samples) > 1:
-                for seg in strafe_segments:
-                    # Approximate mapping: seg["start_idx"] in nav_points -> sample index
-                    start_ratio = seg["start_idx"] / len(nav_points)
-                    end_ratio = seg["end_idx"] / len(nav_points)
-                    start_sample = int(start_ratio * len(sample_result.samples))
-                    end_sample = int(end_ratio * len(sample_result.samples))
-                    strafe_sample_ranges.append({
-                        "start": max(0, start_sample),
-                        "end": min(len(sample_result.samples) - 1, end_sample),
-                        "leg": seg["leg"],
-                    })
-                logger.info(f"Mapped {len(strafe_sample_ranges)} strafe segments to sample indices")
-                logger.info("Strafe yaw-locked sample ranges:")
-                for sr in strafe_sample_ranges:
-                    logger.info(f"  Leg {sr['leg']}: samples [{sr['start']}..{sr['end']}]")
-
-            # Prefer linear interpolation for safety (avoid cubic overshoot through walls)
-            if interp_override:
-                transform_key_interp = (str(interp_override) or transform_key_interp).lower()
-            
-            if camera_pitch_from_slope:
-                logger.info(f"Camera pitch from slope enabled (max pitch: {max_camera_pitch:.1f}°)")
-
-            key_result = _build_transform_keys_from_samples(
-                samples=sample_result.samples,
-                fps=fps,
-                total_frames=fixed_result.total_frames,
-                key_interval_frames=sample_result.key_interval_frames,
-                camera_pitch_from_slope=camera_pitch_from_slope,
-                max_camera_pitch=max_camera_pitch,
-                strafe_sample_ranges=strafe_sample_ranges,
-            )
-            logger.info(f"NavRoam generated {len(key_result.transform_keys)} keys")
-
-            # Always need an actor binding (transform keys are always enabled)
-            actor_binding = ensure_actor_binding(
-                sequence=sequence,
-                actor_blueprint_class_path=actor_blueprint_class_path,
-                load_blueprint_class_fn=load_blueprint_class,
-            )
-
-            _add_camera_cuts_if_enabled(
-                add_camera=add_camera,
-                sequence=sequence,
-                actor_binding=actor_binding,
-                total_frames=fixed_result.total_frames,
-            )
-
-            _write_transform_keys_to_binding(
-                actor_binding=actor_binding,
-                fps=fps,
-                total_frames=fixed_result.total_frames,
-                transform_keys_cfg=key_result.transform_keys,
-                transform_key_interp=transform_key_interp,
-                force_zero_pitch_roll=force_zero_pitch_roll,
-                max_yaw_rate_deg_per_sec=max_yaw_rate_deg_per_sec,
-                camera_pitch_from_slope=camera_pitch_from_slope,
-                max_pitch_rate=max_pitch_rate,
-            )
-            
-            save_asset(sequence)
-
-            completed_sequences.append(
-                {
-                    "name": sequence_name,
-                    "path": asset_path,
-                    "seed": actual_seed,
-                }
-            )
-            
-            logger.info(f"Sequence {batch_idx + 1}/{batch_count} completed")
-            
-            # Auto-export camera data if enabled
-            _export_camera_if_enabled(
-                sequence_path=asset_path,
-                camera_export_cfg=camera_export_cfg,
-                ue_config=ue_config,
-                actor_blueprint_class_path=actor_blueprint_class_path,
-            )
-            
-        except Exception as e:
-            logger.error(f"in batch {batch_idx + 1}: {e}")
-            traceback.print_exc()
-            continue
-    
-    return completed_sequences
 
 
 def _derive_output_dir_from_map(map_path: str) -> Optional[str]:
