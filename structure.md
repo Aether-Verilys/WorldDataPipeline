@@ -285,18 +285,3 @@ ffmpeg_cmd = [
   - 收集反馈后迭代优化
 
 ---
-
-## 后续优化方向
-
-### Week 2+
-- **质量提升**: 相机轨迹评分系统、碰撞检测
-- **性能优化**: GPU利用率profiling、渲染参数调优
-- **扩展性**: Kubernetes部署、自动伸缩Worker
-- **数据增强**: 天气/光照变化、镜头运动多样性
-
-### 长期
-- **分布式调度**: 集成Deadline / RenderMan for UE
-- **监控Dashboard**: Grafana可视化任务进度、集群状态
-- **数据标注**: 自动生成camera pose、depth map等标注数据
-
----

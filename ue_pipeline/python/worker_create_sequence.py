@@ -38,6 +38,7 @@ from levelsequence.nav_utils import (
     resample_by_distance,
     wait_for_navigation_ready,
 )
+from levelsequence.behavior_executor import generate_behavior_sequence
 from key_frame_track import (
     sanitize_rotation_keys,
     write_transform_keys,
@@ -79,7 +80,6 @@ def generate_all_sequences(
     output_dir: str,
     actor_blueprint_class_path: str,
     nav_roam_cfg: Dict[str, Any],
-    force_zero_pitch_roll: bool,
     max_yaw_rate_deg_per_sec: Optional[float],
     base_transform_key_interp: str,
     sequence_config: Dict[str, Any],
@@ -147,7 +147,6 @@ def generate_all_sequences(
         camera_pitch_from_slope=camera_pitch_from_slope,
         max_camera_pitch=max_camera_pitch,
         max_pitch_rate=max_pitch_rate,
-        force_zero_pitch_roll=force_zero_pitch_roll,
         max_yaw_rate_deg_per_sec=max_yaw_rate_deg_per_sec,
     )
     
@@ -279,25 +278,13 @@ def _build_nav_points_with_retry(
     roam_cfg: Dict[str, Any],
     map_path: str,
     parent_config: Optional[Dict[str, Any]] = None,
-) -> tuple[list, Dict[str, Any]]:
-    seed_cfg = roam_cfg.get("seed", None)
-    actual_seed: Optional[int] = None
-    if seed_cfg is not None:
-        try:
-            seed_val = int(seed_cfg)
-            if seed_val == -1:
-                # -1表示使用随机种子，先用时间重新初始化random确保真随机
-                random.seed()
-                actual_seed = random.randint(0, 999999)
-                random.seed(actual_seed)
-                logger.info(f"NavRoam seed: {actual_seed} (random)")
-            else:
-                actual_seed = seed_val
-                random.seed(actual_seed)
-                logger.info(f"NavRoam seed: {actual_seed}")
-        except Exception as e:
-            logger.warning(f"Failed to set seed: {e}")
-
+) -> Dict[str, Any]:
+    """
+    Generate navigation points using behavior-based execution.
+    
+    Returns:
+        Dict with keys: points, yaws, seed
+    """
     def _cfg_for_seed(seed: Optional[int]) -> Dict[str, Any]:
         cfg = dict(roam_cfg)
         if seed is not None:
@@ -307,36 +294,49 @@ def _build_nav_points_with_retry(
             cfg["_parent_config"] = parent_config
         return cfg
 
-    nav_roam_cfg_for_path = _cfg_for_seed(actual_seed)
-
-    # 尝试生成路径，如果失败则重新生成种子重试一次
-    for path_attempt in range(2):  # 最多尝试2次
+    # Prepare configuration
+    seed_cfg = roam_cfg.get("seed", None)
+    actual_seed: Optional[int] = None
+    if seed_cfg is not None:
         try:
-            if path_attempt == 1:
-                # 第二次尝试：重新生成随机种子
+            seed_val = int(seed_cfg)
+            if seed_val == -1:
                 random.seed()
                 actual_seed = random.randint(0, 999999)
-                random.seed(actual_seed)
-                logger.warning(f"Retry with new seed: {actual_seed}")
-                nav_roam_cfg_for_path = _cfg_for_seed(actual_seed)
+                logger.info(f"Using random seed: {actual_seed}")
+            else:
+                actual_seed = seed_val
+                logger.info(f"Using configured seed: {actual_seed}")
+        except Exception as e:
+            logger.warning(f"Failed to set seed: {e}")
 
-            # Pass map_path for cache naming
-            nav_points = build_multi_leg_nav_path(nav, world, nav_roam_cfg_for_path, map_path)
-            logger.info(f"NavRoam generated {len(nav_points)} raw points")
-            return nav_points, nav_roam_cfg_for_path
+    nav_roam_cfg_for_path = _cfg_for_seed(actual_seed)
 
-        except RuntimeError as e:
-            error_msg = str(e)
-            if "Failed to find connected NavMesh point" in error_msg:
-                if path_attempt == 0:
-                    logger.warning(f"NavMesh connection failed on first attempt: {e}")
-                    logger.warning("Retrying with new random seed...")
-                    continue
-                logger.error("NavMesh connection failed after 2 attempts")
-                raise
-            raise
-
-    raise RuntimeError("Failed to generate nav path after retries")
+    # Generate behavior-based path
+    try:
+        result = generate_behavior_sequence(
+            nav, world, nav_roam_cfg_for_path, map_path
+        )
+        
+        nav_points = result["points"]
+        yaws = result["yaws"]
+        returned_seed = result["seed"]
+        behavior_segments = result.get("behavior_segments", [])
+        
+        if len(nav_points) < 2:
+            raise RuntimeError(f"Behavior sequence produced too few points ({len(nav_points)})")
+        
+        # Return extended result with yaws and behavior segments
+        return {
+            "points": nav_points,
+            "yaws": yaws,
+            "seed": returned_seed,
+            "behavior_segments": behavior_segments,
+        }
+    
+    except Exception as e:
+        logger.error(f"Behavior sequence generation failed: {e}")
+        raise
 
 
 def _generate_single_sequence(
@@ -380,13 +380,17 @@ def _generate_single_sequence(
     _initialize_playback_range(sequence, total_frames, duration_seconds, timing.fps)
     
     # Step 3: Generate navigation path
-    nav_points, actual_seed, strafe_segments = _generate_navigation_path(
+    nav_result = _generate_navigation_path(
         nav=context.nav,
         world=context.world,
         roam_cfg=path.roam_cfg,
         map_path=context.map_path,
         seq_cfg=path.seq_cfg,
     )
+    nav_points = nav_result["points"]
+    nav_yaws = nav_result["yaws"]
+    actual_seed = nav_result["seed"]
+    behavior_segments = nav_result.get("behavior_segments", [])
     
     # Step 4: Apply speed configuration and resample path
     fixed_result = _apply_fixed_speed_if_configured(
@@ -399,19 +403,46 @@ def _generate_single_sequence(
         strict_duration=timing.strict_duration,
     )
     
-    sample_result = _resample_nav_points(
-        nav_points=fixed_result.nav_points,
-        fps=timing.fps,
-        total_frames=fixed_result.total_frames,
-        z_offset_cm=path.z_offset_cm,
-    )
+    # Adjust behavior_segments if path was truncated in strict duration mode
+    if behavior_segments:
+        original_count = len(nav_points)
+        truncated_count = len(fixed_result.nav_points)
+        
+        if truncated_count < original_count:
+            logger.info(f"  Adjusting behavior_segments after truncation ({original_count} → {truncated_count} points)")
+            behavior_segments = _adjust_behavior_segments_after_truncation(
+                behavior_segments=behavior_segments,
+                original_point_count=original_count,
+                truncated_point_count=truncated_count,
+            )
+            logger.info(f"  Retained {len(behavior_segments)} behavior segments after adjustment")
     
-    # Step 5: Map strafe segments to sample indices
-    strafe_sample_ranges = _map_strafe_segments_to_samples(
-        strafe_segments=strafe_segments,
-        nav_points=nav_points,
-        samples=sample_result.samples,
-    )
+    # Step 5: Behavior-aware resampling
+    if behavior_segments:
+        # Use behavior-aware resampling that respects idle/rotate/translate constraints
+        resampled_points, resampled_yaws, key_interval_frames = _resample_behavior_aware(
+            nav_points=fixed_result.nav_points,
+            nav_yaws=nav_yaws,
+            behavior_segments=behavior_segments,
+            fps=timing.fps,
+            total_frames=fixed_result.total_frames,
+            z_offset_cm=path.z_offset_cm,
+        )
+        sample_result = SampleResult(samples=resampled_points, key_interval_frames=key_interval_frames)
+    else:
+        # Fallback to standard resampling
+        sample_result = _resample_nav_points(
+            nav_points=fixed_result.nav_points,
+            fps=timing.fps,
+            total_frames=fixed_result.total_frames,
+            z_offset_cm=path.z_offset_cm,
+        )
+        # Map original yaws to resampled points by index ratio
+        resampled_yaws = []
+        for i in range(len(sample_result.samples)):
+            ratio = i / max(1, len(sample_result.samples) - 1)
+            orig_idx = min(int(ratio * (len(nav_yaws) - 1)), len(nav_yaws) - 1)
+            resampled_yaws.append(nav_yaws[orig_idx])
     
     # Step 6: Determine interpolation mode
     transform_key_interp = _determine_interpolation_mode(
@@ -430,7 +461,8 @@ def _generate_single_sequence(
         key_interval_frames=sample_result.key_interval_frames,
         camera_pitch_from_slope=camera.camera_pitch_from_slope,
         max_camera_pitch=camera.max_camera_pitch,
-        strafe_sample_ranges=strafe_sample_ranges,
+        strafe_sample_ranges=[],
+        precomputed_yaws=resampled_yaws,
     )
     logger.info(f"NavRoam generated {len(key_result.transform_keys)} keys")
     
@@ -453,7 +485,6 @@ def _generate_single_sequence(
         total_frames=fixed_result.total_frames,
         transform_keys_cfg=key_result.transform_keys,
         transform_key_interp=transform_key_interp,
-        force_zero_pitch_roll=camera.force_zero_pitch_roll,
         max_yaw_rate_deg_per_sec=camera.max_yaw_rate_deg_per_sec,
         camera_pitch_from_slope=camera.camera_pitch_from_slope,
         max_pitch_rate=camera.max_pitch_rate,
@@ -510,9 +541,9 @@ def _generate_navigation_path(
     roam_cfg: Dict[str, Any],
     map_path: str,
     seq_cfg: Dict[str, Any],
-) -> tuple[list, Optional[int], list]:
-    """Generate navigation path and return points, seed, and strafe segments."""
-    nav_points, updated_roam_cfg = _build_nav_points_with_retry(
+) -> Dict[str, Any]:
+    """Generate navigation path and return points, yaws, seed."""
+    result = _build_nav_points_with_retry(
         nav=nav,
         world=world,
         roam_cfg=roam_cfg,
@@ -520,18 +551,22 @@ def _generate_navigation_path(
         parent_config=seq_cfg,
     )
     
-    actual_seed = updated_roam_cfg.get("seed")
-    strafe_segments = updated_roam_cfg.get("_strafe_segments", [])
+    nav_points = result["points"]
+    yaws = result["yaws"]
+    actual_seed = result["seed"]
+    behavior_segments = result.get("behavior_segments", [])
     
     if len(nav_points) < 2:
-        error_msg = f"NavRoam produced too few points ({len(nav_points)}). "
-        error_msg += "Possible causes: "
-        error_msg += "(1) NavMesh coverage too small, "
-        error_msg += "(2) random_point_radius_cm too small, "
-        error_msg += "(3) NavMesh disconnected/fragmented"
+        error_msg = f"Behavior sequence produced too few points ({len(nav_points)}). "
+        error_msg += "This may indicate navigation system issues or insufficient NavMesh coverage."
         raise RuntimeError(error_msg)
     
-    return nav_points, actual_seed, strafe_segments
+    return {
+        "points": nav_points,
+        "yaws": yaws,
+        "seed": actual_seed,
+        "behavior_segments": behavior_segments,
+    }
 
 
 def _map_strafe_segments_to_samples(
@@ -563,6 +598,55 @@ def _map_strafe_segments_to_samples(
         logger.info(f"  Leg {sr['leg']}: samples [{sr['start']}..{sr['end']}]")
     
     return strafe_sample_ranges
+
+
+def _adjust_behavior_segments_after_truncation(
+    behavior_segments: list,
+    original_point_count: int,
+    truncated_point_count: int,
+) -> list:
+    """
+    Adjust behavior segment indices after nav_points truncation.
+    
+    When strict duration mode truncates the path, behavior_segments must be updated
+    to ensure their indices don't exceed the new point count.
+    
+    Args:
+        behavior_segments: Original behavior segments with start_idx/end_idx
+        original_point_count: Original number of points before truncation
+        truncated_point_count: Number of points after truncation
+    
+    Returns:
+        Adjusted behavior segments list with valid indices
+    """
+    if truncated_point_count >= original_point_count:
+        # No truncation occurred
+        return behavior_segments
+    
+    adjusted_segments = []
+    last_valid_idx = truncated_point_count - 1
+    
+    for seg in behavior_segments:
+        seg_start = seg["start_idx"]
+        seg_end = seg["end_idx"]
+        
+        if seg_start > last_valid_idx:
+            # Entire segment is beyond truncation point - discard and stop
+            logger.info(f"  Discarded segment '{seg['type']}' [{seg_start}-{seg_end}] (beyond truncation at {truncated_point_count})")
+            break
+        
+        if seg_end > last_valid_idx:
+            # Segment partially truncated - clip end index
+            adjusted_seg = seg.copy()
+            adjusted_seg["end_idx"] = last_valid_idx
+            adjusted_segments.append(adjusted_seg)
+            logger.info(f"  Clipped segment '{seg['type']}' end from {seg_end} to {last_valid_idx}")
+            break  # This is the last valid segment
+        
+        # Segment fully within valid range - keep as is
+        adjusted_segments.append(seg)
+    
+    return adjusted_segments
 
 
 def _determine_interpolation_mode(
@@ -688,6 +772,167 @@ def _resample_nav_points(
     return SampleResult(samples=samples, key_interval_frames=key_interval_frames)
 
 
+def _resample_behavior_aware(
+    *,
+    nav_points: list,
+    nav_yaws: list,
+    behavior_segments: list,
+    fps: int,
+    total_frames: int,
+    z_offset_cm: float,
+) -> tuple[list, list, int]:
+    """
+    Resample points and yaws with behavior-aware interpolation.
+    
+    - IDLE: Keep position and yaw constant (all keys use same value)
+    - ROTATE: Keep position constant, interpolate yaw
+    - TRANSLATE: Interpolate position, keep yaw constant
+    - ROAM: Interpolate both position and yaw
+    
+    Returns:
+        Tuple of (resampled_points, resampled_yaws, key_interval_frames)
+    """
+    key_interval_seconds = 1.0 / float(fps)
+    key_interval_frames = max(1, int(round(float(fps) * key_interval_seconds)))
+    key_count = max(2, int(math.floor(float(total_frames) / float(key_interval_frames))) + 1)
+    
+    # Build frame-based segment map for accurate behavior type lookup
+    frame_to_segment = {}  # frame -> segment_info
+    for seg in behavior_segments:
+        for frame in range(seg["start_frame"], seg["end_frame"] + 1):
+            frame_to_segment[frame] = seg
+    
+    # Build point index to segment map
+    point_to_segment = {}
+    for seg in behavior_segments:
+        for idx in range(seg["start_idx"], seg["end_idx"] + 1):
+            point_to_segment[idx] = seg
+    
+    resampled_points = []
+    resampled_yaws = []
+    
+    for i in range(key_count):
+        # Calculate the frame for this key
+        frame = i * key_interval_frames
+        if frame > total_frames:
+            frame = total_frames
+        
+        # Find which segment this frame belongs to
+        segment = frame_to_segment.get(frame)
+        
+        if not segment:
+            # No segment info, use standard interpolation
+            ratio = float(i) / float(key_count - 1) if key_count > 1 else 0.0
+            point_idx = int(ratio * (len(nav_points) - 1))
+            point_idx = min(point_idx, len(nav_points) - 1)
+            
+            resampled_points.append(nav_points[point_idx])
+            resampled_yaws.append(nav_yaws[point_idx] if point_idx < len(nav_yaws) else 0.0)
+            continue
+        
+        behavior_type = segment["type"]
+        seg_start_idx = segment["start_idx"]
+        seg_end_idx = segment["end_idx"]
+        seg_start_frame = segment["start_frame"]
+        seg_end_frame = segment["end_frame"]
+        
+        # Calculate position within segment (0.0 to 1.0)
+        if seg_end_frame > seg_start_frame:
+            seg_ratio = float(frame - seg_start_frame) / float(seg_end_frame - seg_start_frame)
+        else:
+            seg_ratio = 0.0
+        seg_ratio = max(0.0, min(1.0, seg_ratio))
+        
+        # Apply behavior-specific interpolation
+        if behavior_type == "idle":
+            # IDLE: completely freeze both position and yaw
+            # Use the start point of the segment for ALL keys in this segment
+            idle_pos = nav_points[seg_start_idx]
+            idle_yaw = nav_yaws[seg_start_idx] if seg_start_idx < len(nav_yaws) else 0.0
+            
+            resampled_points.append(idle_pos)
+            resampled_yaws.append(idle_yaw)
+        
+        elif behavior_type == "rotate":
+            # ROTATE: freeze position, interpolate yaw linearly within segment
+            rotate_pos = nav_points[seg_start_idx]
+            
+            # Interpolate yaw between start and end of segment
+            if seg_start_idx < len(nav_yaws) and seg_end_idx < len(nav_yaws):
+                start_yaw = nav_yaws[seg_start_idx]
+                end_yaw = nav_yaws[seg_end_idx]
+                interpolated_yaw = start_yaw + (end_yaw - start_yaw) * seg_ratio
+            else:
+                interpolated_yaw = nav_yaws[seg_start_idx] if seg_start_idx < len(nav_yaws) else 0.0
+            
+            resampled_points.append(rotate_pos)
+            resampled_yaws.append(interpolated_yaw)
+        
+        elif "translate" in behavior_type:
+            # TRANSLATE: interpolate position linearly, freeze yaw
+            if seg_end_idx > seg_start_idx:
+                # Linear interpolation between segment start and end points
+                start_pos = nav_points[seg_start_idx]
+                end_pos = nav_points[seg_end_idx]
+                
+                interpolated_pos = unreal.Vector(
+                    start_pos.x + (end_pos.x - start_pos.x) * seg_ratio,
+                    start_pos.y + (end_pos.y - start_pos.y) * seg_ratio,
+                    start_pos.z + (end_pos.z - start_pos.z) * seg_ratio,
+                )
+            else:
+                interpolated_pos = nav_points[seg_start_idx]
+            
+            # Yaw locked to segment start
+            locked_yaw = nav_yaws[seg_start_idx] if seg_start_idx < len(nav_yaws) else 0.0
+            
+            resampled_points.append(interpolated_pos)
+            resampled_yaws.append(locked_yaw)
+        
+        else:
+            # ROAM: interpolate both position and yaw within segment
+            # Use distance-based interpolation for smoother paths
+            seg_point_count = seg_end_idx - seg_start_idx + 1
+            if seg_point_count > 1:
+                # Find the two surrounding points in the segment
+                local_idx = seg_start_idx + int(seg_ratio * (seg_point_count - 1))
+                local_idx = min(local_idx, seg_end_idx - 1)
+                
+                # Interpolate between local_idx and local_idx+1
+                if local_idx + 1 <= seg_end_idx and local_idx + 1 < len(nav_points):
+                    p1 = nav_points[local_idx]
+                    p2 = nav_points[local_idx + 1]
+                    
+                    # Sub-ratio within this segment
+                    local_ratio = (seg_ratio * (seg_point_count - 1)) - int(seg_ratio * (seg_point_count - 1))
+                    
+                    interpolated_pos = unreal.Vector(
+                        p1.x + (p2.x - p1.x) * local_ratio,
+                        p1.y + (p2.y - p1.y) * local_ratio,
+                        p1.z + (p2.z - p1.z) * local_ratio,
+                    )
+                    
+                    if local_idx < len(nav_yaws) and local_idx + 1 < len(nav_yaws):
+                        interpolated_yaw = nav_yaws[local_idx] + (nav_yaws[local_idx + 1] - nav_yaws[local_idx]) * local_ratio
+                    else:
+                        interpolated_yaw = nav_yaws[local_idx] if local_idx < len(nav_yaws) else 0.0
+                else:
+                    interpolated_pos = nav_points[local_idx]
+                    interpolated_yaw = nav_yaws[local_idx] if local_idx < len(nav_yaws) else 0.0
+            else:
+                interpolated_pos = nav_points[seg_start_idx]
+                interpolated_yaw = nav_yaws[seg_start_idx] if seg_start_idx < len(nav_yaws) else 0.0
+            
+            resampled_points.append(interpolated_pos)
+            resampled_yaws.append(interpolated_yaw)
+    
+    # Apply Z offset
+    if abs(z_offset_cm) > 0.001:
+        resampled_points = [unreal.Vector(p.x, p.y, p.z + z_offset_cm) for p in resampled_points]
+    
+    return resampled_points, resampled_yaws, key_interval_frames
+
+
 def _build_transform_keys_from_samples(
     *,
     samples: list,
@@ -697,10 +942,9 @@ def _build_transform_keys_from_samples(
     camera_pitch_from_slope: bool,
     max_camera_pitch: float,
     strafe_sample_ranges: Optional[list] = None,
+    precomputed_yaws: Optional[list] = None,
 ) -> KeyGenResult:
     keys = []
-    locked_yaw = None  # Track locked yaw during strafe
-    strafe_lock_count = 0  # Count locked samples
     
     for i, p in enumerate(samples):
         frame = i * key_interval_frames
@@ -708,34 +952,15 @@ def _build_transform_keys_from_samples(
             frame = total_frames
         t = float(frame) / float(fps)
 
-        # Check if this sample is in a strafe segment
-        in_strafe = False
-        if strafe_sample_ranges:
-            for seg in strafe_sample_ranges:
-                if seg["start"] <= i <= seg["end"]:
-                    in_strafe = True
-                    # Lock yaw at the start of strafe
-                    if i == seg["start"] and i > 0:
-                        locked_yaw = _yaw_degrees_xy(samples[i - 1], samples[i])
-                        print(f"[YawLock] Sample {i} (leg {seg['leg']}): START strafe, lock yaw={locked_yaw:.1f}°")
-                    break
-        
-        # 计算yaw（水平朝向）
-        if in_strafe and locked_yaw is not None:
-            # During strafe: keep yaw locked (no rotation)
-            yaw = locked_yaw
-            strafe_lock_count += 1
+        # Use precomputed yaw if available (from behavior executor)
+        if precomputed_yaws and i < len(precomputed_yaws):
+            yaw = precomputed_yaws[i]
         else:
-            # Normal movement: calculate yaw from trajectory
+            # Fallback: calculate yaw from trajectory
             if i < len(samples) - 1:
                 yaw = _yaw_degrees_xy(p, samples[i + 1])
             else:
                 yaw = _yaw_degrees_xy(samples[i - 1], p) if i > 0 else 0.0
-            
-            # Reset lock when exiting strafe
-            if locked_yaw is not None and not in_strafe:
-                print(f"[YawLock] Sample {i}: END strafe, unlock (was {locked_yaw:.1f}°, now {yaw:.1f}°)")
-                locked_yaw = None
 
         # 计算pitch（相机俯仰角，根据坡度）
         pitch = 0.0
@@ -857,7 +1082,6 @@ def _write_transform_keys_to_binding(
     total_frames: int,
     transform_keys_cfg: Any,
     transform_key_interp: str,
-    force_zero_pitch_roll: bool,
     max_yaw_rate_deg_per_sec: Optional[float],
     camera_pitch_from_slope: bool,
     max_pitch_rate: float,
@@ -870,9 +1094,10 @@ def _write_transform_keys_to_binding(
     logger.info("Adding transform keys to actor binding...")
     try:
         # 如果启用了camera_pitch_from_slope，保留pitch值
+        # force_zero_pitch_roll always True - pitch and roll are always zeroed except for slope-based pitch
         sanitize_rotation_keys(
             transform_keys_cfg,
-            force_zero_pitch_roll,
+            True,  # force_zero_pitch_roll is always True
             max_yaw_rate_deg_per_sec,
             preserve_pitch=camera_pitch_from_slope,
             max_pitch_rate_deg_per_sec=max_pitch_rate,
@@ -964,7 +1189,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     batch_count = int(job_config.sequence_count)
     actor_blueprint_class_path = job_config.actor_blueprint_class_path
     nav_roam_cfg = job_config.nav_roam
-    force_zero_pitch_roll = bool(job_config.force_zero_pitch_roll)
     max_yaw_rate_deg_per_sec = job_config.max_yaw_rate_deg_per_sec
     base_transform_key_interp = job_config.transform_key_interp
 
@@ -1004,7 +1228,6 @@ def main(argv: Optional[List[str]] = None) -> int:
             output_dir=output_dir,
             actor_blueprint_class_path=actor_blueprint_class_path,
             nav_roam_cfg=nav_roam_cfg,
-            force_zero_pitch_roll=force_zero_pitch_roll,
             max_yaw_rate_deg_per_sec=max_yaw_rate_deg_per_sec,
             base_transform_key_interp=base_transform_key_interp,
             sequence_config=sequence_config,

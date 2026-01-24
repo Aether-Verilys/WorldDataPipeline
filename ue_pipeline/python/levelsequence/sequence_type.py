@@ -16,7 +16,6 @@ class SequenceJobConfig:
     actor_binding_mode: str = "sequence_spawnable"
     save_level_if_spawned: bool = False
     nav_roam: dict = field(default_factory=dict)
-    force_zero_pitch_roll: bool = True
     max_yaw_rate_deg_per_sec: Optional[float] = None
     transform_keys: Optional[list] = None
     transform_key_interp: str = "auto"
@@ -37,7 +36,6 @@ class SequenceJobConfig:
         ).lower()
         inst.save_level_if_spawned = bool(cfg.get("save_level_if_spawned", inst.save_level_if_spawned))
         inst.nav_roam = cfg.get("nav_roam", {}) or {}
-        inst.force_zero_pitch_roll = bool(cfg.get("force_zero_pitch_roll", inst.force_zero_pitch_roll))
         inst.transform_keys = cfg.get("transform_keys", inst.transform_keys)
         inst.transform_key_interp = (
             cfg.get("transform_key_interp", inst.transform_key_interp) or inst.transform_key_interp
