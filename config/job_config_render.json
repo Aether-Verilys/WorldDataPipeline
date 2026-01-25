@@ -1,7 +1,5 @@
 {
   "job_type": "render",
   "job_id": "job-001",
-  "template": "ue_pipeline/examples/job_render.json",
-  
-  "map": "/Game/LevelPrototyping/test"
+  "template": "ue_pipeline/examples/job_render.json"
 }

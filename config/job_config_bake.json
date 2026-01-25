@@ -5,7 +5,7 @@
   
   "navmesh_config": {
     "maps": [
-      "/Game/Ruins/Maps/Demonstration"
+      "/Game/Hong_Kong_Street/Maps/Demo1"
     ]
   }
 }

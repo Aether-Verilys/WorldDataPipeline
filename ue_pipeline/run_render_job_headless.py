@@ -15,10 +15,9 @@ repo_root = script_dir.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-from ue_pipeline.python.logger import logger
-from ue_pipeline.python import job_utils
-from ue_pipeline.python.scene_registry import SceneRegistry
-from ue_pipeline.python import scene_scanner
+from ue_pipeline.python.core import logger
+from ue_pipeline.python.core import job_utils
+from ue_pipeline.python.assets import SceneRegistry, scene_scanner
 
 
 def run_batch_render(ue_editor: str, project: str, manifest: dict, worker: str, job_id: str, full_config: dict, output_base_dir: str) -> int:
@@ -559,7 +558,7 @@ def main():
     
     # Get worker script path (relative to this script)
     script_dir = Path(__file__).parent
-    worker = str(script_dir / 'python' / 'worker_render.py')
+    worker = str(script_dir / 'python' / 'rendering' / 'worker_render.py')
     
     # Print header
     logger.header("UE Render Job Executor (Headless Mode)")

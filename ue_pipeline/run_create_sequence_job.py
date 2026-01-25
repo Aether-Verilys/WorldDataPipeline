@@ -12,8 +12,8 @@ repo_root = script_dir.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-from ue_pipeline.python.logger import logger
-from ue_pipeline.python import job_utils
+from ue_pipeline.python.core import logger
+from ue_pipeline.python.core import job_utils
 
 
 def run_ue_job(ue_editor: str, project: str, merged_manifest: dict, worker: str) -> int:
@@ -89,7 +89,7 @@ def main():
     args = parser.parse_args()
     
     script_dir = Path(__file__).parent
-    worker = str(script_dir / 'python' / 'worker_create_sequence.py')
+    worker = str(script_dir / 'python' / 'sequence' / 'worker_create.py')
     
     manifest = job_utils.load_manifest(args.manifest_path)
     job_id = job_utils.validate_manifest_type(manifest, 'create_sequence')

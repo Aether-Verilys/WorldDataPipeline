@@ -13,8 +13,8 @@ repo_root = script_dir.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-from ue_pipeline.python.logger import logger
-from ue_pipeline.python import job_utils
+from ue_pipeline.python.core import logger
+from ue_pipeline.python.core import job_utils
 
 
 def run_ue_job(ue_editor: str, project: str, merged_manifest: dict, worker_phase1: str, worker_phase2: str, job_id: str, full_config: dict) -> int:
@@ -183,8 +183,8 @@ def main():
     args = parser.parse_args()
     
     script_dir = Path(__file__).parent
-    worker_phase1 = str(script_dir / 'python' / 'worker_bake_navmesh.py')
-    worker_phase2 = str(script_dir / 'python' / 'worker_verify_navmesh.py')
+    worker_phase1 = str(script_dir / 'python' / 'navmesh' / 'worker_bake.py')
+    worker_phase2 = str(script_dir / 'python' / 'navmesh' / 'worker_verify.py')
     
     logger.header("UE NavMesh Bake Tool (Headless Mode)")
     

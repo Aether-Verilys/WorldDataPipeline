@@ -123,10 +123,6 @@ BOS下载场景 ──→ NavMesh烘焙          Docker容器(UE 5.7)
    - 确保起点不在墙内或封闭空间
 
 **轨迹生成逻辑：**
-- 使用 `nav_roam` 配置进行多段随机漫游
-- 每段在NavMesh上生成随机目标点
-- PathFollowing生成平滑路径，插值关键帧（0.25秒间隔）
-- Camera yaw自动计算朝向运动方向（`max_yaw_rate=60°/s`）
 
 **路径合理性验证：**
 1. **距离检测**：每段路径长度需 > `min_segment_step_cm` (默认75cm)，过短路径被拒绝
@@ -197,20 +193,8 @@ docker run --gpus all \
 **输入：** 序列帧目录（PNG/EXR）  
 **输出：** MP4视频
 
-**FFmpeg配置：**
-```python
-# ue_pipeline/convert_frames_to_video.py (已存在)
-ffmpeg_cmd = [
-    'ffmpeg', '-y',
-    '-framerate', str(fps),
-    '-i', f'{frame_dir}/Frame_%05d.png',
-    '-c:v', 'libx264',
-    '-preset', 'medium',
-    '-crf', '18',  # 高质量
-    '-pix_fmt', 'yuv420p',
-    output_video
-]
-```
+FFmpeg
+
 
 ### Redis Schema
 

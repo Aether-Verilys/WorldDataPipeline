@@ -19,7 +19,6 @@
       "nav_build_wait_seconds": 10.0,
       "max_random_point_tries": 40,
       "min_segment_step_cm": 75.0,
-      "interpolation": "linear",
       "project_to_nav": true,
       "z_offset_cm": 170.0,
       "use_connectivity_analysis": true,

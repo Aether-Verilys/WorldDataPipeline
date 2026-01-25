@@ -1,20 +1,8 @@
 {
   "editor_cmd": "D:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
-  "project_path": "default",
+  "project_path": "ue_template/project/WorldData.uproject",
   "output_base_dir": "output",
   "exclude_map_names": [
     "Overview"
-  ],
-  "scenes": {
-    "LevelPrototyping": {
-      "maps": [
-        {
-          "name": "Lvl_FirstPerson",
-          "path": "/Game/LevelPrototyping/Lvl_FirstPerson",
-          "low_mesh": false,
-          "bake_navmesh": true
-        }
-      ]
-    }
-  }
+  ]
 }

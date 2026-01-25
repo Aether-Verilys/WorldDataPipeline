@@ -11,7 +11,7 @@ ue_pipeline_dir = script_dir / 'ue_pipeline'
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-from ue_pipeline.python.bos.bos_client import initialize_bos
+from ue_pipeline.python.storage.bos_client import initialize_bos
 import sys as _sys
 _sys.stderr.write("BOS client imported successfully\n")
 _sys.stderr.flush()
@@ -290,7 +290,7 @@ def main():
             )
     
     elif args.command == 'download_scene':
-        from ue_pipeline.python.bos.download_scene import BosSceneDownloader
+        from ue_pipeline.python.storage.scene_download import BosSceneDownloader
         from pathlib import Path
         
         # 加载 bos.json 配置
@@ -355,7 +355,7 @@ def main():
             return 0 if success else 1
     
     elif args.command == 'copy_scene':
-        from ue_pipeline.python.bos.copy_scenes import BosSceneCopier
+        from ue_pipeline.python.storage.scene_copy import BosSceneCopier
         
         copier = BosSceneCopier()
         

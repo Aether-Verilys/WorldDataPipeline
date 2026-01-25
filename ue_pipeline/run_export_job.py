@@ -17,8 +17,8 @@ repo_root = script_dir.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-from ue_pipeline.python.logger import logger
-from ue_pipeline.python import job_utils
+from ue_pipeline.python.core import logger
+from ue_pipeline.python.core import job_utils
 
 def main():
     # Parse arguments
@@ -42,7 +42,7 @@ def main():
 
     # Worker Export script path
     script_dir = Path(__file__).parent
-    worker_export = str(script_dir / 'python' / 'worker_export.py')
+    worker_export = str(script_dir / 'python' / 'export' / 'worker_export.py')
 
     logger.kv("Job ID:", job_id)
     logger.kv("Job Type:", "export")
