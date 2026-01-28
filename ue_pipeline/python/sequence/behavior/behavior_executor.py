@@ -32,7 +32,6 @@ class BehaviorType(Enum):
     TRANSLATE_RIGHT = "translate_right"
     IDLE = "idle"
     ROTATE = "rotate"
-    ROTATE_PITCH = "rotate_pitch"
 
 
 class BehaviorContext:
@@ -44,18 +43,22 @@ class BehaviorContext:
         yaw: float,
         speed_cm_per_sec: float,
         fps: int,
+        pitch: float = 0.0,
     ):
         self.position = position
         self.yaw = yaw  # Current camera yaw in degrees
+        self.pitch = pitch  # Current camera pitch in degrees
         self.speed_cm_per_sec = speed_cm_per_sec
         self.fps = fps
         self.accumulated_time_sec = 0.0
         self.accumulated_frames = 0
     
-    def update(self, new_position: unreal.Vector, new_yaw: float, duration_frames: int):
+    def update(self, new_position: unreal.Vector, new_yaw: float, duration_frames: int, new_pitch: Optional[float] = None):
         """Update context after behavior execution."""
         self.position = new_position
         self.yaw = new_yaw
+        if new_pitch is not None:
+            self.pitch = new_pitch
         self.accumulated_frames += duration_frames
         self.accumulated_time_sec = self.accumulated_frames / self.fps
 
@@ -310,7 +313,7 @@ def _execute_translate(
             yaws,
             duration_frames,
             {"distance_cm": actual_distance, "blocked": hit_location is not None},
-            pitches=[0.0] * len(points),
+            pitches=[context.pitch] * len(points),
         )
     
     except Exception as e:
@@ -434,7 +437,7 @@ def _execute_roam(
                     yaws,
                     duration_frames,
                     {"distance_cm": path_distance, "attempts": attempt + 1},
-                    pitches=[0.0] * len(path_points),
+                    pitches=[context.pitch] * len(path_points),
                 )
         
         except Exception as e:
@@ -486,106 +489,86 @@ def _execute_idle(
         yaws,
         duration_frames,
         {},
-        pitches=[0.0] * num_points,
+        pitches=[context.pitch] * num_points,
     )
 
 
 def _execute_rotate(
     context: BehaviorContext,
-    angle_deg: float,
+    yaw_delta_deg: float,
+    pitch_target_deg: float,
     cfg: Dict[str, Any],
-    rotate_axis: str = "yaw",
 ) -> BehaviorResult:
     """
-    Execute rotate behavior.
+    Execute rotate behavior with simultaneous yaw and pitch rotation.
     
-    Rotates in place by specified angle at configured speed.
+    Rotates in place with yaw (incremental) and pitch (absolute) changes.
     Position remains fixed, only rotation changes.
     
     Args:
         context: Current behavior context
-        angle_deg: Angle to rotate (positive=CCW, negative=CW)
+        yaw_delta_deg: Yaw angle delta to add (positive=CCW, negative=CW)
+        pitch_target_deg: Target pitch angle (absolute)
         cfg: Configuration dict
-        rotate_axis: "yaw" for horizontal rotation, "pitch" for vertical rotation
     
     Returns:
         BehaviorResult with rotation sequence
     """
-    if rotate_axis == "pitch":
-        behavior_type = BehaviorType.ROTATE_PITCH
-    else:
-        behavior_type = BehaviorType.ROTATE
+    behavior_type = BehaviorType.ROTATE
     
     # Configuration
     rotate_speed_deg_per_sec = float(cfg.get("rotate_speed_deg_per_sec", 30.0))
     
-    # Calculate duration based on angle and speed
-    duration_sec = abs(angle_deg) / rotate_speed_deg_per_sec
+    # Calculate duration based on the larger angle change and shared speed
+    yaw_change = abs(yaw_delta_deg)
+    pitch_change = abs(pitch_target_deg - context.pitch)
+    max_angle_change = max(yaw_change, pitch_change)
+    
+    duration_sec = max_angle_change / rotate_speed_deg_per_sec
     duration_frames = int(duration_sec * context.fps)
     
     # Generate rotation keyframes
     num_points = max(2, duration_frames // 15)  # ~15 frames per point
     points = [context.position] * num_points
     
-    if rotate_axis == "pitch":
-        # Pitch rotation: yaw stays constant, pitch changes
-        yaws = [context.yaw] * num_points
-        start_pitch = 0.0  # Assuming camera starts at level
-        end_pitch = angle_deg
-        
-        pitches = []
-        for i in range(num_points):
-            t = float(i) / float(num_points - 1) if num_points > 1 else 0.0
-            pitch = start_pitch + (end_pitch - start_pitch) * t
-            pitches.append(pitch)
-        
-        start_frame = context.accumulated_frames
-        end_frame = start_frame + duration_frames
-        logger.info(
-            f"[Behavior] {behavior_type.value}: {angle_deg:+.1f}°, frames [{start_frame}-{end_frame}], "
-            f"{num_points} points, pitch {start_pitch:.1f}° → {end_pitch:.1f}°\n"
-            f"  Start: pos=({points[0].x:.1f}, {points[0].y:.1f}, {points[0].z:.1f}), yaw={yaws[0]:.1f}°, pitch={pitches[0]:.1f}°\n"
-            f"  End:   pos=({points[-1].x:.1f}, {points[-1].y:.1f}, {points[-1].z:.1f}), yaw={yaws[-1]:.1f}°, pitch={pitches[-1]:.1f}°"
-        )
-        
-        return BehaviorResult(
-            behavior_type,
-            points,
-            yaws,
-            duration_frames,
-            {"angle_deg": angle_deg, "speed_deg_per_sec": rotate_speed_deg_per_sec, "axis": "pitch"},
-            pitches=pitches,
-        )
-    else:
-        # Yaw rotation: pitch stays at 0, yaw changes
-        start_yaw = context.yaw
-        end_yaw = context.yaw + angle_deg
-        
-        yaws = []
-        for i in range(num_points):
-            t = float(i) / float(num_points - 1) if num_points > 1 else 0.0
-            yaw = start_yaw + (end_yaw - start_yaw) * t
-            yaws.append(yaw)
-        
-        pitches = [0.0] * num_points
-        
-        start_frame = context.accumulated_frames
-        end_frame = start_frame + duration_frames
-        logger.info(
-            f"[Behavior] {behavior_type.value}: {angle_deg:+.1f}°, frames [{start_frame}-{end_frame}], "
-            f"{num_points} points, yaw {start_yaw:.1f}° → {end_yaw:.1f}°\n"
-            f"  Start: pos=({points[0].x:.1f}, {points[0].y:.1f}, {points[0].z:.1f}), yaw={yaws[0]:.1f}°, pitch={pitches[0]:.1f}°\n"
-            f"  End:   pos=({points[-1].x:.1f}, {points[-1].y:.1f}, {points[-1].z:.1f}), yaw={yaws[-1]:.1f}°, pitch={pitches[-1]:.1f}°"
-        )
-        
-        return BehaviorResult(
-            behavior_type,
-            points,
-            yaws,
-            duration_frames,
-            {"angle_deg": angle_deg, "speed_deg_per_sec": rotate_speed_deg_per_sec, "axis": "yaw"},
-            pitches=pitches,
-        )
+    # Yaw rotation: incremental (add delta to current yaw)
+    start_yaw = context.yaw
+    end_yaw = context.yaw + yaw_delta_deg
+    
+    # Pitch rotation: absolute (transition to target)
+    start_pitch = context.pitch
+    end_pitch = pitch_target_deg
+    
+    yaws = []
+    pitches = []
+    for i in range(num_points):
+        t = float(i) / float(num_points - 1) if num_points > 1 else 0.0
+        yaw = start_yaw + (end_yaw - start_yaw) * t
+        pitch = start_pitch + (end_pitch - start_pitch) * t
+        yaws.append(yaw)
+        pitches.append(pitch)
+    
+    start_frame = context.accumulated_frames
+    end_frame = start_frame + duration_frames
+    logger.info(
+        f"[Behavior] {behavior_type.value}: yaw_delta={yaw_delta_deg:+.1f}°, pitch_target={pitch_target_deg:+.1f}°, "
+        f"frames [{start_frame}-{end_frame}], {num_points} points\n"
+        f"  Start: pos=({points[0].x:.1f}, {points[0].y:.1f}, {points[0].z:.1f}), yaw={yaws[0]:.1f}°, pitch={pitches[0]:.1f}°\n"
+        f"  End:   pos=({points[-1].x:.1f}, {points[-1].y:.1f}, {points[-1].z:.1f}), yaw={yaws[-1]:.1f}°, pitch={pitches[-1]:.1f}°"
+    )
+    
+    return BehaviorResult(
+        behavior_type,
+        points,
+        yaws,
+        duration_frames,
+        {
+            "yaw_delta_deg": yaw_delta_deg,
+            "pitch_target_deg": pitch_target_deg,
+            "speed_deg_per_sec": rotate_speed_deg_per_sec,
+        },
+        pitches=pitches,
+    )
 
 
 def _select_random_behavior(cfg: Dict[str, Any]) -> BehaviorType:
@@ -607,7 +590,6 @@ def _select_random_behavior(cfg: Dict[str, Any]) -> BehaviorType:
         "translate_right": 0.05,
         "idle": 0.05,
         "rotate": 0.05,
-        "rotate_pitch": 0.0,
     }
     
     # Get weights from config, fallback to defaults
@@ -622,7 +604,6 @@ def _select_random_behavior(cfg: Dict[str, Any]) -> BehaviorType:
         "translate_right": BehaviorType.TRANSLATE_RIGHT,
         "idle": BehaviorType.IDLE,
         "rotate": BehaviorType.ROTATE,
-        "rotate_pitch": BehaviorType.ROTATE_PITCH,
     }
     
     # Build weighted list
@@ -730,6 +711,7 @@ def generate_behavior_sequence(
     context = BehaviorContext(
         position=origin,
         yaw=0.0,  # Initial yaw
+        pitch=0.0,  # Initial pitch
         speed_cm_per_sec=speed_cm_per_sec,
         fps=fps,
     )
@@ -784,14 +766,15 @@ def generate_behavior_sequence(
             result = _execute_idle(context, duration)
         
         elif behavior_type == BehaviorType.ROTATE:
-            angle = random.uniform(rotate_angle_range[0], rotate_angle_range[1])
-            result = _execute_rotate(context, angle, cfg, rotate_axis="yaw")
-        
-        elif behavior_type == BehaviorType.ROTATE_PITCH:
-            # Get pitch angle range from config
-            rotate_pitch_range = cfg.get("rotate_pitch_angle_range", [-30, 30])
-            pitch_angle = random.uniform(rotate_pitch_range[0], rotate_pitch_range[1])
-            result = _execute_rotate(context, pitch_angle, cfg, rotate_axis="pitch")
+            # Yaw delta range (incremental)
+            yaw_delta_range = cfg.get("rotate_yaw_delta_range", rotate_angle_range)
+            yaw_delta = random.uniform(yaw_delta_range[0], yaw_delta_range[1])
+            
+            # Pitch target range (absolute)
+            pitch_target_range = cfg.get("rotate_pitch_target_range", [-30, 30])
+            pitch_target = random.uniform(pitch_target_range[0], pitch_target_range[1])
+            
+            result = _execute_rotate(context, yaw_delta, pitch_target, cfg)
         
         # Process result
         if result and result.is_valid:
@@ -830,7 +813,8 @@ def generate_behavior_sequence(
             context.update(
                 points_to_add[-1],
                 yaws_to_add[-1],
-                actual_frames_to_add
+                actual_frames_to_add,
+                pitches_to_add[-1]
             )
             
             behavior_count += 1
@@ -853,6 +837,15 @@ def generate_behavior_sequence(
             continue
     
     logger.info(f" Behavior sequence completed")
+
+    # Debug: Log pitch statistics
+    if all_pitches:
+        pitch_min = min(all_pitches)
+        pitch_max = max(all_pitches)
+        pitch_avg = sum(all_pitches) / len(all_pitches)
+        logger.info(f"Pitch statistics: min={pitch_min:.2f}°, max={pitch_max:.2f}°, avg={pitch_avg:.2f}°, count={len(all_pitches)}")
+    else:
+        logger.warning("No pitch data collected!")
 
     return {
         "points": all_points,

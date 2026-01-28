@@ -456,7 +456,8 @@ def export_camera_from_manifest(manifest: dict) -> dict:
         # 使用共享函数构建输出目录（与序列创建、渲染保持一致）
         try:
             from ue_pipeline.python.core.job_utils import build_output_directory
-            output_dir = build_output_directory(manifest, sequence_path)
+            # 使用规范化后的package_path，避免.AssetName后缀导致路径重复
+            output_dir = build_output_directory(manifest, package_path)
             logger.info(f"[ExportCamera] Using shared output directory builder")
         except Exception as e:
             logger.warning(f"[ExportCamera] Failed to use shared directory builder: {e}")

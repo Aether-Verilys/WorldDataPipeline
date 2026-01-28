@@ -31,22 +31,20 @@
       "min_translate_distance_cm": 50,
       "rotate_speed_deg_per_sec": 30,
       "rotate_angle_range": [-45, 45],
-      "rotate_pitch_angle_range": [-10, 10],
+      "rotate_pitch_target_range": [-20, 45],
       "behavior_weights": {
-        "random_roam": 0.6,
+        "random_roam": 0.4,
         "translate_forward": 0.1,
         "translate_backward": 0.1,
         "translate_left": 0.05,
         "translate_right": 0.05,
         "idle": 0.05,
-        "rotate": 0.05,
-        "rotate_pitch": 0.0
+        "rotate": 0.25
       }
     },
     "max_yaw_rate_deg_per_sec": 30.0,
-    "max_pitch_rate_deg_per_sec": 5.0,
+    "max_pitch_rate_deg_per_sec": 10.0,
     "camera_pitch_from_slope": true,
-    "max_camera_pitch_deg": 15.0,
     "transform_key_interp": "auto",
     "actor_name": "BP_Cameraman",
     "camera_component_name": "Camera",

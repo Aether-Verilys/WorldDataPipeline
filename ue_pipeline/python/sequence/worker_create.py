@@ -106,8 +106,11 @@ def generate_all_sequences(
     strict_duration = bool(seq_cfg.get("strict_duration", False))
 
     camera_pitch_from_slope = bool(seq_cfg.get("camera_pitch_from_slope", False))
-    max_camera_pitch = float(seq_cfg.get("max_camera_pitch_deg", 25.0))
     max_pitch_rate = float(seq_cfg.get("max_pitch_rate_deg_per_sec", 20.0))
+    
+    # Get pitch range from nav_roam config (used for rotate behavior and pitch clamping)
+    pitch_range_config = roam_cfg.get("rotate_pitch_target_range", [-20, 20])
+    pitch_range = (float(pitch_range_config[0]), float(pitch_range_config[1]))
 
     z_offset_cm = float(roam_cfg.get("z_offset_cm", 0.0))
 
@@ -130,7 +133,7 @@ def generate_all_sequences(
     
     camera = CameraConfig(
         camera_pitch_from_slope=camera_pitch_from_slope,
-        max_camera_pitch=max_camera_pitch,
+        max_camera_pitch=pitch_range[1],  # Use max value from pitch_range for backward compatibility
         max_pitch_rate=max_pitch_rate,
         max_yaw_rate_deg_per_sec=max_yaw_rate_deg_per_sec,
     )
@@ -158,6 +161,7 @@ def generate_all_sequences(
                 camera=camera,
                 path=path,
                 export=export,
+                pitch_range=pitch_range,
             )
             completed_sequences.append(sequence_info)
         except Exception as e:
@@ -264,16 +268,18 @@ def _build_nav_points_with_retry(
         
         nav_points = result["points"]
         yaws = result["yaws"]
+        pitches = result["pitches"]
         returned_seed = result["seed"]
         behavior_segments = result.get("behavior_segments", [])
         
         if len(nav_points) < 2:
             raise RuntimeError(f"Behavior sequence produced too few points ({len(nav_points)})")
         
-        # Return extended result with yaws and behavior segments
+        # Return extended result with yaws, pitches and behavior segments
         return {
             "points": nav_points,
             "yaws": yaws,
+            "pitches": pitches,
             "seed": returned_seed,
             "behavior_segments": behavior_segments,
         }
@@ -293,6 +299,7 @@ def _generate_single_sequence(
     camera: CameraConfig,
     path: PathConfig,
     export: ExportConfig,
+    pitch_range: tuple,
 ) -> Dict[str, Any]:
     """Generate a single sequence with all required setup and configuration.
     
@@ -343,6 +350,7 @@ def _generate_single_sequence(
     )
     nav_points = nav_result["points"]
     nav_yaws = nav_result["yaws"]
+    nav_pitches = nav_result["pitches"]
     actual_seed = nav_result["seed"]
     behavior_segments = nav_result.get("behavior_segments", [])
     
@@ -374,9 +382,10 @@ def _generate_single_sequence(
     # Step 5: Behavior-aware resampling
     if behavior_segments:
         # Use behavior-aware resampling that respects idle/rotate/translate constraints
-        resampled_points, resampled_yaws, key_interval_frames = _resample_behavior_aware(
+        resampled_points, resampled_yaws, resampled_pitches, key_interval_frames = _resample_behavior_aware(
             nav_points=fixed_result.nav_points,
             nav_yaws=nav_yaws,
+            nav_pitches=nav_pitches,
             behavior_segments=behavior_segments,
             fps=timing.fps,
             total_frames=fixed_result.total_frames,
@@ -391,12 +400,14 @@ def _generate_single_sequence(
             total_frames=fixed_result.total_frames,
             z_offset_cm=path.z_offset_cm,
         )
-        # Map original yaws to resampled points by index ratio
+        # Map original yaws and pitches to resampled points by index ratio
         resampled_yaws = []
+        resampled_pitches = []
         for i in range(len(sample_result.samples)):
             ratio = i / max(1, len(sample_result.samples) - 1)
             orig_idx = min(int(ratio * (len(nav_yaws) - 1)), len(nav_yaws) - 1)
             resampled_yaws.append(nav_yaws[orig_idx])
+            resampled_pitches.append(nav_pitches[orig_idx] if orig_idx < len(nav_pitches) else 0.0)
     
     # Step 6: Determine interpolation mode
     transform_key_interp = str(path.base_transform_key_interp or "auto").lower()
@@ -411,8 +422,10 @@ def _generate_single_sequence(
         total_frames=fixed_result.total_frames,
         key_interval_frames=sample_result.key_interval_frames,
         camera_pitch_from_slope=camera.camera_pitch_from_slope,
-        max_camera_pitch=camera.max_camera_pitch,
+        pitch_range=pitch_range,
         precomputed_yaws=resampled_yaws,
+        precomputed_pitches=resampled_pitches,
+        behavior_segments=behavior_segments,
     )
     logger.info(f"NavRoam generated {len(key_result.transform_keys)} keys")
     
@@ -435,13 +448,18 @@ def _generate_single_sequence(
     else:
         logger.info("Adding transform keys to actor binding...")
         try:
+            # Determine if we should preserve pitch (either from slope or from rotate behavior)
+            has_rotate_behavior = any(seg.get("type") == "rotate" for seg in behavior_segments) if behavior_segments else False
+            should_preserve_pitch = camera.camera_pitch_from_slope or has_rotate_behavior
+            
             # Sanitize rotation keys (normalize angles, clamp rates)
             sanitize_rotation_keys(
                 key_result.transform_keys,
-                zero_pitch_roll=True,
+                zero_pitch_roll=not should_preserve_pitch,  # Only zero pitch if we're not preserving it
                 max_yaw_rate_deg_per_sec=camera.max_yaw_rate_deg_per_sec,
-                preserve_pitch=camera.camera_pitch_from_slope,
+                preserve_pitch=should_preserve_pitch,
                 max_pitch_rate_deg_per_sec=camera.max_pitch_rate,
+                pitch_range=pitch_range,
             )
             write_transform_keys(
                 actor_binding, 
@@ -491,8 +509,15 @@ def _generate_navigation_path(
     
     nav_points = result["points"]
     yaws = result["yaws"]
+    pitches = result.get("pitches", [0.0] * len(result["points"]))
     actual_seed = result["seed"]
     behavior_segments = result.get("behavior_segments", [])
+    
+    # Debug: Log pitch data received
+    if pitches:
+        logger.info(f"Received pitch data: min={min(pitches):.2f}°, max={max(pitches):.2f}°, avg={sum(pitches)/len(pitches):.2f}°, count={len(pitches)}")
+    else:
+        logger.warning("No pitch data received from behavior executor!")
     
     if len(nav_points) < 2:
         error_msg = f"Behavior sequence produced too few points ({len(nav_points)}). "
@@ -502,6 +527,7 @@ def _generate_navigation_path(
     return {
         "points": nav_points,
         "yaws": yaws,
+        "pitches": pitches,
         "seed": actual_seed,
         "behavior_segments": behavior_segments,
     }
@@ -670,21 +696,22 @@ def _resample_behavior_aware(
     *,
     nav_points: list,
     nav_yaws: list,
+    nav_pitches: list,
     behavior_segments: list,
     fps: int,
     total_frames: int,
     z_offset_cm: float,
-) -> tuple[list, list, int]:
+) -> tuple[list, list, list, int]:
     """
-    Resample points and yaws with behavior-aware interpolation.
+    Resample points, yaws, and pitches with behavior-aware interpolation.
     
-    - IDLE: Keep position and yaw constant (all keys use same value)
-    - ROTATE: Keep position constant, interpolate yaw
-    - TRANSLATE: Interpolate position, keep yaw constant
-    - ROAM: Interpolate both position and yaw
+    - IDLE: Keep position, yaw, and pitch constant
+    - ROTATE: Keep position constant, interpolate yaw and pitch
+    - TRANSLATE: Interpolate position, keep yaw and pitch constant
+    - ROAM: Interpolate position and yaw, keep pitch constant (or from slope if enabled)
     
     Returns:
-        Tuple of (resampled_points, resampled_yaws, key_interval_frames)
+        Tuple of (resampled_points, resampled_yaws, resampled_pitches, key_interval_frames)
     """
     key_interval_seconds = 1.0 / float(fps)
     key_interval_frames = max(1, int(round(float(fps) * key_interval_seconds)))
@@ -704,6 +731,7 @@ def _resample_behavior_aware(
     
     resampled_points = []
     resampled_yaws = []
+    resampled_pitches = []
     
     for i in range(key_count):
         # Calculate the frame for this key
@@ -722,6 +750,7 @@ def _resample_behavior_aware(
             
             resampled_points.append(nav_points[point_idx])
             resampled_yaws.append(nav_yaws[point_idx] if point_idx < len(nav_yaws) else 0.0)
+            resampled_pitches.append(nav_pitches[point_idx] if point_idx < len(nav_pitches) else 0.0)
             continue
         
         behavior_type = segment["type"]
@@ -739,16 +768,17 @@ def _resample_behavior_aware(
         
         # Apply behavior-specific interpolation
         if behavior_type == "idle":
-            # IDLE: completely freeze both position and yaw
-            # Use the start point of the segment for ALL keys in this segment
+            # IDLE: completely freeze position, yaw, and pitch
             idle_pos = nav_points[seg_start_idx]
             idle_yaw = nav_yaws[seg_start_idx] if seg_start_idx < len(nav_yaws) else 0.0
+            idle_pitch = nav_pitches[seg_start_idx] if seg_start_idx < len(nav_pitches) else 0.0
             
             resampled_points.append(idle_pos)
             resampled_yaws.append(idle_yaw)
+            resampled_pitches.append(idle_pitch)
         
         elif behavior_type == "rotate":
-            # ROTATE: freeze position, interpolate yaw linearly within segment
+            # ROTATE: freeze position, interpolate yaw and pitch linearly within segment
             rotate_pos = nav_points[seg_start_idx]
             
             # Interpolate yaw between start and end of segment
@@ -759,11 +789,20 @@ def _resample_behavior_aware(
             else:
                 interpolated_yaw = nav_yaws[seg_start_idx] if seg_start_idx < len(nav_yaws) else 0.0
             
+            # Interpolate pitch between start and end of segment
+            if seg_start_idx < len(nav_pitches) and seg_end_idx < len(nav_pitches):
+                start_pitch = nav_pitches[seg_start_idx]
+                end_pitch = nav_pitches[seg_end_idx]
+                interpolated_pitch = start_pitch + (end_pitch - start_pitch) * seg_ratio
+            else:
+                interpolated_pitch = nav_pitches[seg_start_idx] if seg_start_idx < len(nav_pitches) else 0.0
+            
             resampled_points.append(rotate_pos)
             resampled_yaws.append(interpolated_yaw)
+            resampled_pitches.append(interpolated_pitch)
         
         elif "translate" in behavior_type:
-            # TRANSLATE: interpolate position linearly, freeze yaw
+            # TRANSLATE: interpolate position linearly, freeze yaw and pitch
             if seg_end_idx > seg_start_idx:
                 # Linear interpolation between segment start and end points
                 start_pos = nav_points[seg_start_idx]
@@ -777,14 +816,16 @@ def _resample_behavior_aware(
             else:
                 interpolated_pos = nav_points[seg_start_idx]
             
-            # Yaw locked to segment start
+            # Yaw and pitch locked to segment start
             locked_yaw = nav_yaws[seg_start_idx] if seg_start_idx < len(nav_yaws) else 0.0
+            locked_pitch = nav_pitches[seg_start_idx] if seg_start_idx < len(nav_pitches) else 0.0
             
             resampled_points.append(interpolated_pos)
             resampled_yaws.append(locked_yaw)
+            resampled_pitches.append(locked_pitch)
         
         else:
-            # ROAM: interpolate both position and yaw within segment
+            # ROAM: interpolate position and yaw, keep pitch constant within segment
             # Use distance-based interpolation for smoother paths
             seg_point_count = seg_end_idx - seg_start_idx + 1
             if seg_point_count > 1:
@@ -828,21 +869,31 @@ def _resample_behavior_aware(
                             interpolated_yaw += 360
                     else:
                         interpolated_yaw = nav_yaws[local_idx] if local_idx < len(nav_yaws) else 0.0
+                    
+                    # Pitch stays constant during roam (will be calculated from slope later if enabled)
+                    interpolated_pitch = nav_pitches[seg_start_idx] if seg_start_idx < len(nav_pitches) else 0.0
                 else:
                     interpolated_pos = nav_points[local_idx]
                     interpolated_yaw = nav_yaws[local_idx] if local_idx < len(nav_yaws) else 0.0
+                    interpolated_pitch = nav_pitches[local_idx] if local_idx < len(nav_pitches) else 0.0
             else:
                 interpolated_pos = nav_points[seg_start_idx]
                 interpolated_yaw = nav_yaws[seg_start_idx] if seg_start_idx < len(nav_yaws) else 0.0
+                interpolated_pitch = nav_pitches[seg_start_idx] if seg_start_idx < len(nav_pitches) else 0.0
             
             resampled_points.append(interpolated_pos)
             resampled_yaws.append(interpolated_yaw)
+            resampled_pitches.append(interpolated_pitch)
     
     # Apply Z offset
     if abs(z_offset_cm) > 0.001:
         resampled_points = [unreal.Vector(p.x, p.y, p.z + z_offset_cm) for p in resampled_points]
     
-    return resampled_points, resampled_yaws, key_interval_frames
+    # Debug: Log resampled pitch statistics
+    if resampled_pitches:
+        logger.info(f"Resampled pitch data: min={min(resampled_pitches):.2f}°, max={max(resampled_pitches):.2f}°, avg={sum(resampled_pitches)/len(resampled_pitches):.2f}°, count={len(resampled_pitches)}")
+    
+    return resampled_points, resampled_yaws, resampled_pitches, key_interval_frames
 
 
 def _build_transform_keys_from_samples(
@@ -852,10 +903,25 @@ def _build_transform_keys_from_samples(
     total_frames: int,
     key_interval_frames: int,
     camera_pitch_from_slope: bool,
-    max_camera_pitch: float,
+    pitch_range: tuple,
     precomputed_yaws: Optional[list] = None,
+    precomputed_pitches: Optional[list] = None,
+    behavior_segments: Optional[list] = None,
 ) -> KeyGenResult:
     keys = []
+    
+    # Debug: Log input pitch data
+    if precomputed_pitches:
+        logger.info(f"Building keys with precomputed pitch: min={min(precomputed_pitches):.2f}°, max={max(precomputed_pitches):.2f}°, avg={sum(precomputed_pitches)/len(precomputed_pitches):.2f}°, count={len(precomputed_pitches)}")
+    else:
+        logger.info("Building keys WITHOUT precomputed pitch data")
+    
+    # Build a frame-to-segment map for quick lookup
+    frame_to_segment = {}
+    if behavior_segments:
+        for seg in behavior_segments:
+            for frame in range(seg["start_frame"], seg["end_frame"] + 1):
+                frame_to_segment[frame] = seg
     
     for i, p in enumerate(samples):
         frame = i * key_interval_frames
@@ -873,15 +939,35 @@ def _build_transform_keys_from_samples(
             else:
                 yaw = yaw_degrees_xy(samples[i - 1], p) if i > 0 else 0.0
 
-        # 计算pitch（相机俯仰角，根据坡度）
+        # Determine pitch based on behavior type
         pitch = 0.0
-        if camera_pitch_from_slope:
+        segment = frame_to_segment.get(frame)
+        
+        # If this frame is part of a ROTATE behavior, use precomputed pitch
+        if segment and segment.get("type") == "rotate":
+            if precomputed_pitches and i < len(precomputed_pitches):
+                pitch = precomputed_pitches[i]
+            else:
+                pitch = 0.0
+        # Otherwise, use precomputed pitch or calculate from slope
+        elif precomputed_pitches and i < len(precomputed_pitches):
+            # Use precomputed pitch (from behavior executor, e.g., roam/translate/idle)
+            pitch = precomputed_pitches[i]
+            
+            # If camera_pitch_from_slope is enabled, calculate slope-based pitch for non-rotate segments
+            if camera_pitch_from_slope and (not segment or segment.get("type") in ["random_roam", None]):
+                if i < len(samples) - 1:
+                    # Forward slope
+                    pitch = calculate_pitch_from_slope(p, samples[i + 1], pitch_range)
+                elif i > 0:
+                    # Last point uses previous segment's slope
+                    pitch = calculate_pitch_from_slope(samples[i - 1], p, pitch_range)
+        elif camera_pitch_from_slope:
+            # No precomputed pitch, calculate from slope if enabled
             if i < len(samples) - 1:
-                # 前向坡度（看向前方）
-                pitch = calculate_pitch_from_slope(p, samples[i + 1], max_camera_pitch)
+                pitch = calculate_pitch_from_slope(p, samples[i + 1], pitch_range)
             elif i > 0:
-                # 最后一个点使用前一段的坡度
-                pitch = calculate_pitch_from_slope(samples[i - 1], p, max_camera_pitch)
+                pitch = calculate_pitch_from_slope(samples[i - 1], p, pitch_range)
 
         keys.append(
             {
@@ -890,6 +976,11 @@ def _build_transform_keys_from_samples(
                 "rotation": {"pitch": float(pitch), "yaw": float(yaw), "roll": 0.0},
             }
         )
+
+    # Debug: Log output pitch statistics
+    output_pitches = [k["rotation"]["pitch"] for k in keys]
+    if output_pitches:
+        logger.info(f"Output keys pitch: min={min(output_pitches):.2f}°, max={max(output_pitches):.2f}°, avg={sum(output_pitches)/len(output_pitches):.2f}°, count={len(output_pitches)}")
 
     return KeyGenResult(transform_keys=keys)
 

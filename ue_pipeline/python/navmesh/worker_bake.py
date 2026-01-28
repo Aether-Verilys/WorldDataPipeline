@@ -234,7 +234,7 @@ def main(argv=None) -> int:
     if current_dir not in sys.path:
         sys.path.insert(0, current_dir)
 
-    from pre_process.add_navmesh_to_scene import NavMeshManager
+    from ue_pipeline.python.navmesh.navmesh_injector import NavMeshManager
 
     try:
         manager = NavMeshManager()

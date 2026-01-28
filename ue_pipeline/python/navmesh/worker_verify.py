@@ -11,7 +11,7 @@ if workspace_root not in sys.path:
 if _current_dir not in sys.path:
     sys.path.insert(0, _current_dir)
 
-from ue_pipeline.python.core import logger, get_editor_world, get_level_editor_subsystem, get_navigation_system
+from ue_pipeline.python.core import logger, get_editor_world, get_navigation_system
 from ue_pipeline.python.assets import save_current_level
 
 
@@ -101,7 +101,7 @@ def main(argv=None) -> int:
             logger.warning("NavMesh rebuild may not have completed successfully")
         
         # Now verify NavMesh data
-        from pre_process.add_navmesh_to_scene import NavMeshManager
+        from ue_pipeline.python.navmesh.navmesh_injector import NavMeshManager
         
         manager = NavMeshManager()
         

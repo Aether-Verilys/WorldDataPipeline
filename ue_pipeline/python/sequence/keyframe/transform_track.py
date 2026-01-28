@@ -24,7 +24,7 @@ def yaw_degrees_xy(a: unreal.Vector, b: unreal.Vector) -> float:
     return float(math.degrees(math.atan2(dy, dx)))
 
 
-def calculate_pitch_from_slope(a: unreal.Vector, b: unreal.Vector, max_pitch_deg: float = 25.0) -> float:
+def calculate_pitch_from_slope(a: unreal.Vector, b: unreal.Vector, pitch_range: tuple = (-25.0, 25.0)) -> float:
     """Calculate camera pitch angle from slope between two points.
     
     Uphill: positive pitch (look up)
@@ -33,10 +33,10 @@ def calculate_pitch_from_slope(a: unreal.Vector, b: unreal.Vector, max_pitch_deg
     Args:
         a: Start point
         b: End point
-        max_pitch_deg: Maximum pitch angle clamp (default: 25 degrees)
+        pitch_range: Tuple of (min_pitch, max_pitch) in degrees for clamping
     
     Returns:
-        Pitch angle in degrees, clamped to [-max_pitch_deg, max_pitch_deg]
+        Pitch angle in degrees, clamped to pitch_range
     """
     horizontal_dist = math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2)
     if horizontal_dist < 1.0:  # Avoid division by zero
@@ -45,6 +45,8 @@ def calculate_pitch_from_slope(a: unreal.Vector, b: unreal.Vector, max_pitch_deg
     height_diff = b.z - a.z
     slope_angle = math.degrees(math.atan2(height_diff, horizontal_dist))
 
+    # Clamp to pitch range
+    max_pitch_deg = max(abs(pitch_range[0]), abs(pitch_range[1]))
     if abs(slope_angle) > max_pitch_deg:
         slope_angle = max_pitch_deg if slope_angle > 0 else -max_pitch_deg
 
@@ -158,9 +160,19 @@ def sanitize_rotation_keys(
     zero_pitch_roll: bool, 
     max_yaw_rate_deg_per_sec: Optional[float], 
     preserve_pitch: bool = False, 
-    max_pitch_rate_deg_per_sec: float = 20.0
+    max_pitch_rate_deg_per_sec: float = 20.0,
+    pitch_range: tuple = (-15.0, 15.0),
 ) -> None:
-    """Sanitize rotation keys: normalize angles, clamp rates, optionally zero pitch/roll."""
+    """Sanitize rotation keys: normalize angles, clamp rates, optionally zero pitch/roll.
+    
+    Args:
+        keys_cfg: List of key configurations
+        zero_pitch_roll: Whether to zero out pitch and roll
+        max_yaw_rate_deg_per_sec: Maximum yaw rotation speed
+        preserve_pitch: Whether to preserve pitch values
+        max_pitch_rate_deg_per_sec: Maximum pitch rotation speed
+        pitch_range: Tuple of (min_pitch, max_pitch) in degrees
+    """
     if not keys_cfg:
         return
 
@@ -241,8 +253,8 @@ def sanitize_rotation_keys(
                 
                 new_pitch = prev + delta
                 
-                # 限制pitch在[-15, 15]度范围内
-                new_pitch = max(-15.0, min(15.0, new_pitch))
+                # Limit pitch to configured range
+                new_pitch = max(pitch_range[0], min(pitch_range[1], new_pitch))
                 smoothed_pitches.append(new_pitch)
             
             # 应用平滑后的pitch值
@@ -253,7 +265,7 @@ def sanitize_rotation_keys(
     if max_yaw_rate_deg_per_sec:
         msg += f", yaw rate ≤ {max_yaw_rate_deg_per_sec:.1f} deg/s"
     if preserve_pitch:
-        msg += f", pitch smoothed (rate ≤ {max_pitch_rate_deg_per_sec:.1f} deg/s, range [-15, 15])"
+        msg += f", pitch smoothed (rate ≤ {max_pitch_rate_deg_per_sec:.1f} deg/s, range [{pitch_range[0]:.0f}, {pitch_range[1]:.0f}])"
     elif zero_pitch_roll:
         msg += ", pitch=0, roll=0"
     print(msg)
